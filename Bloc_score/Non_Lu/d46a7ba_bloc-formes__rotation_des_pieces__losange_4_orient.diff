@@ -1,0 +1,172 @@
+d46a7ba
+
+commit d46a7ba
+Author: Athanatos123 <79310036+AlainDelree@users.noreply.github.com>
+Date:   Fri Sep 18 23:39:45 2026 +0200
+
+    bloc-formes: rotation des pieces (losange 4 orientations) + verif lisibilite pieces posees
+
+diff --git a/bloc-formes.html b/bloc-formes.html
+index 26a8bf5..e14e87e 100644
+--- a/bloc-formes.html
++++ b/bloc-formes.html
+@@ -284,13 +284,41 @@
+   });
+ 
+   // ---------- Pièces ----------
++  // Chaque pièce définit une liste d'« orientations » (cells + parity requise
++  // pour l'ancre). La rotation change simplement l'orientation active ; le
++  // triangle cliqué (offset [0,0]) reste toujours l'ancre. Pour le Losange,
++  // les 4 orientations correspondent aux 4 arêtes par lesquelles ses 2
++  // triangles peuvent se rejoindre (droite/gauche valables sur n'importe
++  // quelle ancre, bas/haut réservées respectivement à une ancre haut/bas).
++  // L'Hexagone et l'Étoile sont bâtis symétriquement autour d'un même sommet
++  // à 6 branches : tourner ne change donc pas l'ensemble de cases occupées
++  // (une seule orientation utile), conformément à leur symétrie géométrique.
+   const PIECES = {
+-    triangle: { name: 'Triangle', color: '#e8a93a', cells: [[0,0]], parity: null },
+-    losange:  { name: 'Losange',  color: '#3fa796', cells: [[0,0],[0,1]], parity: null },
+-    hexagone: { name: 'Hexagone', color: '#9b8bd6', cells: [[0,0],[0,1],[0,2],[1,0],[1,1],[1,2]], parity: 0 },
+-    etoile:   { name: 'Étoile',   color: '#e85d4e',
+-      cells: [[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[0,-1],[-1,1],[0,3],[1,-1],[2,1],[1,3]],
+-      parity: 0 },
++    triangle: {
++      name: 'Triangle', color: '#e8a93a',
++      orientations: [ { cells: [[0,0]], parity: null } ],
++    },
++    losange: {
++      name: 'Losange', color: '#3fa796',
++      orientations: [
++        { cells: [[0,0],[0,1]],  parity: null }, // droite
++        { cells: [[0,0],[1,0]],  parity: 0 },    // bas (ancre haut)
++        { cells: [[0,0],[0,-1]], parity: null }, // gauche
++        { cells: [[0,0],[-1,0]], parity: 1 },    // haut (ancre bas)
++      ],
++    },
++    hexagone: {
++      name: 'Hexagone', color: '#9b8bd6',
++      orientations: [
++        { cells: [[0,0],[0,1],[0,2],[1,0],[1,1],[1,2]], parity: 0 },
++      ],
++    },
++    etoile: {
++      name: 'Étoile', color: '#e85d4e',
++      orientations: [
++        { cells: [[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[0,-1],[-1,1],[0,3],[1,-1],[2,1],[1,3]], parity: 0 },
++      ],
++    },
+   };
+   const PIECE_ORDER = ['triangle', 'losange', 'hexagone', 'etoile'];
+ 
+@@ -298,14 +326,21 @@
+   const occupied = new Array(triangles.length).fill(null); // null ou clé de pièce
+   let score = 0;
+   let selectedPiece = null;
++  const rotationIndex = {};
++  PIECE_ORDER.forEach(key => { rotationIndex[key] = 0; });
+ 
+-  function computeTargetCells(pieceKey, anchorR, anchorC){
++  function currentVariant(pieceKey){
+     const piece = PIECES[pieceKey];
+-    if (piece.parity !== null && ((anchorR + anchorC) % 2) !== piece.parity){
++    return piece.orientations[rotationIndex[pieceKey] % piece.orientations.length];
++  }
++
++  function computeTargetCells(pieceKey, anchorR, anchorC){
++    const variant = currentVariant(pieceKey);
++    if (variant.parity !== null && ((anchorR + anchorC) % 2) !== variant.parity){
+       return { ok: false, reason: 'parity' };
+     }
+     const targetCells = [];
+-    for (const [dr, dc] of piece.cells){
++    for (const [dr, dc] of variant.cells){
+       const r = anchorR + dr, c = anchorC + dc;
+       if (r < 0 || r >= ROWS || c < 0 || c >= COLS){
+         return { ok: false, reason: 'bounds' };
+@@ -399,7 +434,8 @@
+   // la silhouette (y compris les creux concaves de l'étoile) est exacte.
+   function pieceIconSVG(pieceKey){
+     const piece = PIECES[pieceKey];
+-    const triPoints = piece.cells.map(([dr, dc]) => trianglePoints(dr, dc));
++    const cells = currentVariant(pieceKey).cells;
++    const triPoints = cells.map(([dr, dc]) => trianglePoints(dr, dc));
+     const allPts = triPoints.flat();
+     const xs = allPts.map(p => p[0]), ys = allPts.map(p => p[1]);
+     const minX = Math.min(...xs), maxX = Math.max(...xs);
+@@ -414,18 +450,37 @@
+ 
+   const reserveEl = document.getElementById('reserve');
+   const btnByKey = {};
++  const iconWrapByKey = {};
+   PIECE_ORDER.forEach(key => {
+     const p = PIECES[key];
++    const units = p.orientations[0].cells.length;
+     const btn = document.createElement('button');
+     btn.className = 'piece-btn';
+-    btn.innerHTML = `${pieceIconSVG(key)}${p.name} <span class="units">(${p.cells.length}u)</span>`;
++    btn.innerHTML = `<span class="piece-icon-wrap">${pieceIconSVG(key)}</span>${p.name} <span class="units">(${units}u)</span>`;
+     btn.addEventListener('click', () => {
+       selectedPiece = (selectedPiece === key) ? null : key;
+       PIECE_ORDER.forEach(k => btnByKey[k].classList.toggle('active', k === selectedPiece));
++      rotateBtn.disabled = !selectedPiece;
+       clearPreview();
++      if (lastHover) showPreview(lastHover.r, lastHover.c);
+     });
+     reserveEl.appendChild(btn);
+     btnByKey[key] = btn;
++    iconWrapByKey[key] = btn.querySelector('.piece-icon-wrap');
++  });
++
++  // ---------- Rotation de la pièce sélectionnée ----------
++  const rotateBtn = document.getElementById('rotateBtn');
++  rotateBtn.addEventListener('click', () => {
++    if (!selectedPiece) return;
++    const piece = PIECES[selectedPiece];
++    if (piece.orientations.length <= 1){
++      showMsg('Cette pièce est symétrique : la rotation ne change rien.');
++      return;
++    }
++    rotationIndex[selectedPiece] = (rotationIndex[selectedPiece] + 1) % piece.orientations.length;
++    iconWrapByKey[selectedPiece].innerHTML = pieceIconSVG(selectedPiece);
++    if (lastHover) showPreview(lastHover.r, lastHover.c);
+   });
+ 
+   // ---------- Score / messages ----------
+@@ -449,6 +504,8 @@
+   previewLayer.setAttribute('id', 'preview-layer');
+   svg.appendChild(previewLayer);
+ 
++  let lastHover = null; // { r, c } de la dernière cellule survolée, pour rafraîchir l'aperçu après une rotation
++
+   function clearPreview(){
+     previewLayer.innerHTML = '';
+   }
+@@ -456,11 +513,11 @@
+   function showPreview(anchorR, anchorC){
+     clearPreview();
+     if (!selectedPiece) return;
+-    const piece = PIECES[selectedPiece];
++    const cells = currentVariant(selectedPiece).cells;
+     const res = computeTargetCells(selectedPiece, anchorR, anchorC);
+     const cls = res.ok ? 'preview-ok' : 'preview-bad';
+     const anchorX = anchorC * (CW / 2), anchorY = anchorR * CH;
+-    piece.cells.forEach(([dr, dc]) => {
++    cells.forEach(([dr, dc]) => {
+       const r = anchorR + dr, c = anchorC + dc;
+       if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
+       const points = trianglePoints(dr, dc)
+@@ -475,10 +532,11 @@
+ 
+   svg.addEventListener('mousemove', (e) => {
+     const el = e.target.closest('polygon.cell');
+-    if (!el) { clearPreview(); return; }
+-    showPreview(Number(el.dataset.r), Number(el.dataset.c));
++    if (!el) { lastHover = null; clearPreview(); return; }
++    lastHover = { r: Number(el.dataset.r), c: Number(el.dataset.c) };
++    showPreview(lastHover.r, lastHover.c);
+   });
+-  svg.addEventListener('mouseleave', clearPreview);
++  svg.addEventListener('mouseleave', () => { lastHover = null; clearPreview(); });
+ 
+   svg.addEventListener('click', (e) => {
+     const el = e.target.closest('polygon.cell');
