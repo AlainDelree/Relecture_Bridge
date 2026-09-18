@@ -102,6 +102,60 @@ def get_worktrees(repertoire):
     return worktrees
 
 
+def get_branche_courante(repertoire):
+    """Branche extraite (HEAD) dans `repertoire` — le répertoire du projet
+    est toujours le worktree principal du dépôt (le premier de `git worktree
+    list`), donc c'est là la branche principale à utiliser comme cible de
+    merge. Retourne None si indéterminable (dépôt détaché, erreur git)."""
+    resultat = _lancer_git(repertoire, "rev-parse", "--abbrev-ref", "HEAD")
+    if resultat.returncode != 0:
+        return None
+    branche = resultat.stdout.strip()
+    return branche if branche and branche != "HEAD" else None
+
+
+def est_branche_mergee(repertoire, branche_principale, branche):
+    """True si `branche` est un ancêtre de `branche_principale` dans le dépôt
+    de `repertoire` — c'est-à-dire intégralement fusionnée, condition requise
+    avant de proposer la suppression d'un worktree."""
+    if not branche_principale or not branche:
+        return False
+    resultat = _lancer_git(
+        repertoire, "merge-base", "--is-ancestor", branche, branche_principale
+    )
+    return resultat.returncode == 0
+
+
+def fusionner_worktree(repertoire, branche):
+    """Fusionne `branche` dans la branche courante de `repertoire` (comme un
+    `git merge` manuel lancé depuis le worktree principal), sans jamais
+    pousser. Retourne {ok, erreur, commande} pour affichage transparent."""
+    commande = ["git", "-C", repertoire, "merge", branche]
+    resultat = subprocess.run(
+        commande, capture_output=True, text=True, timeout=TIMEOUT_GIT,
+    )
+    return {
+        "ok": resultat.returncode == 0,
+        "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
+        "commande": " ".join(commande),
+    }
+
+
+def supprimer_worktree(repertoire, chemin_worktree):
+    """Supprime un worktree via `git worktree remove`, jamais forcé (donc git
+    refuse de lui-même si le worktree a des modifications non commitées).
+    Retourne {ok, erreur, commande} pour affichage transparent."""
+    commande = ["git", "-C", repertoire, "worktree", "remove", chemin_worktree]
+    resultat = subprocess.run(
+        commande, capture_output=True, text=True, timeout=TIMEOUT_GIT,
+    )
+    return {
+        "ok": resultat.returncode == 0,
+        "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
+        "commande": " ".join(commande),
+    }
+
+
 def get_commits_en_attente(chemin_worktree):
     """Commits locaux non poussés vers la branche amont configurée."""
     amont = _lancer_git(
@@ -147,8 +201,34 @@ def collect_etat_projets():
             continue
 
         entree["statut"] = "ok"
+        branche_principale = get_branche_courante(repertoire)
+        entree["branche_principale"] = branche_principale
+        chemin_principal = os.path.realpath(repertoire)
         for worktree in get_worktrees(repertoire):
             worktree.update(get_commits_en_attente(worktree["path"]))
+            worktree["branche_principale"] = branche_principale
+            worktree["est_worktree_principal"] = (
+                os.path.realpath(worktree["path"]) == chemin_principal
+            )
+
+            peut_agir = (
+                branche_principale
+                and worktree["branch"]
+                and not worktree["est_worktree_principal"]
+            )
+            if peut_agir:
+                worktree["merge_ok"] = est_branche_mergee(
+                    repertoire, branche_principale, worktree["branch"]
+                )
+                worktree["commande_merge"] = f"git -C {repertoire} merge {worktree['branch']}"
+                worktree["commande_suppression"] = (
+                    f"git -C {repertoire} worktree remove {worktree['path']}"
+                )
+            else:
+                worktree["merge_ok"] = False
+                worktree["commande_merge"] = None
+                worktree["commande_suppression"] = None
+
             entree["worktrees"].append(worktree)
         resultat.append(entree)
 

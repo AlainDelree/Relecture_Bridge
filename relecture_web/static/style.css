@@ -64,6 +64,48 @@ header h1 { margin-bottom: 0.2rem; }
 .badge--ok { background: #e6f4ea; color: #1e7b34; }
 .badge--attente { background: #fff4e5; color: #a35a00; }
 .badge--info { background: #eef1f5; color: #55606b; }
+.badge--principal { background: #eef1f5; color: #3a4550; font-weight: 600; }
+
+.messages { list-style: none; padding: 0; margin: 0 0 1rem 0; }
+.message {
+  padding: 0.6rem 0.9rem;
+  border-radius: 6px;
+  margin-bottom: 0.4rem;
+  font-size: 0.9rem;
+}
+.message--succes { background: #e6f4ea; color: #1e7b34; border: 1px solid #b7ddc3; }
+.message--erreur { background: #fdecea; color: #a33; border: 1px solid #f5c2c0; }
+
+.worktree-actions {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed #e5e5e5;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.worktree-actions .action {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.bouton {
+  font-size: 0.8rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.bouton--merger { background: #e8f0fe; color: #1a4fb4; border-color: #c3d6f7; }
+.bouton--merger:hover { background: #d9e6fd; }
+.bouton--supprimer { background: #fdecea; color: #a33; border-color: #f5c2c0; }
+.bouton--supprimer:hover { background: #fbdbd7; }
+.commande-equivalente {
+  font-size: 0.75rem;
+  color: #888;
+}
+.statut--merge-requis { font-size: 0.8rem; }
 
 .commits {
   margin: 0.4rem 0 0 0;
