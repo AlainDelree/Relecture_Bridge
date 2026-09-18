@@ -17,6 +17,7 @@ new_issue.py).
 from flask import Flask, render_template
 
 from git_info import ErreurRecuperationProjets, collect_etat_projets
+from resumes_info import collect_resumes_projet
 
 PORT = 5057
 
@@ -31,6 +32,10 @@ def index():
     except ErreurRecuperationProjets as exc:
         projets = []
         erreur = str(exc)
+
+    for projet in projets:
+        projet["resumes"] = collect_resumes_projet(projet["dossier_relecture"])
+
     return render_template("index.html", projets=projets, erreur=erreur)
 
 

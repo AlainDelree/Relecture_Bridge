@@ -71,3 +71,69 @@ header h1 { margin-bottom: 0.2rem; }
   font-size: 0.85rem;
 }
 .commits li { margin: 0.1rem 0; }
+
+.resumes {
+  border-top: 1px solid #eee;
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+}
+.resumes h3 { margin: 0 0 0.5rem 0; font-size: 0.95rem; color: #444; }
+
+.resume-entree {
+  border: 1px solid #eee;
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.6rem;
+  background: #fdfdfd;
+}
+.resume-entree:last-child { margin-bottom: 0; }
+
+.resume-entete {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.4rem;
+}
+.resume-entete .hash { font-size: 0.85rem; color: #444; }
+.resume-entete .fichier { font-size: 0.75rem; color: #888; }
+
+.resume-section { margin: 0.4rem 0; }
+.resume-section h4 {
+  margin: 0 0 0.15rem 0;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #888;
+}
+.resume-section p { margin: 0.2rem 0; font-size: 0.9rem; }
+.resume-section ul { margin: 0.2rem 0; padding-left: 1.2rem; font-size: 0.9rem; }
+.resume-section ul li { margin: 0.1rem 0; }
+
+.resume-section--attention {
+  background: #fff4e5;
+  border-left: 3px solid #d98c00;
+  padding: 0.4rem 0.6rem;
+  border-radius: 0 4px 4px 0;
+}
+.resume-section--attention h4 { color: #a35a00; }
+
+.diff-detail { margin-top: 0.5rem; }
+.diff-detail summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #55606b;
+}
+
+pre.brut {
+  background: #f4f4f4;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 0.6rem;
+  font-size: 0.78rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 400px;
+  overflow-y: auto;
+}

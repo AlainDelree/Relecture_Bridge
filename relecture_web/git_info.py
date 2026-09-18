@@ -131,6 +131,12 @@ def collect_etat_projets():
         entree = dict(projet, worktrees=[])
         repertoire = projet["repertoire"]
 
+        # Nom du dossier de relecture (Relecture_Bridge/<dossier>/Non_Lu) : le
+        # même calcul que le hook post-commit (basename du répertoire de
+        # travail), PAS le champ "nom" du tableau, qui peut différer (ex.
+        # "alchess" pour le dossier "NicLink" — voir post-commit).
+        entree["dossier_relecture"] = os.path.basename(os.path.normpath(repertoire))
+
         if not os.path.isdir(repertoire):
             entree["statut"] = "introuvable"
             resultat.append(entree)

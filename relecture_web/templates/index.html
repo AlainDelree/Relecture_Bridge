@@ -49,6 +49,50 @@
     </div>
     {% endfor %}
   {% endif %}
+
+  {% if projet.resumes %}
+  <div class="resumes">
+    <h3>Résumés en attente de relecture ({{ projet.resumes|length }})</h3>
+    {% for r in projet.resumes %}
+    <div class="resume-entree">
+      <div class="resume-entete">
+        <code class="hash">{{ r.hash }}</code>
+        {% if r.diff %}<span class="fichier">{{ r.diff }}</span>{% endif %}
+      </div>
+
+      {% if r.sections %}
+        <div class="resume-section">
+          <h4>Nature du changement</h4>
+          {{ r.sections.nature | safe }}
+        </div>
+        <div class="resume-section">
+          <h4>Intention probable</h4>
+          {{ r.sections.intention | safe }}
+        </div>
+        <div class="resume-section resume-section--attention">
+          <h4>⚠ Points d'attention</h4>
+          {{ r.sections.attention | safe }}
+        </div>
+      {% elif r.resume_brut %}
+        <p class="statut">Résumé disponible mais hors format attendu, affiché tel quel :</p>
+        <pre class="brut">{{ r.resume_brut }}</pre>
+      {% elif r.contenu_annote %}
+        <p class="statut">Ancien format (annotation pédagogique), affiché tel quel :</p>
+        <pre class="brut">{{ r.contenu_annote }}</pre>
+      {% else %}
+        <p class="statut">Pas de résumé disponible pour ce commit — voir le diff.</p>
+      {% endif %}
+
+      {% if r.contenu_diff %}
+      <details class="diff-detail">
+        <summary>Voir le diff complet</summary>
+        <pre class="brut">{{ r.contenu_diff }}</pre>
+      </details>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
 </section>
 {% endfor %}
 
