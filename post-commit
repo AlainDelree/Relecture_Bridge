@@ -1,0 +1,63 @@
+#!/bin/bash
+# Hook git post-commit — exporte automatiquement chaque commit
+# dans un dossier de relecture, lisible ensuite dans un IDE.
+#
+# Installation : copier ce fichier dans .git/hooks/post-commit
+# de chaque dépôt à surveiller, puis chmod +x dessus.
+# (voir installer.sh pour le faire automatiquement sur tous les projets Bridge_Agent)
+
+DOSSIER_RELECTURE="$HOME/Relecture_Bridge"
+
+NOM_PROJET=$(basename "$(git rev-parse --show-toplevel)")
+HASH_COURT=$(git rev-parse --short HEAD)
+MESSAGE=$(git log -1 --pretty=%s | tr -c '[:alnum:]-_' '_' | cut -c1-50)
+
+# Commit vide (aucun fichier modifié) — typiquement un commit de backup
+# de CCL sans changement réel. Rien d'intéressant à relire, on ignore.
+#
+# Cas particulier des merges : `git diff-tree` ne renvoie rien par défaut
+# sur un commit de merge tant qu'on ne lui passe pas --cc, ce qui le ferait
+# passer à tort pour un commit vide. On distingue donc :
+#   - merge SANS conflit : --cc ne renvoie rien, contenu déjà exporté via les
+#     commits des branches d'origine → on écarte, comme un commit vide.
+#   - merge AVEC résolution de conflit : --cc renvoie les fichiers arbitrés
+#     manuellement, contenu qui n'existe nulle part ailleurs → on exporte.
+NB_PARENTS=$(git rev-list --parents -n 1 HEAD | wc -w)
+if [ "$NB_PARENTS" -gt 2 ]; then
+    FICHIERS_MODIFIES=$(git diff-tree --no-commit-id --name-only -r --cc HEAD)
+else
+    FICHIERS_MODIFIES=$(git diff-tree --no-commit-id --name-only -r --root HEAD)
+fi
+if [ -z "$FICHIERS_MODIFIES" ]; then
+    echo "[relecture] Commit vide (backup) ignoré : $HASH_COURT $(git log -1 --pretty=%s)"
+    exit 0
+fi
+
+DOSSIER_PROJET="$DOSSIER_RELECTURE/$NOM_PROJET"
+DOSSIER_NON_LU="$DOSSIER_PROJET/Non_Lu"
+mkdir -p "$DOSSIER_NON_LU"
+
+FICHIER_SORTIE="$DOSSIER_NON_LU/${HASH_COURT}_${MESSAGE}.diff"
+{
+    echo "$HASH_COURT"
+    echo
+    git show --abbrev-commit HEAD
+} > "$FICHIER_SORTIE"
+
+echo "[relecture] Diff exporté → $FICHIER_SORTIE"
+
+# Annotation pédagogique optionnelle (désactivable, voir README)
+SCRIPT_ANNOTATION="$HOME/.config/relecture-bridge/annoter_diff.py"
+MARQUEUR_DESACTIVATION="$HOME/.config/relecture-bridge/desactiver-annotation"
+
+if [ -f "$SCRIPT_ANNOTATION" ] && [ ! -f "$MARQUEUR_DESACTIVATION" ]; then
+    FICHIER_ANNOTE="$DOSSIER_NON_LU/${HASH_COURT}_${MESSAGE}_annote.md"
+    FICHIER_ANNOTE_TMP="${FICHIER_ANNOTE}.tmp"
+    if python3 "$SCRIPT_ANNOTATION" "$FICHIER_SORTIE" > "$FICHIER_ANNOTE_TMP"; then
+        mv "$FICHIER_ANNOTE_TMP" "$FICHIER_ANNOTE"
+        echo "[relecture] Version annotée   → $FICHIER_ANNOTE"
+    else
+        rm -f "$FICHIER_ANNOTE_TMP"
+        echo "[relecture] Échec de l'annotation (le .diff reste disponible) : $FICHIER_SORTIE"
+    fi
+fi

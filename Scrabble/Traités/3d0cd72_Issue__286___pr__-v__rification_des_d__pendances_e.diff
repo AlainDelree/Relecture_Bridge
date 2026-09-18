@@ -1,0 +1,69 @@
+3d0cd72
+
+commit 3d0cd72
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Sun Jul 26 15:18:12 2026 +0200
+
+    Issue #286 : pré-vérification des dépendances externes (ISCC, dictionnaire) avant le build
+    
+    - build/rebuild_scrabble.bat : nouvelle étape 0 qui contrôle .tools\InnoSetup6\ISCC.exe et data\dictionnaire\French-Scrabble-ODS8-main\ avant de lancer le venv/PyInstaller, avec message d'erreur précis et exit /b 1 immédiat en cas d'absence.
+    - installeur/README.md : nouvelle section listant explicitement les deux dépendances externes à déposer manuellement sur un nouveau clone/poste, avec renvoi vers data/dictionnaire/README.md (déjà cohérent, pas de duplication).
+
+diff --git a/build/rebuild_scrabble.bat b/build/rebuild_scrabble.bat
+index 283f08a..f0cdfee 100644
+--- a/build/rebuild_scrabble.bat
++++ b/build/rebuild_scrabble.bat
+@@ -8,6 +8,29 @@ echo   Rebuild Scrabble.exe
+ echo ============================================
+ echo.
+ 
++REM --- 0. Verifier les dependances externes non versionnees -----------------
++echo [0/5] Verification des dependances externes (hors git)...
++if not exist ".tools\InnoSetup6\ISCC.exe" (
++    echo.
++    echo ERREUR : .tools\InnoSetup6\ISCC.exe introuvable.
++    echo Deposez l'installation portable d'Inno Setup 6 a cet emplacement exact
++    echo ^(.tools\InnoSetup6\^) avant de lancer ce script ^(voir installeur\README.md,
++    echo section Prerequis^).
++    if "%REBUILD_INTERACTIF%"=="1" pause
++    exit /b 1
++)
++if not exist "data\dictionnaire\French-Scrabble-ODS8-main" (
++    echo.
++    echo ERREUR : data\dictionnaire\French-Scrabble-ODS8-main introuvable.
++    echo Deposez le dictionnaire ODS8 a cet emplacement exact
++    echo ^(data\dictionnaire\French-Scrabble-ODS8-main\^) avant de lancer ce script
++    echo ^(voir data\dictionnaire\README.md^).
++    if "%REBUILD_INTERACTIF%"=="1" pause
++    exit /b 1
++)
++echo Dependances externes presentes. OK.
++echo.
++
+ REM --- 1. Preparer l'environnement virtuel de build -------------------------
+ echo [1/5] Verification de l'environnement virtuel de build...
+ if not exist ".venv_build\Scripts\python.exe" (
+diff --git a/installeur/README.md b/installeur/README.md
+index 093566b..65e9375 100644
+--- a/installeur/README.md
++++ b/installeur/README.md
+@@ -6,6 +6,19 @@ sont jamais commités dans le dépôt git** (volumineux, régénérables à tout
+ moment à partir du build PyInstaller + de ce script) : seuls `scrabble.iss`
+ et ce `README.md` sont suivis par git.
+ 
++## Dépendances externes à déposer manuellement (nouveau clone/poste)
++
++`build\rebuild_scrabble.bat` vérifie leur présence en étape 0 et s'arrête
++immédiatement si l'une manque. Sur un nouveau clone ou un nouveau poste de
++build, déposez-les avant de lancer un build complet :
++
++- `.tools\InnoSetup6\ISCC.exe` — installation portable d'Inno Setup 6 (voir
++  section Prérequis ci-dessous). Non suivi par git (`.gitignore` ignore
++  `.tools\`).
++- `data\dictionnaire\French-Scrabble-ODS8-main\` (et les autres dictionnaires
++  utilisés) — voir `data\dictionnaire\README.md` pour le détail complet et
++  la justification (licence floue, contenu tiers non redistribuable).
++
+ ## Prérequis
+ 
+ 1. [Inno Setup 6](https://jrsoftware.org/isdl.php) installé (ou disponible en

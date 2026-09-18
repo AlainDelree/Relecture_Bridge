@@ -1,0 +1,26 @@
+714ac1a
+
+commit 714ac1a
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Wed Jul 29 07:06:47 2026 +0200
+
+    Issue #315 : nettoyage CSS — suppression de la règle morte .joueur-icone (suite #314)
+
+diff --git a/src/scrabble/ui/web/accueil.css b/src/scrabble/ui/web/accueil.css
+index e2126f8..3d3d76c 100644
+--- a/src/scrabble/ui/web/accueil.css
++++ b/src/scrabble/ui/web/accueil.css
+@@ -956,13 +956,6 @@ body.mode-belgicisme .zone-centrale > *:not(.bande-tricolore) {
+     border-left: 4px solid var(--couleur-ordinateur);
+ }
+ 
+-.joueur-icone {
+-    font-size: 1.3rem;
+-    margin-right: 10px;
+-    width: 28px;
+-    text-align: center;
+-}
+-
+ /* Portrait de l'avatar configuré du joueur humain (issue #148) : même gabarit
+    que l'icône générique (28 px, marge droite identique) pour ne pas décaler le
+    nom, avec le rendu rond « pastille » repris des panneaux de l'écran de jeu. */

@@ -1,0 +1,194 @@
+6dca9ab
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 6dca9ab
+# ── Qui a fait ce commit.
+Author: CCL agent <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Mon Jul 27 10:47:42 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Issue #304 : bouton réglages visible en France, hauteur panneau alignée sur Belgicisme, ":" en tuile dorée avec espace
+    
+    - accueil.css : override body:not(.mode-belgicisme) .btn-reglages (icône
+      sombre sur voile noir clair) pour rester visible sur le panneau blanc
+      France, invisible auparavant avec le style pensé pour le tapis vert.
+    - accueil.css : padding-bottom porté à 40px sur le panneau France pour
+      égaler la marge basse perçue en Belgicisme (panneau réel = .container,
+      vs .container::before qui déborde de 20px en Belgicisme) ; margin-bottom
+      1.5rem ajouté côté Belgicisme (absent jusqu'ici) pour harmoniser la marge
+      externe avec la France.
+    - accueil.html/accueil.css : le ":" du sous-titre "Type de jeu :" devient
+      une tuile Scrabble complète (.sous-titre-deux-points-tuile, remplace
+      .sous-titre-deux-points en texte nu) ; classe .fin-mot-sous-titre ajoutée
+      sur le "u" de "jeu" pour l'espace avant la tuile.
+    - Vérifié par capture WebKitGTK (verif_296_webkitgtk.py) : bouton visible,
+      hauteurs de panneau quasi identiques (1055px France vs 1059px Belgicisme
+      en snapshot plein document), ":" en tuile dorée avec espace correct.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/src/scrabble/ui/web/accueil.css b/src/scrabble/ui/web/accueil.css
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 34588d3..20c8639 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/src/scrabble/ui/web/accueil.css
+# ── Version APRÈS ce commit.
++++ b/src/scrabble/ui/web/accueil.css
+# ── Zone modifiée : ligne 208 (6 ligne(s)) dans l'ancienne version → ligne 208 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -208,6 +208,7 @@ body.mode-belgicisme {
+ body.mode-belgicisme .container {
+     position: relative;
+     margin-top: 3rem;
++    margin-bottom: 1.5rem;
+ }
+ 
+ body.mode-belgicisme .container::before {
+# ── Zone modifiée : ligne 393 (13 ligne(s)) dans l'ancienne version → ligne 394 (28 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -393,13 +394,28 @@ body.mode-belgicisme .parties-en-cours:has(.vide) {
+    elle, le panneau blanc touchait le bord supérieur de la fenêtre. 1.5rem,
+    plus petite qu'en Belgicisme, est volontaire : ce mode n'a pas de drapeau
+    de fond à révéler (pas de `::before` débordant ici), juste un peu d'air
+-   autour du panneau — pas besoin d'un espace aussi généreux. */
++   autour du panneau — pas besoin d'un espace aussi généreux. Belgicisme
++   reprend désormais la même valeur en bas (issue #304) : elle ne l'avait
++   jamais eue (seul `margin-top` y avait été posé), asymétrie invisible côté
++   Belgicisme (le panneau y est un pseudo-élément flottant, pas de bord de
++   fenêtre proche) mais qui aurait recréé l'écart une fois les deux marges
++   externes comparées.
++   `padding-bottom` porté à 40px (issue #304) : en Belgicisme, le panneau visible
++   est `.container::before`, qui déborde de 20px sous le bord réel de
++   `.container` (`bottom: -20px` ci-dessus) — au 20px de padding hérité de
++   `.container` s'ajoutent donc 20px, soit 40px d'air sous le dernier bouton
++   avant le bord du panneau. En France, `.container` EST le panneau (peint
++   directement, pas de pseudo-élément) : ses seuls 20px de padding hérités
++   laissaient le panneau s'arrêter net sous les boutons, sans l'équivalent
++   des 20px de débord belge. 40px explicite ici recrée la même hauteur
++   perçue dans les deux modes. */
+ body:not(.mode-belgicisme) .container {
+     background: white;
+     border-radius: 16px;
+     overflow: hidden;
+     margin-top: 1.5rem;
+     margin-bottom: 1.5rem;
++    padding-bottom: 40px;
+ }
+ 
+ /* En-tête */
+# ── Zone modifiée : ligne 437 (6 ligne(s)) dans l'ancienne version → ligne 453 (25 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -437,6 +453,25 @@ header {
+     cursor: default;
+ }
+ 
++/* Bouton réglages sur fond blanc en mode France (issue #304, suite de #302) :
++   le style ci-dessus (icône blanche sur noir semi-transparent à 18/32%) est
++   pensé pour le tapis vert visible derrière le bouton dans les autres écrans
++   (jeu.html) et en mode Belgicisme (image de fond sombre). Depuis #296, le
++   panneau `.container` est peint en blanc opaque sur toute sa hauteur en
++   mode France, y compris sous le bouton réglages : une icône blanche sur un
++   voile noir à 18% y devient un gris clair quasi invisible sur fond blanc.
++   Inversion vers une icône sombre sur voile noir plus opaque, cohérente avec
++   le texte `#1a1a1a` déjà utilisé ailleurs sur ce panneau. */
++body:not(.mode-belgicisme) .btn-reglages {
++    background: rgba(0, 0, 0, 0.12);
++    color: #333;
++}
++
++body:not(.mode-belgicisme) .btn-reglages:hover:not(:disabled) {
++    background: rgba(0, 0, 0, 0.22);
++    color: #111;
++}
++
+ /* Texte de secours pour `header h1` (issue #77, suite de #75) : conservé au
+    cas où le h1 contiendrait un jour du texte brut plutôt que des tuiles
+    (blanc franc + ombre portée, pensé à l'origine pour le tapis vert). Depuis
+# ── Zone modifiée : ligne 514 (19 ligne(s)) dans l'ancienne version → ligne 549 (31 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -514,19 +549,31 @@ header h1 {
+     margin-right: 1.2rem;
+ }
+ 
+-/* ":" final du sous-titre (issue #298) : `<span>` texte nu, volontairement
+-   SANS la classe `.lettre-scrabble` (voir choix expliqué dans accueil.html).
+-   `#1a1a1a` directement (pas de variante par mode) : le panneau `.container`
+-   est blanc/translucide dans les deux modes depuis #296, donc le même texte
+-   sombre reste lisible partout — même couleur que les titres de section en
+-   mode Belgicisme (`body.mode-belgicisme section h2` ci-dessus). `font-size`/
+-   `font-weight` repris du `.sous-titre-tuiles .lettre-scrabble` voisin. */
+-.sous-titre-deux-points {
++/* ":" final du sous-titre en tuile complète (issue #304, remplace le texte nu
++   de #298 : voir choix expliqué dans accueil.html). Reprend exactement le
++   gabarit de `.sous-titre-tuiles .lettre-scrabble` (mêmes tailles/couleurs/
++   relief) plutôt que de dépendre de ce sélecteur descendant : `.lettre-
++   scrabble` seul (posé en plus sur ce span dans le HTML) suffirait presque,
++   mais une règle dédiée évite tout couplage fragile si `.sous-titre-tuiles
++   .lettre-scrabble` change de forme un jour. L'espace avant le ":" est géré
++   par `.fin-mot-sous-titre` sur le "u" de "jeu", pas ici. */
++.sous-titre-deux-points-tuile {
+     display: inline-flex;
+     align-items: center;
++    justify-content: center;
+     font-size: clamp(0.65rem, 1.5vw, 0.85rem);
++    width: clamp(1.1rem, 2.2vw, 1.4rem);
++    height: clamp(1.1rem, 2.2vw, 1.4rem);
++    background: #f5e6c8;
++    color: #4a3418;
+     font-weight: 700;
+-    color: #1a1a1a;
++    line-height: 1;
++    border-radius: 3px;
++    border: 1px solid #caa02c;
++    box-shadow:
++        inset 1px 1px 0 rgba(255, 250, 230, 0.8),
++        inset -1px -1px 0 rgba(120, 80, 10, 0.65),
++        0 1px 2px rgba(0, 0, 0, 0.3);
+ }
+ 
+ /* Cercles-drapeaux du mode dictionnaire (issue #269), sous le sous-titre. */
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/web/accueil.html b/src/scrabble/ui/web/accueil.html
+# (index — ignorable)
+index 11e7150..fa7fbfa 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/web/accueil.html
+# (après — fichier suivant)
++++ b/src/scrabble/ui/web/accueil.html
+# ── Zone modifiée : ligne 30 (15 ligne(s)) dans l'ancienne version → ligne 30 (16 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -30,15 +30,16 @@
+                  directement visibles sans passer par le choix du
+                  dictionnaire), même principe que le titre et les titres de
+                  section : chaque lettre est une tuile individuelle. Le ":"
+-                 final est un `<span>` à part, SANS la classe
+-                 `.lettre-scrabble` (issue #298) : un signe de ponctuation
+-                 dans une tuile crème/dorée aurait été lu comme une lettre à
+-                 part entière (aspect visuel incohérent) ; en texte nu il se
+-                 lit naturellement comme la marque de fin d'étiquette. Classe
+-                 `.fin-mot-sous-titre` (et non `.fin-mot`) sur la dernière
+-                 lettre de chaque mot : espacement inter-mots propre à ce
+-                 sous-titre, sans toucher `.fin-mot` utilisé ailleurs
+-                 (issue #301). -->
++                 final est désormais lui aussi une tuile complète, classe
++                 `.sous-titre-deux-points-tuile` (issue #304, remplace le
++                 texte nu de #298 : sur le fond blanc pleine hauteur du
++                 panneau depuis #296, un ":" en texte nu tranchait avec les
++                 tuiles crème/dorées environnantes ; en tuile il s'intègre au
++                 même langage visuel que "Type"/"de"/"jeu"). `.fin-mot-
++                 sous-titre` (et non `.fin-mot`, issue #301) sur le "u" de
++                 "jeu" fait aussi office d'espace avant le ":" — pas de
++                 marge supplémentaire nécessaire sur la tuile du ":" elle-
++                 même. -->
+             <p class="sous-titre-tuiles">
+               <span class="lettre-scrabble">T</span><span
+               class="lettre-scrabble">y</span><span
+# ── Zone modifiée : ligne 48 (8 ligne(s)) dans l'ancienne version → ligne 49 (8 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -48,8 +49,8 @@
+               class="lettre-scrabble fin-mot-sous-titre">e</span><span
+               class="lettre-scrabble">j</span><span
+               class="lettre-scrabble">e</span><span
+-              class="lettre-scrabble">u</span><span
+-              class="sous-titre-deux-points">:</span>
++              class="lettre-scrabble fin-mot-sous-titre">u</span><span
++              class="lettre-scrabble sous-titre-deux-points-tuile">:</span>
+             </p>
+         </header>
+ 

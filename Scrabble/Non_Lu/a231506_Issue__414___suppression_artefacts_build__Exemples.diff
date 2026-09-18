@@ -1,0 +1,22 @@
+a231506
+
+commit a231506
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Tue Aug 25 10:12:32 2026 +0200
+
+    Issue #414 : suppression artefacts build (Exemples plateau/, build/chevalet_*.png, build/shots/, build/mesure_*.py) + nettoyage .gitignore
+
+diff --git a/.gitignore b/.gitignore
+index ed5c92a..cd55547 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -31,9 +31,6 @@ data/*.db
+ # Journaux de diagnostic par session (scrabble.journal) — jamais commités
+ logs/
+ 
+-# Photos de plateaux réels fournies pour inspiration visuelle (non commitées)
+-Exemples plateau/
+-
+ # Installeur Windows (Inno Setup, issue #217) : setup.exe générés jamais
+ # commités (volumineux, régénérables via installeur\scrabble.iss) — seul le
+ # script .iss et le README du dossier sont suivis. Voir installeur\README.md.

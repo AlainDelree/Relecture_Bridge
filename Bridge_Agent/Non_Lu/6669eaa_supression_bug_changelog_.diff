@@ -1,0 +1,25 @@
+6669eaa
+
+commit 6669eaa
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Mon Aug 3 21:53:47 2026 +0200
+
+    supression bug changelog
+
+diff --git a/TACHES.md b/TACHES.md
+index dae0bd7..557f9c2 100644
+--- a/TACHES.md
++++ b/TACHES.md
+@@ -201,12 +201,4 @@ while ($true) {
+     $tailleAvant = $tailleActuelle
+     Start-Sleep -Seconds $IntervalleSecondes
+ }
+-## ChangeLog Scrabble
+-Le CHANGELOG.md du projet Scrabble (~\Scrabble/CHANGELOG.md) ne contient
+-pas la ligne « Convention d'ajout : ... » attendue par
+-scripts/fusionner_changelog.py (issue #336). Lors de la fusion de
+-CHANGELOG-345.md, le script a supprimé le fichier sans fusionner son
+-contenu (erreur : "en-tête fixe introuvable"). Tant que ce n'est pas
+-corrigé, toutes les futures entrées de worktree Scrabble seront perdues
+-à la fusion.
+ 

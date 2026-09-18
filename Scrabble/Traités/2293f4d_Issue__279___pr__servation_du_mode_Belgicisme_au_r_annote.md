@@ -1,0 +1,102 @@
+2293f4d
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 2293f4d
+# ── Qui a fait ce commit.
+Author: CCL agent <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Sat Jul 25 23:43:22 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Issue #279 : préservation du mode Belgicisme au retour à l'accueil
+    
+    reinitialiser_pour_retour_accueil() reconstruit désormais la
+    ConfigPartie en lui transmettant explicitement le mode_belgicisme
+    en cours au lieu de repartir sur la valeur par défaut False. Seul un
+    clic explicite sur un des deux drapeaux (definir_mode_belgicisme)
+    doit changer le mode ; le lancement d'une nouvelle session
+    (lancer_accueil -> ApiAccueil()) reste inchangé et repart bien sur
+    France par défaut.
+    
+    obtenir_etat() reflète donc la valeur conservée et accueil.js
+    applique déjà syncModeDictionnaire(etatInitial.mode_belgicisme) à
+    l'initialisation sans modification nécessaire côté JS.
+    
+    Ajout de deux tests dans TestReinitialiserPourRetourAccueil.
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/src/scrabble/ui/accueil.py b/src/scrabble/ui/accueil.py
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index f36a7cf..463e5c0 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/src/scrabble/ui/accueil.py
+# ── Version APRÈS ce commit.
++++ b/src/scrabble/ui/accueil.py
+# ── Zone modifiée : ligne 318 (7 ligne(s)) dans l'ancienne version → ligne 318 (13 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -318,7 +318,13 @@ class ApiAccueil:
+ 
+         On restaure donc à la main l'état d'un accueil fraîchement construit :
+ 
+-        * ``config_partie`` remis à une :class:`ConfigPartie` vierge ;
++        * ``config_partie`` remis à une :class:`ConfigPartie` vierge, à
++          l'exception de ``mode_belgicisme`` qui est reporté tel quel (issue
++          #279) : ce réglage n'est pas propre à une partie en préparation mais
++          un choix de session, au même titre qu'un futur réglage persistant
++          similaire — seul un clic explicite sur un des deux drapeaux
++          (:meth:`definir_mode_belgicisme`) doit le faire changer, jamais un
++          simple retour au menu en cours de session ;
+         * ``_partie``/``_id_partie``/``_infos_tirage`` remis à ``None`` (aucune
+           partie préparée ne doit fuiter dans un futur ``demarrer_jeu``) ;
+         * joueur humain de référence re-seedé (:meth:`initialiser_joueur_humain`,
+# ── Zone modifiée : ligne 334 (7 ligne(s)) dans l'ancienne version → ligne 340 (8 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -334,7 +340,8 @@ class ApiAccueil:
+         session de journalisation (une seule couvre toute la coquille unifiée,
+         issue #179) : cette méthode ne fait que réinitialiser l'état métier.
+         """
+-        self.config_partie = ConfigPartie()
++        mode_belgicisme = self.config_partie.mode_belgicisme
++        self.config_partie = ConfigPartie(mode_belgicisme=mode_belgicisme)
+         self._partie = None
+         self._id_partie = None
+         self._infos_tirage = None
+# (diff du fichier suivant)
+diff --git a/tests/test_accueil.py b/tests/test_accueil.py
+# (index — ignorable)
+index 5000e69..e8450ce 100644
+# (avant — fichier suivant)
+--- a/tests/test_accueil.py
+# (après — fichier suivant)
++++ b/tests/test_accueil.py
+# ── Zone modifiée : ligne 1130 (3 ligne(s)) dans l'ancienne version → ligne 1130 (31 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1130,3 +1130,31 @@ class TestReinitialiserPourRetourAccueil:
+         # La fenêtre partagée n'est pas touchée ; aucune session ouverte/fermée.
+         assert api._window is sentinelle
+         assert appels_session == []
++
++    def test_conserve_le_mode_belgicisme(self):
++        """Le mode Belgicisme actif survit à un retour au menu (issue #279).
++
++        Seul un clic explicite sur un des deux drapeaux
++        (``definir_mode_belgicisme``) doit changer le mode : un retour au menu
++        en cours de session ne doit pas le remettre à ``False``.
++        """
++        from scrabble.ui.accueil import ApiAccueil
++
++        api = ApiAccueil()
++        api.definir_mode_belgicisme(True)
++
++        api.reinitialiser_pour_retour_accueil()
++
++        assert api.config_partie.mode_belgicisme is True
++        assert api.obtenir_etat()["mode_belgicisme"] is True
++
++    def test_mode_belgicisme_absent_reste_a_false(self):
++        """Sans activation préalable, le retour au menu conserve le défaut France."""
++        from scrabble.ui.accueil import ApiAccueil
++
++        api = ApiAccueil()
++
++        api.reinitialiser_pour_retour_accueil()
++
++        assert api.config_partie.mode_belgicisme is False
++        assert api.obtenir_etat()["mode_belgicisme"] is False

@@ -1,0 +1,15 @@
+bf611cb
+
+commit bf611cb
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Thu Sep 10 20:28:40 2026 +0200
+
+    préférence son actuelle : plat
+
+diff --git a/scripts/son_actif.txt b/scripts/son_actif.txt
+index 33789c1..c1f271b 100644
+--- a/scripts/son_actif.txt
++++ b/scripts/son_actif.txt
+@@ -1 +1 @@
+-cloche
++plat

@@ -1,0 +1,214 @@
+0e9f572
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 0e9f572
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Tue Jul 28 03:47:37 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Résultats : ne plus charger le détail d'une issue au clic simple ni à la sélection auto (issue #261)
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index e4f7f53..edb0cd5 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/CHANGELOG.md
+# ── Version APRÈS ce commit.
++++ b/CHANGELOG.md
+# ── Zone modifiée : ligne 9 (6 ligne(s)) dans l'ancienne version → ligne 9 (18 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -9,6 +9,18 @@ milliers de caractères sur une seule ligne logique, coûteux à relire et
+ 
+ Convention d'ajout : voir §10 de `BRIDGE_AGENT_DOC.md`.
+ 
++## 28 juillet 2026 — issue #261
++
++Dans l'onglet Résultats, `afficherIssue()` (`static/js/app.js`) lançait un `fetch('/issue/<projet>/<numero>')` systématique — y compris pour un clic simple réflexe (sélectionner une ligne sans vouloir lire son détail) et pour la sélection automatique (`selectionnerPremiereVisible()`, déclenchée à l'ouverture de l'onglet, à chaque changement de filtre projet, après « Tous » et après chaque rafraîchissement de liste). Le TTL du cache `localStorage` (issue #52) ne dispensait que l'affichage immédiat : le fetch d'arrière-plan partait quand même. Dans l'usage réel, ce détail n'est presque jamais consulté ; chaque clic réflexe et chaque changement de filtre coûtaient donc un aller-retour GitHub inutile — autant d'occasions d'erreur/lenteur sur un réseau instable (issue #261).
++
++**Solution retenue** : séparation stricte sélection / chargement. Nouvelle `selectionnerLigne(nom, numero)` — met en évidence la ligne (classe `.selectionnee`), mémorise `projetCourant`/`numeroCourant`, affiche un état neutre (« Double-cliquez une issue pour afficher son détail. ») dans `#zone-issue`, **sans fetch**. `afficherIssue()` (comportement de fetch/cache inchangé) délègue désormais la partie sélection à `selectionnerLigne()` et ne s'en distingue plus que par le chargement effectif. `selectionnerPremiereVisible()` appelle `selectionnerLigne()` au lieu de `afficherIssue()` : la sélection automatique ne charge donc plus rien. Sur chaque ligne, `onclick` (clic simple) appelle `selectionnerLigne()` ; un nouveau `ondblclick` appelle `afficherIssue()` — seul geste, avec le Ctrl+clic (identique à avant, demande explicite de détail + défilement vers le résultat CCL), qui charge encore. `title="Double-cliquez pour afficher le détail de cette issue"` posé sur chaque ligne pour rendre le geste découvrable (point 6).
++
++**Bouton rafraîchir (issue #56, point 4)** : `rafraichirResultats()` mémorisait `projetCourant`/`numeroCourant` avant rechargement pour rouvrir l'issue affichée — mais ces variables sont désormais renseignées même par une simple sélection, jamais chargée. Nouveau drapeau `detailCourantCharge` (true uniquement après un chargement réel via `afficherIssue()`, remis à `false` par `selectionnerLigne()`) : `rafraichirResultats()` ne recharge le détail après rafraîchissement que si `detailCourantCharge` valait `true` juste avant — sinon, aucune issue n'ayant été explicitement ouverte, rien n'est chargé de force.
++
++**Non modifié** : la checkbox de marquage, les badges « ✅ »/« Diff »/« All » (fetch à la demande explicite, inchangés), le filtrage par projet, `annulerIssue()`/`fermerIssue()` (leurs boutons ne sont rendus que dans une issue déjà explicitement chargée — rappeler le détail après leur action reste la continuation directe d'un geste explicite, pas un chargement réflexe). Aucune sélection au clavier n'existe dans ce fichier pour la liste des issues (point 7 : rien à adapter).
++
++**Vérification** : `node --check static/js/app.js` → OK. Comportement rejoué dans un bac à sable Node (`vm`, mêmes stubs DOM/localStorage/fetch que pour #259) chargeant le fichier réel tel quel : sélection automatique et clic simple → zéro appel `fetch('/issue/...')` ; double-clic → exactement un appel ; `rafraichirResultats()` après une simple sélection → zéro appel ; après un double-clic préalable → un appel. Script de vérification non persisté (ad hoc, comme pour #259).
++
+ ## 28 juillet 2026 — issue #260
+ 
+ Corrige la façon dont `initialiser_git()` (`nouveau_projet.py`) détecte le contenu préexistant d'un `REP_TRAVAIL` non versionné, en la faisant porter sur ce que git suivrait réellement plutôt que sur le contenu brut du disque (issue #260, suite #258). **Défaut** : `_fichiers_preexistants()` (livrée par #258) listait le répertoire via `rglob("*")` **avant** toute écriture — choix délibéré pour que le futur `.gitignore` ne fausse pas le constat — mais comptait de ce fait aussi tout ce que ce même `.gitignore` exclurait. Le cas typique d'un `REP_TRAVAIL` préexistant est un projet Python déjà commencé, contenant donc un `venv/` et des `__pycache__/` : le scan remontait alors potentiellement des milliers d'entrées, le compte-rendu annonçait un nombre de « fichiers préexistants » sans rapport avec la réalité, et le push était retenu pour des fichiers qui n'auraient de toute façon jamais été committés — un garde-fou qui se déclenche presque systématiquement pour de mauvaises raisons finit par être ignoré, ce qui annule le bénéfice recherché par #258. Point mineur de même famille : `rglob("*")` parcourait l'arborescence entière sans borne, au sein d'une requête Flask, alors que #258 venait précisément de poser des timeouts sur les appels git pour cette raison — un `venv/` volumineux aurait pu rendre la création anormalement lente.
+# (diff du fichier suivant)
+diff --git a/static/js/app.js b/static/js/app.js
+# (index — ignorable)
+index b2f83dd..4c3fdb7 100644
+# (avant — fichier suivant)
+--- a/static/js/app.js
+# (après — fichier suivant)
++++ b/static/js/app.js
+# ── Zone modifiée : ligne 946 (8 ligne(s)) dans l'ancienne version → ligne 946 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -946,8 +946,9 @@ function basculerCocheResultat(event, projet, numero) {
+ // (Re)construit la liste HTML cliquable à partir de listeIssuesResultats. TOUTES
+ // les issues sont rendues comme lignes ; le filtre projet ne fait que masquer
+ // (display:none) les lignes des projets inactifs. Chaque ligne est coloriée à la
+-// couleur de son projet et déclenche afficherIssue() au clic. Si reset=true, on
+-// sélectionne et affiche la première issue visible.
++// couleur de son projet ; le clic simple sélectionne (selectionnerLigne), le
++// double-clic charge et affiche le détail (afficherIssue, issue #261). Si
++// reset=true, on sélectionne (sans charger) la première issue visible.
+ function rendreListeIssues(reset) {
+   const zone = document.getElementById('liste-issues');
+   zone.innerHTML = '';
+# ── Zone modifiée : ligne 995 (21 ligne(s)) dans l'ancienne version → ligne 996 (32 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -995,21 +996,32 @@ function rendreListeIssues(reset) {
+     ligne.style.color = couleur;
+     ligne.style.setProperty('--bg-hover', avecOpacite(couleur, 0.10));
+     ligne.style.setProperty('--bg-sel',   avecOpacite(couleur, 0.20));
+-    // Clic simple : sélectionne et affiche l'issue. Ctrl+clic : idem, puis
++    // Clic simple : sélectionne SEULEMENT la ligne, sans charger son détail —
++    // geste réflexe qui ne doit pas coûter un aller-retour réseau (issue #261).
++    // Ctrl+clic : demande explicite de détail (comme le double-clic), puis
+     // défile automatiquement jusqu'au bloc résultat CCL (dans cette UI, le
+     // résultat est rendu EN PREMIER via .commentaire.resultat ; on le vise
+-    // donc explicitement, avec repli sur .commentaire:last-child).
++    // donc explicitement, avec repli sur .commentaire:last-child). Double-clic :
++    // charge et affiche le détail (voir ondblclick ci-dessous).
+     ligne.onclick = async (event) => {
+       event.preventDefault();
+-      await afficherIssue(it.projet, numero);
+       if (event.ctrlKey) {
++        await afficherIssue(it.projet, numero);
+         setTimeout(() => {
+           const cible = document.querySelector('#zone-issue .commentaire.resultat')
+                      || document.querySelector('#zone-issue .commentaire:last-child');
+           if (cible) cible.scrollIntoView({behavior: 'smooth', block: 'start'});
+         }, 100);
++      } else {
++        selectionnerLigne(it.projet, numero);
+       }
+     };
++    // Double-clic : seul geste qui charge explicitement le détail (issue #261).
++    ligne.ondblclick = async (event) => {
++      event.preventDefault();
++      await afficherIssue(it.projet, numero);
++    };
++    ligne.title = 'Double-cliquez pour afficher le détail de cette issue';
+     // Gauche : badges emoji (✅ ✏️ ⚠️ ○) + pastille ● colorée du projet.
+     // Centre : #N — titre [état].
+     // Le badge ✅ des issues FERMÉES portant le label « done » (les seules qui
+# ── Zone modifiée : ligne 1424 (12 ligne(s)) dans l'ancienne version → ligne 1436 (16 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1424,12 +1436,16 @@ function arreterTempsRestant() {
+   if (intervalFetchTiming)  { clearInterval(intervalFetchTiming);  intervalFetchTiming  = null; }
+ }
+ 
+-// Sélectionne et affiche la première ligne encore visible (ou vide le détail).
++// Sélectionne la première ligne encore visible SANS charger son détail (voir
++// selectionnerLigne, issue #261) ; vide le détail s'il n'y a plus rien à
++// afficher. Appelée à l'ouverture de l'onglet, à chaque changement de filtre
++// projet et après chaque rafraîchissement de liste — aucun de ces gestes ne
++// doit déclencher de fetch réseau.
+ function selectionnerPremiereVisible() {
+   const premiere = [...document.querySelectorAll('#liste-issues .ligne-issue')]
+     .find(ligne => ligne.style.display !== 'none');
+   if (premiere) {
+-    afficherIssue(premiere.dataset.projet, premiere.dataset.numero);
++    selectionnerLigne(premiere.dataset.projet, premiere.dataset.numero);
+   } else {
+     document.getElementById('zone-issue').innerHTML =
+       '<div class="issue-vide">Aucune issue à afficher</div>';
+# ── Zone modifiée : ligne 1469 (10 ligne(s)) dans l'ancienne version → ligne 1485 (18 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1469,10 +1485,18 @@ function rendreHtmlRestreint(t) {
+ // donc le cache que s'il a moins de TTL_DETAIL_MS.
+ const CLE_CACHE_DETAIL = 'bridge_cache_detail_';
+ 
+-// Issue actuellement affichée dans #zone-issue (null si aucune). Permet au
+-// bouton rafraîchir (issue #56) de la recharger depuis GitHub.
++// Projet/numéro actuellement SÉLECTIONNÉ dans la liste (ligne en surbrillance),
++// que son détail ait été chargé ou non. Permet au bouton rafraîchir (issue #56)
++// de recharger l'issue affichée.
+ let projetCourant = null;
+ let numeroCourant = null;
++// true seulement si le détail de projetCourant/numeroCourant a réellement été
++// chargé (double-clic ou Ctrl+clic — voir afficherIssue), PAS pour une simple
++// sélection (clic simple, sélection automatique — voir selectionnerLigne).
++// Distingue « ligne mise en évidence » de « détail effectivement demandé »,
++// pour que le rafraîchissement (issue #56) ne force pas un fetch que
++// l'utilisateur n'a jamais explicitement demandé (issue #261).
++let detailCourantCharge = false;
+ const TTL_DETAIL_MS = 60000;
+ // Jeton anti-course : chaque appel à afficherIssue l'incrémente ; un fetch qui
+ // revient alors qu'une autre issue a été demandée entre-temps est ignoré.
+# ── Zone modifiée : ligne 1630 (11 ligne(s)) dans l'ancienne version → ligne 1654 (17 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1630,11 +1654,17 @@ function construireHtmlIssue(it, nom) {
+   return html;
+ }
+ 
+-async function afficherIssue(nom, numero) {
++// Sélectionne visuellement une ligne (fond coloré persistant, classe
++// .selectionnee) et mémorise projetCourant/numeroCourant, SANS charger son
++// détail. Utilisée par le clic simple et la sélection automatique (issue
++// #261) : contrairement à afficherIssue(), aucun fetch n'est déclenché — la
++// zone de détail affiche un état neutre invitant au double-clic. Invalide au
++// passage tout fetch de détail encore en vol (afficherIssueSeq) pour qu'il ne
++// vienne pas écraser cet état neutre après coup.
++function selectionnerLigne(nom, numero) {
+   numero = numero == null ? '' : String(numero);
+-  const seq = ++afficherIssueSeq;
+-  // Met en évidence la ligne sélectionnée (fond coloré persistant) et retire la
+-  // sélection des autres lignes.
++  ++afficherIssueSeq;
++  detailCourantCharge = false;
+   document.querySelectorAll('#liste-issues .ligne-issue.selectionnee')
+     .forEach(ligne => ligne.classList.remove('selectionnee'));
+   const ligneSel = [...document.querySelectorAll('#liste-issues .ligne-issue')]
+# ── Zone modifiée : ligne 1647 (9 ligne(s)) dans l'ancienne version → ligne 1677 (18 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1647,9 +1677,18 @@ async function afficherIssue(nom, numero) {
+     zone.innerHTML = '<div class="issue-vide">Aucune issue à afficher</div>';
+     return;
+   }
+-  // Mémorise l'issue affichée pour le bouton rafraîchir (issue #56).
+   projetCourant = nom;
+   numeroCourant = numero;
++  zone.innerHTML = '<div class="issue-vide">Double-cliquez une issue pour afficher son détail.</div>';
++}
++
++async function afficherIssue(nom, numero) {
++  numero = numero == null ? '' : String(numero);
++  selectionnerLigne(nom, numero);
++  if (!numero || !nom) return;
++  const seq = ++afficherIssueSeq;
++  detailCourantCharge = true;
++  const zone = document.getElementById('zone-issue');
+ 
+   // 1) Cache frais (< TTL) : affichage immédiat. Passé le TTL, on force le fetch
+   //    pour ne montrer que du frais (état/commentaires évoluent vite).
+# ── Zone modifiée : ligne 1695 (9 ligne(s)) dans l'ancienne version → ligne 1734 (14 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1695,9 +1734,14 @@ async function afficherIssue(nom, numero) {
+ // qui peut montrer une issue « ouverte » alors que le watcher l'a fermée.
+ async function rafraichirResultats() {
+   // Mémorise l'issue affichée AVANT le rechargement : chargerListeIssues()
+-  // réécrit projetCourant/numeroCourant en auto-sélectionnant la première ligne.
++  // réécrit projetCourant/numeroCourant en auto-sélectionnant la première ligne
++  // (sans charger son détail, voir selectionnerLigne). On mémorise aussi si ce
++  // détail avait été explicitement chargé (double-clic/Ctrl+clic) — sélection
++  // automatique et clic simple ne comptent pas (issue #261) : sans ça, on
++  // rechargerait de force un détail que personne n'a demandé.
+   const projet = projetCourant;
+   const numero = numeroCourant;
++  const etaitCharge = detailCourantCharge;
+   // 1) Cache de la liste.
+   try { localStorage.removeItem(CLE_CACHE_ISSUES); } catch(e) {}
+   // 2) Toutes les clés de cache détail « bridge_cache_detail_* ».
+# ── Zone modifiée : ligne 1711 (8 ligne(s)) dans l'ancienne version → ligne 1755 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1711,8 +1755,9 @@ async function rafraichirResultats() {
+   } catch(e) {}
+   // 3) Recharge la liste depuis GitHub.
+   await chargerListeIssues();
+-  // 4) Recharge l'issue qui était affichée, si elle l'était.
+-  if (projet && numero) {
++  // 4) Ne recharge l'issue affichée que si son détail avait été explicitement
++  //    chargé — pas seulement sélectionnée (issue #261).
++  if (etaitCharge && projet && numero) {
+     await afficherIssue(projet, numero);
+   }
+ }

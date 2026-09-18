@@ -1,0 +1,21 @@
+0daa1d6
+
+commit 0daa1d6
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Fri Aug 21 15:41:30 2026 +0200
+
+    Issue #413 : entree CHANGELOG-413.md
+
+diff --git a/CHANGELOG-413.md b/CHANGELOG-413.md
+new file mode 100644
+index 0000000..2570dd9
+--- /dev/null
++++ b/CHANGELOG-413.md
+@@ -0,0 +1,7 @@
++# Changelog — Issue #413
++
++## Corrigé
++- `build/rebuild_scrabble.bat` : échappement des parenthèses dans le `echo`
++  du bloc `else` final (branche hors `--publier`), qui cassait
++  l'interpréteur batch (« ... was unexpected at this time. ») et empêchait
++  le `git reset --hard` final de s'exécuter.

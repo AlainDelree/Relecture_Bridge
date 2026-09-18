@@ -1,0 +1,781 @@
+d51480a
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit d51480a
+# ── Qui a fait ce commit.
+Author: CCL agent <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Wed Aug 5 20:57:26 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Issue #371 (lot F) : 6e bouton, dégradé six paliers, niveaux indisponibles
+    
+    - accueil.html/accueil.py : bouton et NIVEAUX_LABELS pour Champion du monde
+    - accueil.css : dégradé recalculé sur six arrêts (corrige au passage un
+      défaut WCAG AA préexistant sur le palier Intermédiaire), survol uniformisé
+    - accueil.js : contrôle de disponibilité des niveaux à l'affichage, bouton
+      indisponible cliquable avec message au clic/survol
+    - jeu.js : badge « Avancé »/« Champion du monde » corrigé dans la fiche
+      joueur (défaut antérieur signalé par le lot D)
+    - mock.js : format d'historique aligné sur l'issue #364
+    - tests : nouveau fichier test_accueil_niveaux_visuels.py (contraste WCAG AA
+      par bande, garde-fous paramétrés sur tous les Niveau) ; exclusion retirée
+      dans test_accueil.py ; 874 tests verts
+    
+    Captures i289..i292 et verif_accueil_145.mjs/verif_niveaux_119.mjs signalés
+    obsolètes (non régénérés, rendu WebKitGTK hors périmètre pytest).
+    
+    Co-Authored-By: CCL agent <noreply@anthropic.com>
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 22e9611..baf404b 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/CHANGELOG.md
+# ── Version APRÈS ce commit.
++++ b/CHANGELOG.md
+# ── Zone modifiée : ligne 9 (6 ligne(s)) dans l'ancienne version → ligne 9 (67 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -9,6 +9,67 @@ Historique des changements notables, par ordre antéchronologique. Voir aussi
+ 
+ ### Ajouté
+ 
++- **Issue #371** (lot F, suite de #366/#368/#369/#370) — Dernier lot du
++  chantier « vocabulaire par niveau » : Champion du monde devient
++  sélectionnable à l'accueil, avec un dégradé à six paliers et les niveaux
++  indisponibles désactivés d'emblée.
++  - **6ᵉ bouton** : `ui/web/accueil.html` ajoute le bouton « Champion du
++    monde » à `.zone-niveaux` ; `ui/accueil.py` complète `NIVEAUX_LABELS`
++    (`"Champion du monde": Niveau.CHAMPION_DU_MONDE`, l'exclusion
++    documentée depuis le lot D est retirée).
++  - **Dégradé à six paliers** (`ui/web/accueil.css`) : les six arrêts
++    (fonds, bordures, texte, survol) ont été **recalculés dans leur
++    ensemble**, pas seulement complétés d'un sixième — l'ancienne série à
++    cinq paliers cachait un défaut : le palier Intermédiaire (`#c9963c`,
++    texte foncé) ne respectait PAS le contraste WCAG AA en réalité (4.41:1
++    en texte foncé, 2.65:1 en texte blanc, luminance de fond tombant dans
++    la zone où aucun des deux textes ne convient). La nouvelle série
++    (`#f5e6c8` → `#e3bd6c` → `#d1a352` → `#8a5a1a` → `#5c3d0a` → `#2e1c05`)
++    passe ≥ 4.5:1 sur chaque bande, au repos comme au survol, vérifié par un
++    calcul de luminance relative WCAG (pas une moyenne). Le survol suit
++    désormais uniformément `hover_i = fond_{i+1}` (y compris pour
++    Avancé/Expert, qui utilisaient jusqu'ici leur propre bordure) ; `#3d2606`
++    (bordure d'Expert, candidat naturel pour le 6ᵉ fond mais déjà utilisé
++    comme survol d'Expert dans l'ancienne série) redevient uniquement la
++    bordure d'Expert, jamais réutilisé pour Champion du monde.
++  - **Niveaux indisponibles** : l'accueil appelle
++    `ApiAccueil.obtenir_disponibilite_niveaux()` (exposée par le lot C) **à
++    l'affichage**, pas au lancement — un niveau dont le vocabulaire IA est
++    absent du disque reste cliquable (pas de `disabled` natif, qui
++    empêcherait tout événement clic) mais affiche le message dédié au survol
++    (`title`) et au clic (`alert`), via la classe CSS `.niveau-indisponible`.
++    Le refus côté Python (`ajouter_ordinateur`) reste en place comme défense
++    en profondeur. Champion du monde, sans fichier de vocabulaire, est
++    toujours disponible.
++  - **Correctif au passage** (`ui/web/jeu.js`) : le badge de niveau affiché
++    derrière le prénom d'un joueur ordinateur (fiche panneau) affichait
++    « AVANCE » en majuscules et sans accent — la map de libellés n'y
++    contenait pas `AVANCE`, défaut antérieur au chantier signalé par le
++    rapport du lot D. Complétée avec `AVANCE` → « Avancé » et
++    `CHAMPION_DU_MONDE` → « Champion du monde » ; la map homologue
++    d'`accueil.js` (déjà correcte pour `AVANCE`) reçoit aussi
++    `CHAMPION_DU_MONDE`.
++  - **Harnais visuel** : `scripts/_harness_jeu/mock.js` mockait encore
++    l'ancien format `etat.historique` avec détail de score embarqué, retiré
++    par l'issue #364 — mis à jour vers le format à trois paliers actuel
++    (`etat.nb_historique` + `etat.dernier_coup`, `api.obtenir_historique()`
++    sans détail, `api.obtenir_detail_coup(index)` à la demande). Signalé
++    sans régénération (rendu WebKitGTK non couvert par pytest) : les
++    captures de référence `i289..i292_accueil_*` (5 boutons) et les scripts
++    `verif_accueil_145.mjs`/`verif_niveaux_119.mjs` (encore bâtis sur
++    l'ancienne modale « Ajouter un ordinateur » antérieure à #299, avec un
++    mock à 4 niveaux ne couvrant même pas Avancé) sont obsolètes et devront
++    être régénérés/réécrits séparément.
++  - Tests : nouveau fichier `test_accueil_niveaux_visuels.py` (6ᵉ bouton,
++    contraste WCAG AA par bande au repos et au survol pour les six paliers,
++    monotonie du dégradé, garde-fous paramétrés sur tous les membres de
++    `Niveau` pour les deux maps JS de libellés, consommation JS de
++    `obtenir_disponibilite_niveaux`). `test_accueil.py` :
++    `test_tous_les_niveaux_ont_un_label` perd son exclusion de
++    `CHAMPION_DU_MONDE` (garde-fou complet, sur le modèle du lot D) ;
++    `test_labels_attendus` couvre Avancé et Champion du monde. Suite
++    complète : 874 tests verts.
++
+ - **Issue #370** (lot E, suite de #366/#369) — Suppression du réglage global
+   « vocabulaire humain » (issue #206), devenu redondant et contradictoire
+   depuis le lot C (#369) : chaque niveau joue désormais sur son propre palier
+# (diff du fichier suivant)
+diff --git a/scripts/_harness_jeu/mock.js b/scripts/_harness_jeu/mock.js
+# (index — ignorable)
+index 5817f0e..7d5660d 100644
+# (avant — fichier suivant)
+--- a/scripts/_harness_jeu/mock.js
+# (après — fichier suivant)
++++ b/scripts/_harness_jeu/mock.js
+# ── Zone modifiée : ligne 46 (17 ligne(s)) dans l'ancienne version → ligne 46 (42 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -46,17 +46,42 @@
+       nb_lettres: 6, courant: false, position: 'droite', avatar: 'avatar-12' },
+   ];
+ 
++  // Format allégé en trois paliers (issue #364) : la liste elle-même ne porte
++  // plus le détail du score embarqué (``detail``), seulement un booléen
++  // ``a_detail`` — le détail se charge à la demande via
++  // ``api.obtenir_detail_coup(index)`` (voir plus bas). ``positions`` (cases
++  // posées, vide pour une passe/un échange) sert à la surbrillance du coup
++  // consulté dans l'historique (jeu.js, ``surbrillerCoupConsulte``).
+   const historique = [
+     { index: 5, action: 'coup', nom_joueur: 'Ordi Est', humain: false, mot: 'CAVE',
+-      score_action: 18, detail: { mots: [{ texte: 'CAVE', score: 18, cases_bonus: [] }], total: 18 } },
++      score_action: 18, a_detail: true, positions: [{ ligne: 6, colonne: 9 }] },
+     { index: 4, action: 'coup', nom_joueur: 'Alain', humain: true, mot: 'JOUER',
+-      score_action: 24, detail: { mots: [{ texte: 'JOUER', score: 24, cases_bonus: [] }], total: 24 } },
++      score_action: 24, a_detail: true,
++      positions: [
++        { ligne: 7, colonne: 5 }, { ligne: 7, colonne: 6 }, { ligne: 7, colonne: 7 },
++        { ligne: 7, colonne: 8 }, { ligne: 7, colonne: 9 },
++      ] },
+     { index: 3, action: 'passe', nom_joueur: 'Ordi Ouest', humain: false, mot: null,
+-      score_action: 0, detail: null },
++      score_action: 0, a_detail: false, positions: [] },
+     { index: 2, action: 'coup', nom_joueur: 'Ordi Nord', humain: false, mot: 'MTS',
+-      score_action: 12, detail: { mots: [{ texte: 'MTS', score: 12, cases_bonus: [] }], total: 12 } },
++      score_action: 12, a_detail: true,
++      positions: [
++        { ligne: 6, colonne: 7 }, { ligne: 8, colonne: 7 }, { ligne: 9, colonne: 7 },
++      ] },
+   ];
+ 
++  // Détail du score d'un coup (palier c, issue #364), chargé à la demande par
++  // ``api.obtenir_detail_coup(index)`` — plus jamais embarqué dans la liste.
++  const detailsCoup = {
++    5: { mots: [{ texte: 'CAVE', score: 18, cases_bonus: [] }], total: 18 },
++    4: { mots: [{ texte: 'JOUER', score: 24, cases_bonus: [] }], total: 24 },
++    2: { mots: [{ texte: 'MTS', score: 12, cases_bonus: [] }], total: 12 },
++  };
++
++  // Résumé minimal du dernier coup réel (issue #364, ex-``historique[0]``) :
++  // sert à la surbrillance persistante ``.derniere-pose`` du plateau.
++  const dernierCoup = { positions: historique[0].positions };
++
+   const chevalet = [
+     { lettre: 'A', valeur: 1, joker: false },
+     { lettre: 'E', valeur: 1, joker: false },
+# ── Zone modifiée : ligne 71 (7 ligne(s)) dans l'ancienne version → ligne 96 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -71,7 +96,7 @@
+     id_partie: 1, taille: 15, plateau, joueurs,
+     index_courant: 0, jetons_sac: 42, nb_humains: 1,
+     tour_humain: true, index_panneau: 0, terminee: false,
+-    gagnants: [], historique,
++    gagnants: [], nb_historique: historique.length, dernier_coup: dernierCoup,
+   };
+ 
+   window.pywebview = {
+# ── Zone modifiée : ligne 79 (6 ligne(s)) dans l'ancienne version → ligne 104 (14 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -79,6 +104,14 @@
+       obtenir_etat: async () => JSON.parse(JSON.stringify(etat)),
+       obtenir_theme_plateau: async () => window.__THEME__ || 'classique',
+       obtenir_chevalet: async () => ({ succes: true, lettres: chevalet }),
++      // Paliers b/c de l'historique glissant (issue #364) : la liste sans
++      // détail, puis le détail d'UNE entrée à la demande.
++      obtenir_historique: async () => JSON.parse(JSON.stringify(historique)),
++      obtenir_detail_coup: async (index) => (
++        index in detailsCoup
++          ? { succes: true, detail: JSON.parse(JSON.stringify(detailsCoup[index])) }
++          : { succes: false }
++      ),
+       verifier_mot: async () => ({ succes: true, valide: true, mot: 'TEST', definition: ['Définition de démonstration.'] }),
+       echanger_tout: async () => ({ succes: true }),
+       passer: async () => ({ succes: true }),
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/accueil.py b/src/scrabble/ui/accueil.py
+# (index — ignorable)
+index c8d03f7..63b1380 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/accueil.py
+# (après — fichier suivant)
++++ b/src/scrabble/ui/accueil.py
+# ── Zone modifiée : ligne 94 (10 ligne(s)) dans l'ancienne version → ligne 94 (8 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -94,10 +94,8 @@ NIVEAUX_LABELS: dict[str, Niveau] = {
+     "Intermédiaire": Niveau.INTERMEDIAIRE,
+     "Avancé": Niveau.AVANCE,
+     "Expert": Niveau.EXPERT,
++    "Champion du monde": Niveau.CHAMPION_DU_MONDE,
+ }
+-# CHAMPION_DU_MONDE (issue #368, lot D) est volontairement absent : le 6e
+-# bouton de l'accueil relève du lot F (issue #369, point 7 — hors périmètre
+-# de ce lot), qui touchera aussi ``NIVEAUX_LABELS``.
+ 
+ # Libellé français d'un Niveau, inverse de NIVEAUX_LABELS (pour les messages).
+ _LIBELLES_NIVEAUX: dict[Niveau, str] = {
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/web/accueil.css b/src/scrabble/ui/web/accueil.css
+# (index — ignorable)
+index 3d3d76c..5460a88 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/web/accueil.css
+# (après — fichier suivant)
++++ b/src/scrabble/ui/web/accueil.css
+# ── Zone modifiée : ligne 830 (49 ligne(s)) dans l'ancienne version → ligne 830 (87 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -830,49 +830,87 @@ body.mode-belgicisme .zone-centrale > *:not(.bande-tricolore) {
+     text-overflow: ellipsis;
+ }
+ 
+-/* Dégradé crème → brun du plus clair (Débutant) au plus foncé (Expert),
+-   couleur de police basculée vers blanc dès que le fond devient trop
+-   sombre pour garantir le contraste WCAG AA (issue #301). */
++/* Dégradé crème → brun du plus clair (Débutant) au plus foncé (Champion du
++   monde), sur SIX paliers depuis l'ajout de ce niveau (issue #371, lot F —
++   les cinq premiers étaient codés en dur pour cinq arrêts exacts). Couleur de
++   police basculée vers blanc dès que le fond devient trop sombre pour
++   garantir le contraste WCAG AA (issue #301).
++
++   Chaque palier a été revérifié individuellement (par bande, pas en
++   moyenne — le contraste MOYEN du dégradé ne garantit rien sur un palier
++   particulier) avec la formule de luminance relative WCAG :
++     - Débutant          #f5e6c8 / texte #4a3418 → 9.49:1
++     - Facile            #e3bd6c / texte #4a3418 → 6.55:1
++     - Intermédiaire     #d1a352 / texte #4a3418 → 5.05:1
++     - Avancé            #8a5a1a / texte #ffffff → 5.90:1
++     - Expert            #5c3d0a / texte #ffffff → 9.87:1
++     - Champion du monde #2e1c05 / texte #ffffff → 16.35:1
++   tous au-delà du seuil AA (4.5:1). Le palier Intermédiaire de l'ancienne
++   série à cinq arrêts (#c9963c, texte foncé) ne passait PAS ce seuil en
++   réalité (4.41:1 en texte foncé, 2.65:1 en texte blanc — luminance de fond
++   tombant dans la zone où AUCUN des deux textes ne convient) : un défaut
++   préexistant à ce lot, corrigé ici en resserrant tout le dégradé plutôt que
++   d'ajouter un simple sixième arrêt à la série d'origine.
++
++   Survol : chaque palier bascule désormais uniformément sur le fond du
++   palier suivant (``hover_i = fond_{i+1}``), plus foncé, y compris pour
++   Avancé/Expert qui utilisaient jusqu'ici leur propre couleur de bordure en
++   survol. Champion du monde (dernier palier, pas de suivant) survole sur un
++   brun quasi noir dédié (#170b01). Cette réorganisation libère #3d2606
++   (bordure d'Expert) de son ancien rôle de survol d'Expert : conserver ce
++   candidat « naturel » pour le fond de Champion du monde aurait fait
++   coïncider un nouveau fond au repos avec l'ancienne couleur de survol
++   d'Expert — source de confusion visuelle explicitement signalée par
++   l'issue. #3d2606 redevient ici uniquement la bordure d'Expert, son rôle
++   d'origine. */
+ .zone-boutons .btn-niveau[data-niveau="Débutant"] {
+     background: #f5e6c8;
+     color: #4a3418;
+     border-color: #caa02c;
+ }
+ .zone-boutons .btn-niveau[data-niveau="Facile"] {
+-    background: #e8c97a;
++    background: #e3bd6c;
+     color: #4a3418;
+     border-color: #b8920a;
+ }
+ .zone-boutons .btn-niveau[data-niveau="Intermédiaire"] {
+-    background: #c9963c;
++    background: #d1a352;
+     color: #4a3418;
+     border-color: #9b6b1e;
+ }
+ .zone-boutons .btn-niveau[data-niveau="Avancé"] {
+-    background: #9b6b1e;
++    background: #8a5a1a;
+     color: #ffffff;
+-    border-color: #7a5010;
++    border-color: #6b4413;
+ }
+ .zone-boutons .btn-niveau[data-niveau="Expert"] {
+     background: #5c3d0a;
+     color: #ffffff;
+     border-color: #3d2606;
+ }
++.zone-boutons .btn-niveau[data-niveau="Champion du monde"] {
++    background: #2e1c05;
++    color: #ffffff;
++    border-color: #1a0f02;
++}
+ 
+ .zone-boutons .btn-niveau[data-niveau="Débutant"]:hover:not(:disabled) {
+-    background: #e8c97a;
++    background: #e3bd6c;
+ }
+ .zone-boutons .btn-niveau[data-niveau="Facile"]:hover:not(:disabled) {
+-    background: #c9963c; color: #4a3418;
++    background: #d1a352; color: #4a3418;
+ }
+ .zone-boutons .btn-niveau[data-niveau="Intermédiaire"]:hover:not(:disabled) {
+-    background: #9b6b1e; color: #ffffff;
++    background: #8a5a1a; color: #ffffff;
+ }
+ .zone-boutons .btn-niveau[data-niveau="Avancé"]:hover:not(:disabled) {
+-    background: #7a5010;
++    background: #5c3d0a;
+ }
+ .zone-boutons .btn-niveau[data-niveau="Expert"]:hover:not(:disabled) {
+-    background: #3d2606;
++    background: #2e1c05;
++}
++.zone-boutons .btn-niveau[data-niveau="Champion du monde"]:hover:not(:disabled) {
++    background: #170b01;
+ }
+ 
+ .zone-boutons .btn-niveau:disabled {
+# ── Zone modifiée : ligne 880 (6 ligne(s)) dans l'ancienne version → ligne 918 (17 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -880,6 +918,17 @@ body.mode-belgicisme .zone-centrale > *:not(.bande-tricolore) {
+     cursor: not-allowed;
+ }
+ 
++/* Niveau indisponible (vocabulaire IA manquant, issue #369 lot C ; rendu
++   visuel issue #371 lot F) : contrairement à ``:disabled`` ci-dessus, le
++   bouton n'est PAS désactivé nativement — il doit rester cliquable pour
++   afficher le message d'erreur au clic (accueil.js), en plus du message au
++   survol (``title``). Même affaiblissement visuel que ``:disabled`` pour
++   signaler l'indisponibilité d'un coup d'œil. */
++.zone-boutons .btn-niveau.niveau-indisponible {
++    opacity: 0.45;
++    cursor: not-allowed;
++}
++
+ /* Liste des joueurs */
+ .liste-joueurs {
+     background: white;
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/web/accueil.html b/src/scrabble/ui/web/accueil.html
+# (index — ignorable)
+index 0c0f06d..5ff2fd3 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/web/accueil.html
+# (après — fichier suivant)
++++ b/src/scrabble/ui/web/accueil.html
+# ── Zone modifiée : ligne 135 (6 ligne(s)) dans l'ancienne version → ligne 135 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -135,6 +135,7 @@
+                     <button class="btn btn-niveau" data-niveau="Intermédiaire">Intermédiaire</button>
+                     <button class="btn btn-niveau" data-niveau="Avancé">Avancé</button>
+                     <button class="btn btn-niveau" data-niveau="Expert">Expert</button>
++                    <button class="btn btn-niveau" data-niveau="Champion du monde">Champion du monde</button>
+                 </div>
+                 <button id="btn-ajouter-humain" class="btn btn-humain">
+                     Ajouter un joueur
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/web/accueil.js b/src/scrabble/ui/web/accueil.js
+# (index — ignorable)
+index 8f16d5f..39b150b 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/web/accueil.js
+# (après — fichier suivant)
++++ b/src/scrabble/ui/web/accueil.js
+# ── Zone modifiée : ligne 56 (6 ligne(s)) dans l'ancienne version → ligne 56 (14 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -56,6 +56,14 @@ document.addEventListener('DOMContentLoaded', async () => {
+     // État
+     let premierHumainAjoute = false;
+ 
++    // Disponibilité des niveaux (issue #369 lot C, rendu visuel issue #371
++    // lot F) : { [label]: message } pour chaque niveau dont le vocabulaire IA
++    // est indisponible. Peuplé une seule fois au chargement de l'accueil
++    // (voir appliquerDisponibiliteNiveaux, appelée dans l'initialisation
++    // plus bas) — le contrôle doit avoir lieu à l'AFFICHAGE, pas au
++    // lancement (Béatrice ne doit pas cliquer, attendre, puis échouer).
++    let niveauxIndisponibles = {};
++
+     /**
+      * Met à jour l'affichage en fonction de l'état reçu
+      */
+# ── Zone modifiée : ligne 97 (7 ligne(s)) dans l'ancienne version → ligne 105 (8 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -97,7 +105,8 @@ document.addEventListener('DOMContentLoaded', async () => {
+                         'FACILE': 'Facile',
+                         'INTERMEDIAIRE': 'Intermédiaire',
+                         'AVANCE': 'Avancé',
+-                        'EXPERT': 'Expert'
++                        'EXPERT': 'Expert',
++                        'CHAMPION_DU_MONDE': 'Champion du monde'
+                     }[joueur.niveau] || joueur.niveau;
+                     typeLabel += ` (${niveauLabel})`;
+                 }
+# ── Zone modifiée : ligne 398 (9 ligne(s)) dans l'ancienne version → ligne 407 (21 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -398,9 +407,21 @@ document.addEventListener('DOMContentLoaded', async () => {
+ 
+     // Boutons de niveau (issue #299) : un clic ajoute directement un
+     // ordinateur au niveau choisi, sans modale intermédiaire.
++    //
++    // Niveau indisponible (issue #369 lot C, rendu visuel issue #371 lot F) :
++    // le bouton n'est PAS désactivé nativement (voir appliquerDisponibiliteNiveaux
++    // plus bas) afin de rester cliquable — le message dédié doit s'afficher
++    // « au clic ou au survol », ce qu'un <button disabled> natif empêcherait
++    // (un bouton désactivé ne reçoit aucun événement click). Le refus côté
++    // Python (ajouter_ordinateur) reste en place comme défense en profondeur.
+     document.querySelectorAll('.btn-niveau').forEach(btn => {
+         btn.addEventListener('click', async () => {
+             const niveau = btn.dataset.niveau;
++            const messageIndisponible = niveauxIndisponibles[niveau];
++            if (messageIndisponible) {
++                alert(messageIndisponible);
++                return;
++            }
+             const result = await api.ajouter_ordinateur(niveau);
+             if (result.succes) {
+                 mettreAJourAffichage(result.etat);
+# ── Zone modifiée : ligne 410 (6 ligne(s)) dans l'ancienne version → ligne 431 (37 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -410,6 +431,37 @@ document.addEventListener('DOMContentLoaded', async () => {
+         });
+     });
+ 
++    /**
++     * Désactive visuellement les boutons de niveau dont le vocabulaire IA est
++     * indisponible et prépare le message d'erreur dédié (issue #369 lot C,
++     * rendu visuel issue #371 lot F). Appelée une seule fois à l'affichage de
++     * l'accueil (voir l'initialisation plus bas) : Béatrice voit l'état
++     * indisponible AVANT de cliquer, elle ne clique pas pour échouer ensuite.
++     * Champion du monde ne dépend d'aucun fichier : toujours disponible,
++     * jamais concerné par cette fonction.
++     */
++    async function appliquerDisponibiliteNiveaux() {
++        let disponibilites;
++        try {
++            disponibilites = await api.obtenir_disponibilite_niveaux();
++        } catch (err) {
++            return;
++        }
++        (disponibilites || []).forEach(({ label, disponible, message }) => {
++            if (disponible) {
++                return;
++            }
++            niveauxIndisponibles[label] = message;
++            const btn = document.querySelector(
++                `.btn-niveau[data-niveau="${CSS.escape(label)}"]`);
++            if (!btn) {
++                return;
++            }
++            btn.classList.add('niveau-indisponible');
++            btn.title = message;
++        });
++    }
++
+     // Retirer un joueur (délégation d'événement)
+     listeJoueurs.addEventListener('click', async (e) => {
+         if (e.target.classList.contains('btn-retirer')) {
+# ── Zone modifiée : ligne 936 (4 ligne(s)) dans l'ancienne version → ligne 988 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -936,4 +988,7 @@ document.addEventListener('DOMContentLoaded', async () => {
+     mettreAJourAffichage(etatInitial);
+     syncModeDictionnaire(Boolean(etatInitial.mode_belgicisme));
+     await chargerPartiesEnCours();
++    // Contrôle de disponibilité des niveaux À L'AFFICHAGE (issue #369 lot C,
++    // rendu visuel issue #371 lot F), pas seulement au lancement.
++    await appliquerDisponibiliteNiveaux();
+ });
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/web/jeu.js b/src/scrabble/ui/web/jeu.js
+# (index — ignorable)
+index 7c99f44..54eb1fc 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/web/jeu.js
+# (après — fichier suivant)
++++ b/src/scrabble/ui/web/jeu.js
+# ── Zone modifiée : ligne 287 (7 ligne(s)) dans l'ancienne version → ligne 287 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -287,7 +287,9 @@ document.addEventListener('DOMContentLoaded', async () => {
+                   DEBUTANT: 'Débutant',
+                   FACILE: 'Facile',
+                   INTERMEDIAIRE: 'Intermédiaire',
++                  AVANCE: 'Avancé',
+                   EXPERT: 'Expert',
++                  CHAMPION_DU_MONDE: 'Champion du monde',
+               }[joueur.niveau] || joueur.niveau)
+             : '';
+         const badgeNiveau = niveauLabel
+# (diff du fichier suivant)
+diff --git a/tests/test_accueil.py b/tests/test_accueil.py
+# (index — ignorable)
+index c9c4f55..1e0bb7d 100644
+# (avant — fichier suivant)
+--- a/tests/test_accueil.py
+# (après — fichier suivant)
++++ b/tests/test_accueil.py
+# ── Zone modifiée : ligne 273 (16 ligne(s)) dans l'ancienne version → ligne 273 (14 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -273,16 +273,14 @@ class TestNiveauxLabels:
+     def test_tous_les_niveaux_ont_un_label(self):
+         """Chaque niveau proposable à l'écran d'accueil a un label français.
+ 
+-        Niveau.CHAMPION_DU_MONDE (issue #368, lot D) est volontairement exclu
+-        de cette vérification : il n'est pas encore proposable au joueur, ce
+-        câblage étant réservé au lot F. Le retirer de la liste plutôt que de
+-        toucher ``NIVEAUX_LABELS``/``accueil.py`` respecte le périmètre du
+-        lot D tout en gardant ce test représentatif de son intention réelle
+-        (« tout niveau sélectionnable a un label »).
++        Paramétré sur TOUS les membres de :class:`Niveau` (issue #371, lot F,
++        garde-fou sur le modèle du test paramétré du lot D, issue #368) : plus
++        d'exclusion de ``Niveau.CHAMPION_DU_MONDE`` (le 6e bouton de l'accueil
++        est désormais câblé, voir :class:`TestDisponibiliteNiveaux`) — un futur
++        ajout de niveau fera automatiquement échouer ce test tant que
++        ``NIVEAUX_LABELS`` n'aura pas été complété.
+         """
+         for niveau in Niveau:
+-            if niveau is Niveau.CHAMPION_DU_MONDE:
+-                continue
+             label_trouve = any(
+                 NIVEAUX_LABELS[label] == niveau for label in NIVEAUX_LABELS
+             )
+# ── Zone modifiée : ligne 293 (7 ligne(s)) dans l'ancienne version → ligne 291 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -293,7 +291,9 @@ class TestNiveauxLabels:
+         assert NIVEAUX_LABELS["Débutant"] == Niveau.DEBUTANT
+         assert NIVEAUX_LABELS["Facile"] == Niveau.FACILE
+         assert NIVEAUX_LABELS["Intermédiaire"] == Niveau.INTERMEDIAIRE
++        assert NIVEAUX_LABELS["Avancé"] == Niveau.AVANCE
+         assert NIVEAUX_LABELS["Expert"] == Niveau.EXPERT
++        assert NIVEAUX_LABELS["Champion du monde"] == Niveau.CHAMPION_DU_MONDE
+ 
+ 
+ class TestDisponibiliteNiveaux:
+# (diff du fichier suivant)
+diff --git a/tests/test_accueil_niveaux_visuels.py b/tests/test_accueil_niveaux_visuels.py
+# ── Ce fichier n'existait pas avant ce commit : il vient d'être créé.
+new file mode 100644
+# (index — ignorable)
+index 0000000..74848da
+# (avant — fichier suivant)
+--- /dev/null
+# (après — fichier suivant)
++++ b/tests/test_accueil_niveaux_visuels.py
+# ── Zone modifiée : ligne 0 (0 ligne(s)) dans l'ancienne version → ligne 1 (247 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -0,0 +1,247 @@
++"""Tests du rendu visuel des 6 niveaux à l'écran d'accueil (issue #371, lot F).
++
++Couvre les parties non-Python de ce lot par lecture directe des fichiers
++statiques (même technique que ``tests/test_jeu_tour_fin_partie.py`` pour
++jeu.html/jeu.js) :
++
++- le 6e bouton « Champion du monde » (accueil.html) ;
++- le dégradé à six paliers et son contraste WCAG AA **par bande**
++  (accueil.css) ;
++- les maps de libellés de niveau côté JS (accueil.js, jeu.js), avec un
++  garde-fou paramétré sur tous les membres de :class:`Niveau` (sur le modèle
++  du test paramétré du lot D, issue #368) ;
++- la consommation JS de ``ApiAccueil.obtenir_disponibilite_niveaux``.
++"""
++
++import re
++
++import pytest
++
++from scrabble.moteur.ia import Niveau
++from scrabble.ui.accueil import DOSSIER_WEB, NIVEAUX_LABELS
++
++
++def _lire(nom: str) -> str:
++    return (DOSSIER_WEB / nom).read_text(encoding="utf-8")
++
++
++# --------------------------------------------------------------------------- #
++# Contraste WCAG AA (formule officielle de luminance relative) — utilitaires
++# purement locaux à ce fichier de test, aucune dépendance externe.
++# --------------------------------------------------------------------------- #
++
++def _linearise(c: int) -> float:
++    c_norme = c / 255
++    if c_norme <= 0.03928:
++        return c_norme / 12.92
++    return ((c_norme + 0.055) / 1.055) ** 2.4
++
++
++def _luminance(hex_couleur: str) -> float:
++    hex_couleur = hex_couleur.lstrip("#")
++    r, g, b = (int(hex_couleur[i : i + 2], 16) for i in (0, 2, 4))
++    return 0.2126 * _linearise(r) + 0.7152 * _linearise(g) + 0.0722 * _linearise(b)
++
++
++def _contraste(hex1: str, hex2: str) -> float:
++    l1, l2 = _luminance(hex1), _luminance(hex2)
++    l1, l2 = max(l1, l2), min(l1, l2)
++    return (l1 + 0.05) / (l2 + 0.05)
++
++
++SEUIL_AA = 4.5
++
++
++class TestSixiemeBouton:
++    """Le bouton « Champion du monde » est présent à l'accueil (issue #371)."""
++
++    def test_bouton_champion_du_monde_present(self):
++        html = _lire("accueil.html")
++        assert 'data-niveau="Champion du monde"' in html
++        assert re.search(
++            r'data-niveau="Champion du monde">\s*Champion du monde\s*<', html
++        )
++
++    @pytest.mark.parametrize("label", list(NIVEAUX_LABELS))
++    def test_chaque_label_a_son_bouton(self, label):
++        """Chaque entrée de NIVEAUX_LABELS a un bouton correspondant dans le HTML.
++
++        Paramétré sur NIVEAUX_LABELS (pas une liste en dur) : un futur ajout de
++        niveau fera échouer ce test tant que le bouton HTML n'existe pas.
++        """
++        html = _lire("accueil.html")
++        assert f'data-niveau="{label}"' in html
++
++    def test_exactement_six_boutons_de_niveau(self):
++        html = _lire("accueil.html")
++        boutons = re.findall(r'class="btn btn-niveau" data-niveau="([^"]+)"', html)
++        assert len(boutons) == len(NIVEAUX_LABELS) == 6
++        assert set(boutons) == set(NIVEAUX_LABELS)
++
++
++class TestDegradeSixPaliers:
++    """Dégradé crème → brun à six arrêts, contraste WCAG AA par bande (issue #371)."""
++
++    @staticmethod
++    def _blocs_repos(css: str) -> dict:
++        """{niveau: {"background": hex, "color": hex}} pour l'état au repos."""
++        blocs = {}
++        for m in re.finditer(
++            r'\[data-niveau="([^"]+)"\]\s*\{([^}]+)\}', css
++        ):
++            niveau, corps = m.group(1), m.group(2)
++            bg = re.search(r"background:\s*(#[0-9a-fA-F]{6})", corps)
++            couleur = re.search(r"\bcolor:\s*(#[0-9a-fA-F]{6})", corps)
++            if bg and couleur:
++                blocs[niveau] = {"background": bg.group(1), "color": couleur.group(1)}
++        return blocs
++
++    @staticmethod
++    def _blocs_survol(css: str) -> dict:
++        """{niveau: {"background": hex, "color": hex ou None}} pour :hover."""
++        blocs = {}
++        for m in re.finditer(
++            r'\[data-niveau="([^"]+)"\]:hover:not\(:disabled\)\s*\{([^}]+)\}', css
++        ):
++            niveau, corps = m.group(1), m.group(2)
++            bg = re.search(r"background:\s*(#[0-9a-fA-F]{6})", corps)
++            couleur = re.search(r"\bcolor:\s*(#[0-9a-fA-F]{6})", corps)
++            if bg:
++                blocs[niveau] = {
++                    "background": bg.group(1),
++                    "color": couleur.group(1) if couleur else None,
++                }
++        return blocs
++
++    def test_six_paliers_definis_au_repos(self):
++        css = _lire("accueil.css")
++        blocs = self._blocs_repos(css)
++        assert set(blocs) == set(NIVEAUX_LABELS)
++
++    def test_six_paliers_definis_au_survol(self):
++        css = _lire("accueil.css")
++        blocs = self._blocs_survol(css)
++        assert set(blocs) == set(NIVEAUX_LABELS)
++
++    @pytest.mark.parametrize("niveau", list(NIVEAUX_LABELS))
++    def test_contraste_aa_au_repos(self, niveau):
++        css = _lire("accueil.css")
++        bloc = self._blocs_repos(css)[niveau]
++        ratio = _contraste(bloc["background"], bloc["color"])
++        assert ratio >= SEUIL_AA, (
++            f"{niveau} : contraste {bloc['background']}/{bloc['color']} = "
++            f"{ratio:.2f} < {SEUIL_AA} (repos)"
++        )
++
++    @pytest.mark.parametrize("niveau", list(NIVEAUX_LABELS))
++    def test_contraste_aa_au_survol(self, niveau):
++        css = _lire("accueil.css")
++        repos = self._blocs_repos(css)[niveau]
++        survol = self._blocs_survol(css)[niveau]
++        couleur = survol["color"] or repos["color"]
++        ratio = _contraste(survol["background"], couleur)
++        assert ratio >= SEUIL_AA, (
++            f"{niveau} : contraste {survol['background']}/{couleur} = "
++            f"{ratio:.2f} < {SEUIL_AA} (survol)"
++        )
++
++    def test_degrade_est_monotone_du_plus_clair_au_plus_fonce(self):
++        """Chaque palier est strictement plus sombre que le précédent.
++
++        Vérifie l'ORDRE visuel voulu par l'issue (« crème → brun du plus
++        clair au plus foncé, Champion du monde étant le plus foncé »), pas
++        seulement le contraste individuel de chaque bande.
++        """
++        css = _lire("accueil.css")
++        blocs = self._blocs_repos(css)
++        ordre = ["Débutant", "Facile", "Intermédiaire", "Avancé", "Expert",
++                 "Champion du monde"]
++        luminances = [_luminance(blocs[n]["background"]) for n in ordre]
++        assert luminances == sorted(luminances, reverse=True)
++
++    def test_bordure_expert_pas_reutilisee_comme_fond_champion(self):
++        """#3d2606 (bordure d'Expert) ne doit pas devenir le fond de Champion.
++
++        L'issue signale explicitement ce piège : réutiliser #3d2606 (déjà
++        l'ancien survol d'Expert, et toujours sa bordure) comme fond de
++        Champion du monde ferait coïncider un nouveau fond au repos avec une
++        couleur déjà porteuse d'un autre sens visuel dans le dégradé.
++        """
++        css = _lire("accueil.css")
++        blocs = self._blocs_repos(css)
++        assert blocs["Champion du monde"]["background"].lower() != "#3d2606"
++
++
++class TestLabelsNiveauJS:
++    """Maps JS de libellés de niveau : garde-fou paramétré (issue #371, lot F).
++
++    Sur le modèle du test paramétré du lot D (issue #368) : itérer sur TOUS
++    les membres de :class:`Niveau` plutôt qu'une liste en dur fait échouer ce
++    test automatiquement si un futur niveau est ajouté sans mettre à jour ces
++    deux maps JS.
++    """
++
++    @staticmethod
++    def _bloc_accueil_js() -> str:
++        js = _lire("accueil.js")
++        m = re.search(r"const niveauLabel = \{(.*?)\}\[joueur\.niveau\]", js, re.DOTALL)
++        assert m, "map niveauLabel introuvable dans accueil.js"
++        return m.group(1)
++
++    @staticmethod
++    def _bloc_jeu_js() -> str:
++        js = _lire("jeu.js")
++        m = re.search(
++            r"const niveauLabel = joueur\.niveau\s*\?\s*\(\{(.*?)\}\[joueur\.niveau\]",
++            js,
++            re.DOTALL,
++        )
++        assert m, "map niveauLabel introuvable dans jeu.js"
++        return m.group(1)
++
++    @pytest.mark.parametrize("niveau", list(Niveau))
++    def test_accueil_js_couvre_tous_les_niveaux(self, niveau):
++        bloc = self._bloc_accueil_js()
++        assert re.search(rf"\b{niveau.name}\b", bloc), (
++            f"{niveau.name} absent de la map niveauLabel d'accueil.js"
++        )
++
++    @pytest.mark.parametrize("niveau", list(Niveau))
++    def test_jeu_js_couvre_tous_les_niveaux(self, niveau):
++        bloc = self._bloc_jeu_js()
++        assert re.search(rf"\b{niveau.name}\b", bloc), (
++            f"{niveau.name} absent de la map niveauLabel de jeu.js "
++            "(badge affiché derrière le prénom du joueur)"
++        )
++
++    def test_jeu_js_avance_correctement_accentue(self):
++        """Défaut antérieur signalé par le rapport du lot D : « AVANCE » brut
++        s'affichait faute d'entrée dans la map, au lieu de « Avancé »."""
++        bloc = self._bloc_jeu_js()
++        assert "AVANCE: 'Avancé'" in bloc or "AVANCE : 'Avancé'" in bloc
++
++
++class TestDisponibiliteNiveauxConsommeeParJS:
++    """`ApiAccueil.obtenir_disponibilite_niveaux` doit être consommée par accueil.js."""
++
++    def test_accueil_js_appelle_obtenir_disponibilite_niveaux(self):
++        js = _lire("accueil.js")
++        assert "api.obtenir_disponibilite_niveaux()" in js
++
++    def test_appel_a_lieu_a_l_affichage_pas_seulement_au_clic(self):
++        """Le contrôle doit avoir lieu à l'affichage (issue #371), pas
++        seulement être câblé dans le gestionnaire de clic."""
++        js = _lire("accueil.js")
++        assert "await appliquerDisponibiliteNiveaux()" in js
++
++    def test_bouton_indisponible_reste_cliquable_avec_message(self):
++        """Un <button disabled> natif ne reçoit aucun clic : le message
++        « au clic » exigé par l'issue impose de NE PAS désactiver nativement
++        le bouton indisponible (classe CSS dédiée à la place)."""
++        js = _lire("accueil.js")
++        assert "niveau-indisponible" in js
++        assert "btn.title = message" in js
++
++    def test_css_definit_le_style_indisponible(self):
++        css = _lire("accueil.css")
++        assert ".niveau-indisponible" in css

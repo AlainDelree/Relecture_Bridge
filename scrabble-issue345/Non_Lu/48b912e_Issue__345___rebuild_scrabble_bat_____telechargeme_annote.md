@@ -1,0 +1,230 @@
+48b912e
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 48b912e
+# ── Qui a fait ce commit.
+Author: CCL agent <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Mon Aug 3 01:33:59 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Issue #345 : rebuild_scrabble.bat — telechargement Actualise et scrabble.zip
+    
+    Avant ISCC : telecharge actualise.zip (Release v1 AlainDelree/Actualise) et
+    extrait Actualise.exe vers C:\Temp\ScrabbleBuild\Actualise.exe (source
+    attendue par installeur\scrabble.iss), stoppe et signale en cas d'echec.
+    
+    Apres ISCC : cree manifest.json ({"build": 1, "supprimer": []}), zippe
+    dist\Scrabble\ + manifest.json vers installeur\output\scrabble.zip (nom
+    fixe, sans numero de version), verifie sa presence et affiche sa taille.
+    scrabble.zip est desormais recopie vers le partage comme Scrabble-Setup.exe.
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/CHANGELOG-345.md b/CHANGELOG-345.md
+# ── Ce fichier n'existait pas avant ce commit : il vient d'être créé.
+new file mode 100644
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 0000000..294bede
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- /dev/null
+# ── Version APRÈS ce commit.
++++ b/CHANGELOG-345.md
+# ── Zone modifiée : ligne 0 (0 ligne(s)) dans l'ancienne version → ligne 1 (17 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -0,0 +1,17 @@
++### Ajouté
++
++- **Issue #345** — `build/rebuild_scrabble.bat` produit désormais un second
++  artefact : `installeur\output\scrabble.zip`, destiné à être publié comme
++  asset de Release GitHub et téléchargé/extrait par l'updater Actualise.
++
++  Avant la compilation Inno Setup, le script télécharge `actualise.zip`
++  depuis la Release v1 de `AlainDelree/Actualise` et en extrait
++  `Actualise.exe` vers `C:\Temp\ScrabbleBuild\Actualise.exe` (chemin source
++  attendu par `installeur\scrabble.iss`) ; tout échec de téléchargement ou
++  d'extraction arrête le build avec un message d'erreur explicite.
++
++  Après la compilation, le script génère `manifest.json`
++  (`{"build": 1, "supprimer": []}`) puis zippe le contenu de
++  `dist\Scrabble\` avec ce manifeste vers `installeur\output\scrabble.zip`
++  (nom fixe, sans numéro de version — celui-ci vit dans le tag de la
++  Release GitHub), vérifie sa présence et affiche sa taille.
+# (diff du fichier suivant)
+diff --git a/build/rebuild_scrabble.bat b/build/rebuild_scrabble.bat
+# (index — ignorable)
+index 71a8e99..93fdc2f 100644
+# (avant — fichier suivant)
+--- a/build/rebuild_scrabble.bat
+# (après — fichier suivant)
++++ b/build/rebuild_scrabble.bat
+# ── Zone modifiée : ligne 9 (7 ligne(s)) dans l'ancienne version → ligne 9 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -9,7 +9,7 @@ echo ============================================
+ echo.
+ 
+ REM --- 0. Verifier les dependances externes non versionnees -----------------
+-echo [0/7] Verification des dependances externes (hors git)...
++echo [0/9] Verification des dependances externes (hors git)...
+ if not exist ".tools\InnoSetup6\ISCC.exe" (
+     echo.
+     echo ERREUR : .tools\InnoSetup6\ISCC.exe introuvable.
+# ── Zone modifiée : ligne 38 (7 ligne(s)) dans l'ancienne version → ligne 38 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -38,7 +38,7 @@ REM build tourne directement sur le partage VirtualBox (\\VBOXSVR\...). On
+ REM copie donc tout ce qui est necessaire au build vers un dossier local
+ REM (C:\Temp\ScrabbleBuild), on construit entierement la-bas, puis on recopie
+ REM uniquement l'installeur final vers le partage.
+-echo [1/7] Copie des sources vers le repertoire de build local...
++echo [1/9] Copie des sources vers le repertoire de build local...
+ set "LOCALBUILD=C:\Temp\ScrabbleBuild"
+ if exist "%LOCALBUILD%" (
+     echo Nettoyage de l'ancien repertoire de build local...
+# ── Zone modifiée : ligne 64 (7 ligne(s)) dans l'ancienne version → ligne 64 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -64,7 +64,7 @@ echo.
+ pushd "%LOCALBUILD%"
+ 
+ REM --- 2. Preparer l'environnement virtuel de build -------------------------
+-echo [2/7] Verification de l'environnement virtuel de build...
++echo [2/9] Verification de l'environnement virtuel de build...
+ if not exist ".venv_build\Scripts\python.exe" (
+     echo .venv_build introuvable : creation en cours...
+     python -m venv .venv_build
+# ── Zone modifiée : ligne 98 (7 ligne(s)) dans l'ancienne version → ligne 98 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -98,7 +98,7 @@ if not exist ".venv_build\Scripts\python.exe" (
+ echo.
+ 
+ REM --- 3. Fermer Scrabble.exe s'il tourne encore ---------------------------
+-echo [3/7] Fermeture de Scrabble.exe si necessaire...
++echo [3/9] Fermeture de Scrabble.exe si necessaire...
+ tasklist /fi "imagename eq Scrabble.exe" 2>nul | find /i "Scrabble.exe" >nul
+ if not errorlevel 1 (
+     echo Scrabble.exe est en cours d'execution : fermeture...
+# ── Zone modifiée : ligne 110 (7 ligne(s)) dans l'ancienne version → ligne 110 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -110,7 +110,7 @@ if not errorlevel 1 (
+ echo.
+ 
+ REM --- 4. Lancer le build PyInstaller ---------------------------------------
+-echo [4/7] Build PyInstaller en cours (peut prendre plusieurs minutes)...
++echo [4/9] Build PyInstaller en cours (peut prendre plusieurs minutes)...
+ call ".venv_build\Scripts\pyinstaller.exe" scrabble.spec -y
+ if errorlevel 1 (
+     echo.
+# ── Zone modifiée : ligne 124 (7 ligne(s)) dans l'ancienne version → ligne 124 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -124,7 +124,7 @@ echo Build termine avec succes.
+ echo.
+ 
+ REM --- 5. Verifier le resultat ----------------------------------------------
+-echo [5/7] Verification du resultat...
++echo [5/9] Verification du resultat...
+ if exist "dist\Scrabble\Scrabble.exe" (
+     echo.
+     echo dist\Scrabble\ genere :
+# ── Zone modifiée : ligne 142 (8 ligne(s)) dans l'ancienne version → ligne 142 (43 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -142,8 +142,43 @@ if exist "dist\Scrabble\Scrabble.exe" (
+     exit /b 1
+ )
+ 
+-REM --- 6. Compiler l'installeur Windows (Inno Setup) ------------------------
+-echo [6/7] Compilation de l'installeur Inno Setup...
++REM --- 6. Telecharger et extraire Actualise.exe (issue #345) -----------------
++REM Actualise.exe est l'updater embarque dans l'installeur (cf. scrabble.iss,
++REM Source attendue : C:\Temp\ScrabbleBuild\Actualise.exe). Recupere depuis la
++REM Release v1 du depot AlainDelree/Actualise.
++echo [6/9] Telechargement d'Actualise.exe (updater)...
++set "ACTUALISE_URL=https://github.com/AlainDelree/Actualise/releases/download/v1/actualise.zip"
++set "ACTUALISE_ZIP=%LOCALBUILD%\actualise.zip"
++set "ACTUALISE_EXTRACT=%LOCALBUILD%\actualise_extract"
++powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; try { Invoke-WebRequest -Uri '%ACTUALISE_URL%' -OutFile '%ACTUALISE_ZIP%' -UseBasicParsing } catch { exit 1 }"
++if errorlevel 1 (
++    echo.
++    echo ERREUR : le telechargement d'actualise.zip a echoue ^(%ACTUALISE_URL%^).
++    popd
++    popd
++    exit /b 1
++)
++powershell -NoProfile -Command "try { Expand-Archive -Path '%ACTUALISE_ZIP%' -DestinationPath '%ACTUALISE_EXTRACT%' -Force } catch { exit 1 }"
++if errorlevel 1 (
++    echo.
++    echo ERREUR : l'extraction d'actualise.zip a echoue.
++    popd
++    popd
++    exit /b 1
++)
++powershell -NoProfile -Command "try { $exe = Get-ChildItem -Path '%ACTUALISE_EXTRACT%' -Recurse -Filter 'Actualise.exe' | Select-Object -First 1; if (-not $exe) { exit 1 }; Copy-Item -Path $exe.FullName -Destination '%LOCALBUILD%\Actualise.exe' -Force } catch { exit 1 }"
++if errorlevel 1 (
++    echo.
++    echo ERREUR : Actualise.exe introuvable dans actualise.zip, ou copie vers %LOCALBUILD% echouee.
++    popd
++    popd
++    exit /b 1
++)
++echo Actualise.exe pret : %LOCALBUILD%\Actualise.exe
++echo.
++
++REM --- 7. Compiler l'installeur Windows (Inno Setup) ------------------------
++echo [7/9] Compilation de l'installeur Inno Setup...
+ if not exist ".tools\InnoSetup6\ISCC.exe" (
+     echo.
+     echo ERREUR : .tools\InnoSetup6\ISCC.exe introuvable. Verifiez l'installation
+# ── Zone modifiée : ligne 165 (8 ligne(s)) dans l'ancienne version → ligne 200 (37 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -165,8 +200,37 @@ copy "C:\Temp\ScrabbleOutput\Scrabble-Setup.exe" "installeur\output\Scrabble-Set
+ echo [OK] Installeur copié vers installeur\output\ ^(local^)
+ echo.
+ 
+-REM --- 7. Recopier l'installeur vers le partage et nettoyer le local --------
+-echo [7/7] Recopie de l'installeur vers le partage et nettoyage du local...
++REM --- 8. Creer manifest.json et zipper vers scrabble.zip (issue #345) ------
++REM scrabble.zip = dist\Scrabble\ + manifest.json, sans dossier englobant
++REM (l'updater Actualise l'extrait directement par-dessus le dossier installe).
++REM Nom fixe (pas de numero de version) : le numero vit dans le tag de la
++REM Release GitHub, pas dans le nom de fichier.
++echo [8/9] Creation de manifest.json et de scrabble.zip...
++echo {"build": 1, "supprimer": []}>manifest.json
++if not exist "installeur\output" mkdir "installeur\output"
++if exist "installeur\output\scrabble.zip" del /f /q "installeur\output\scrabble.zip"
++powershell -NoProfile -Command "try { Compress-Archive -Path 'dist\Scrabble\*','manifest.json' -DestinationPath 'installeur\output\scrabble.zip' -Force } catch { exit 1 }"
++if errorlevel 1 (
++    echo.
++    echo ERREUR : la creation de scrabble.zip a echoue.
++    popd
++    popd
++    exit /b 1
++)
++if not exist "installeur\output\scrabble.zip" (
++    echo.
++    echo ERREUR : installeur\output\scrabble.zip introuvable apres compression.
++    popd
++    popd
++    exit /b 1
++)
++for /f "usebackq" %%s in (`powershell -NoProfile -Command "'{0:N2} Mo' -f ((Get-Item 'installeur\output\scrabble.zip').Length / 1MB)"`) do (
++    echo [OK] scrabble.zip genere, taille : %%s
++)
++echo.
++
++REM --- 9. Recopier l'installeur et le zip vers le partage, nettoyer le local -
++echo [9/9] Recopie vers le partage et nettoyage du local...
+ if not exist "%ORIGDIR%\installeur\output" mkdir "%ORIGDIR%\installeur\output"
+ copy /y "installeur\output\Scrabble-Setup.exe" "%ORIGDIR%\installeur\output\Scrabble-Setup.exe"
+ if errorlevel 1 (
+# ── Zone modifiée : ligne 177 (12 ligne(s)) dans l'ancienne version → ligne 241 (21 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -177,12 +241,21 @@ if errorlevel 1 (
+     exit /b 1
+ )
+ echo [OK] Installeur copié vers %ORIGDIR%\installeur\output\
++copy /y "installeur\output\scrabble.zip" "%ORIGDIR%\installeur\output\scrabble.zip"
++if errorlevel 1 (
++    echo.
++    echo ERREUR : la recopie de scrabble.zip vers le partage a echoue.
++    popd
++    popd
++    exit /b 1
++)
++echo [OK] scrabble.zip copié vers %ORIGDIR%\installeur\output\
+ 
+ popd
+ rmdir /s /q "%LOCALBUILD%"
+ echo [OK] Repertoire de build local nettoye ^(%LOCALBUILD%^)
+ echo.
+-echo installeur\output\Scrabble-Setup.exe genere.
++echo installeur\output\Scrabble-Setup.exe et installeur\output\scrabble.zip generes.
+ echo.
+ echo ============================================
+ echo   REBUILD TERMINE AVEC SUCCES

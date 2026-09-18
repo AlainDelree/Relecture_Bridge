@@ -1,0 +1,252 @@
+0b946ed
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 0b946ed
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Sun Aug 23 19:52:57 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Extrait onclick/style inline de #screen-retrans-game vers data-action + CSS (issue #231)
+    
+    Remplace les 10 onclick= : sendAction({type:'retranscription_undo'})
+    rejoint un nouveau case "retrans_undo". retransFlip() → case
+    "retrans_flip". retransSaveContinue() → case "retrans_save_continue".
+    Les 4 boutons retransEnd('1-0'/'0-1'/'1/2-1/2'/'*') sont consolidés en
+    un seul case "retrans_end" paramétré par data-result, sur le modèle des
+    consolidations déjà faites pour retrans_resume/retrans_select_tab/
+    retrans_set_camp (#230). ouvrirAidePanier() (porté par le <span>
+    .aide-panier-icone, pas un <button> — la délégation data-action
+    fonctionne identiquement) → case "aide_panier". basketAddRetrans() →
+    case "basket_add_retrans". retransQuitSansSauver() → case
+    "retrans_quit_sans_sauver". Toutes les fonctions JS appelées restent
+    inchangées ; seul le déclenchement passe par le switch délégué d'app.js.
+    
+    Remplace les 26 style= inline (dont la grille de layout portée par
+    #screen-retrans-game lui-même) par des classes dans main.css :
+    - #screen-retrans-game récupère sa propre règle CSS par id (display,
+      grid-template-columns:220px minmax(0,1fr) 200px, gap, padding,
+      overflow...), placée après la règle groupée #screen-menu/.../
+      #screen-retrans-game existante (qui ne définit pas ces propriétés,
+      donc aucun changement de rendu) — même pattern que #screen-game et
+      #screen-exercice-running juste au-dessus dans la feuille de style.
+    - .retrans-game-left/-center/-right/-history-card/-history/
+      -board-wrapper/-board-col/-player-top/-player-bottom/-hint/
+      -info-card/-title/-turn/-status/-actions-card pour la disposition et
+      les 2 cartes restées à "padding:14px" en inline.
+    - .retrans-game-btn-undo/-flip/-save-continue/-end-blancs/-end-noirs/
+      -end-nulle/-end-sauver/-corbeille/-quitter/-corbeille-row pour les
+      boutons d'action, valeurs strictement identiques à l'inline
+      d'origine.
+    
+    Aucun sélecteur e2e ne cible un onclick/style de ce bloc (grep
+    exhaustif sur nicsoft/tests/e2e/*.py — seule
+    test_retranscription_formulaire vérifie #screen-retranscription par
+    id, écran différent non affecté).
+    
+    Suite pytest complète (78 passed, 1 skipped, e2e inclus) au vert après
+    modification.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/nicsoft/web/static/app.js b/nicsoft/web/static/app.js
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 12a2ff9..b20249a 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/nicsoft/web/static/app.js
+# ── Version APRÈS ce commit.
++++ b/nicsoft/web/static/app.js
+# ── Zone modifiée : ligne 121 (6 ligne(s)) dans l'ancienne version → ligne 121 (27 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -121,6 +121,27 @@ document.addEventListener("click", (e) => {
+     case "start_retranscription":
+       startRetranscription();
+       break;
++    case "retrans_undo":
++      sendAction({ type: "retranscription_undo" });
++      break;
++    case "retrans_flip":
++      retransFlip();
++      break;
++    case "retrans_save_continue":
++      retransSaveContinue();
++      break;
++    case "retrans_end":
++      retransEnd(el.dataset.result);
++      break;
++    case "aide_panier":
++      ouvrirAidePanier();
++      break;
++    case "basket_add_retrans":
++      basketAddRetrans();
++      break;
++    case "retrans_quit_sans_sauver":
++      retransQuitSansSauver();
++      break;
+   }
+ });
+ 
+# (diff du fichier suivant)
+diff --git a/nicsoft/web/static/css/main.css b/nicsoft/web/static/css/main.css
+# (index — ignorable)
+index 9a84e84..3eec82f 100644
+# (avant — fichier suivant)
+--- a/nicsoft/web/static/css/main.css
+# (après — fichier suivant)
++++ b/nicsoft/web/static/css/main.css
+# ── Zone modifiée : ligne 190 (6 ligne(s)) dans l'ancienne version → ligne 190 (17 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -190,6 +190,17 @@
+       align-items: start;
+       overflow: hidden;
+     }
++    #screen-retrans-game {
++      display: none;
++      flex: 1;
++      grid-template-columns: 220px minmax(0, 1fr) 200px;
++      gap: 20px;
++      padding: 16px 20px;
++      width: 100%;
++      max-width: 100vw;
++      align-items: start;
++      overflow: hidden;
++    }
+     #screen-exercice-running {
+       display: none;
+       flex: 1;
+# ── Zone modifiée : ligne 1025 (6 ligne(s)) dans l'ancienne version → ligne 1036 (33 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1025,6 +1036,33 @@
+ .retrans-camp-btn-white-init { background:#e8c840; border:1px solid #e8c840; color:#d8e4f0; font-weight:bold; }
+ .retrans-camp-btn-black-init { background:#c2d4e8; border:1px solid #a0b8d0; color:#3a5a7a; }
+ 
++/* ── Écran "Retranscription" — partie en cours (issue #231) ── */
++.retrans-game-left { width:220px; display:flex; flex-direction:column; gap:10px; }
++.retrans-game-info-card { padding:14px; }
++.retrans-game-title { font-weight:bold; color:#e94560; margin-bottom:6px; }
++.retrans-game-turn { font-size:0.85rem; color:#445; margin-bottom:10px; }
++.retrans-game-status { font-size:0.82rem; color:#445; }
++.retrans-game-history-card { padding:14px; flex:1; overflow-y:auto; }
++.retrans-game-history { font-size:0.82rem; line-height:1.8; }
++.retrans-game-center { display:flex; flex-direction:column; align-items:center; gap:4px; }
++.retrans-game-player-top { font-size:0.85rem; font-weight:600; color:#445; padding:4px 0; text-align:center; width:100%; }
++.retrans-game-board-wrapper { min-width:0; display:flex; flex-direction:row; border:2px solid #a0b8d0; border-radius:4px; overflow:hidden; }
++.retrans-game-board-col { display:flex; flex-direction:column; }
++.retrans-game-player-bottom { font-size:0.85rem; font-weight:600; color:#1a2a3a; padding:4px 0; text-align:center; width:100%; }
++.retrans-game-hint { font-size:0.78rem; color:#3a5a7a; }
++.retrans-game-right { width:200px; display:flex; flex-direction:column; gap:10px; }
++.retrans-game-actions-card { padding:14px; }
++.retrans-game-btn-undo { width:100%; margin-bottom:8px; }
++.retrans-game-btn-flip { width:100%; margin-bottom:8px; background:#c2d4e8; border:1px solid #a0b8d0; color:#445; }
++.retrans-game-btn-save-continue { width:100%; margin-bottom:8px; display:none; }
++.retrans-game-btn-end-blancs { width:100%; margin-bottom:4px; background:#1a2a1a; color:#4caf50; border:1px solid #4caf50; }
++.retrans-game-btn-end-noirs { width:100%; margin-bottom:4px; background:#2a1a1a; color:#e94560; border:1px solid #e94560; }
++.retrans-game-btn-end-nulle { width:100%; margin-bottom:8px; background:#1a1a2a; color:#3a5a7a; border:1px solid #445; }
++.retrans-game-btn-end-sauver { width:100%; margin-bottom:4px; font-size:0.82rem; }
++.retrans-game-corbeille-row { display:flex; gap:6px; align-items:center; margin-bottom:4px; }
++.retrans-game-btn-corbeille { flex:1; margin-bottom:0; font-size:0.82rem; background:#2a5a4a; color:#e0e0e0; border:1px solid #1a4a3a; }
++.retrans-game-btn-quitter { width:100%; font-size:0.82rem; background:#c2d4e8; border:1px solid #333; color:#3a5a7a; }
++
+ /* ── Outil 1 — formulaire ajout ouverture ── */
+ .add-field { display:flex; flex-direction:column; gap:3px; }
+ .add-label { font-size:0.82rem; font-weight:600; color:#3a5a7a; }
+# (diff du fichier suivant)
+diff --git a/nicsoft/web/templates/index.html b/nicsoft/web/templates/index.html
+# (index — ignorable)
+index 1de4bfd..8277fd6 100644
+# (avant — fichier suivant)
+--- a/nicsoft/web/templates/index.html
+# (après — fichier suivant)
++++ b/nicsoft/web/templates/index.html
+# ── Zone modifiée : ligne 482 (62 ligne(s)) dans l'ancienne version → ligne 482 (47 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -482,62 +482,47 @@
+ </div>
+ 
+ <!-- ── Écran retranscription en cours ── -->
+-<div id="screen-retrans-game" style="display:none; flex:1; grid-template-columns:220px minmax(0,1fr) 200px; gap:20px; padding:16px 20px; width:100%; max-width:100vw; align-items:start; overflow:hidden;">
+-  <div id="retrans-left" style="width:220px; display:flex; flex-direction:column; gap:10px;">
+-    <div class="card" style="padding:14px;">
+-      <div id="retrans-title" style="font-weight:bold; color:#e94560; margin-bottom:6px;"></div>
+-      <div id="retrans-turn" style="font-size:0.85rem; color:#445; margin-bottom:10px;"></div>
+-      <div id="retrans-status" style="font-size:0.82rem; color:#445;"></div>
+-    </div>
+-    <div class="card" style="padding:14px; flex:1; overflow-y:auto;">
++<div id="screen-retrans-game">
++  <div id="retrans-left" class="retrans-game-left">
++    <div class="card retrans-game-info-card">
++      <div id="retrans-title" class="retrans-game-title"></div>
++      <div id="retrans-turn" class="retrans-game-turn"></div>
++      <div id="retrans-status" class="retrans-game-status"></div>
++    </div>
++    <div class="card retrans-game-history-card">
+       <h2 data-i18n="retrans.h2.coups">Coups</h2>
+-      <div id="retrans-history" style="font-size:0.82rem; line-height:1.8;"></div>
++      <div id="retrans-history" class="retrans-game-history"></div>
+     </div>
+   </div>
+ 
+-  <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+-    <div id="retrans-player-top" style="font-size:0.85rem; font-weight:600; color:#445; padding:4px 0; text-align:center; width:100%;"></div>
+-    <div id="retrans-board-wrapper" style="min-width:0; display:flex; flex-direction:row; border:2px solid #a0b8d0; border-radius:4px; overflow:hidden;">
++  <div class="retrans-game-center">
++    <div id="retrans-player-top" class="retrans-game-player-top"></div>
++    <div id="retrans-board-wrapper" class="retrans-game-board-wrapper">
+       <div id="retrans-coord-rank" class="coord-rank"></div>
+-      <div style="display:flex; flex-direction:column;">
++      <div class="retrans-game-board-col">
+         <div id="retrans-board" class="board"></div>
+         <div id="retrans-coord-file" class="coord-file"></div>
+       </div>
+     </div>
+-    <div id="retrans-player-bottom" style="font-size:0.85rem; font-weight:600; color:#1a2a3a; padding:4px 0; text-align:center; width:100%;"></div>
+-    <div style="font-size:0.78rem; color:#3a5a7a;" data-i18n="retrans.cliquer_jouer">Cliquez pour jouer</div>
++    <div id="retrans-player-bottom" class="retrans-game-player-bottom"></div>
++    <div class="retrans-game-hint" data-i18n="retrans.cliquer_jouer">Cliquez pour jouer</div>
+   </div>
+ 
+-  <div id="retrans-right" style="width:200px; display:flex; flex-direction:column; gap:10px;">
+-    <div class="card" style="padding:14px;">
++  <div id="retrans-right" class="retrans-game-right">
++    <div class="card retrans-game-actions-card">
+       <h2 data-i18n="retrans.h2.actions">Actions</h2>
+-      <button class="btn btn-warning" onclick="sendAction({type:'retranscription_undo'})"
+-        style="width:100%; margin-bottom:8px;" data-i18n="retrans.btn.undo">↩ Annuler coup</button>
+-      <button class="btn" onclick="retransFlip()"
+-        style="width:100%; margin-bottom:8px; background:#c2d4e8; border:1px solid #a0b8d0; color:#445;"
+-        data-i18n="retrans.btn.flip">⇅ Retourner l'échiquier</button>
+-      <button id="btn-retrans-save-continue" class="btn btn-continuer" onclick="retransSaveContinue()"
+-        style="width:100%; margin-bottom:8px; display:none;">💾 Sauver et continuer</button>
+-      <button class="btn" onclick="retransEnd('1-0')"
+-        style="width:100%; margin-bottom:4px; background:#1a2a1a; color:#4caf50; border:1px solid #4caf50;"
+-        data-i18n="retrans.blancs_gagnent">Blancs gagnent (1-0)</button>
+-      <button class="btn" onclick="retransEnd('0-1')"
+-        style="width:100%; margin-bottom:4px; background:#2a1a1a; color:#e94560; border:1px solid #e94560;"
+-        data-i18n="retrans.noirs_gagnent">Noirs gagnent (0-1)</button>
+-      <button class="btn" onclick="retransEnd('1/2-1/2')"
+-        style="width:100%; margin-bottom:8px; background:#1a1a2a; color:#3a5a7a; border:1px solid #445;"
+-        data-i18n="retrans.nulle">Nulle (½-½)</button>
+-      <button class="btn btn-continuer" onclick="retransEnd('*')"
+-        style="width:100%; margin-bottom:4px; font-size:0.82rem;" data-i18n="retrans.btn.sauver">← Sauver et quitter</button>
+-      <div style="display:flex; gap:6px; align-items:center; margin-bottom:4px;">
+-        <span class="aide-panier-icone" onclick="ouvrirAidePanier()" data-i18n-title="aide.panier.icone_title" title="Aide sur le classeur">?</span>
+-        <button class="btn" onclick="basketAddRetrans()"
+-          style="flex:1; margin-bottom:0; font-size:0.82rem; background:#2a5a4a; color:#e0e0e0; border:1px solid #1a4a3a;"
+-          data-i18n="retrans.btn.corbeille">🗂️ Ajouter au classeur</button>
+-      </div>
+-      <button class="btn" onclick="retransQuitSansSauver()"
+-        style="width:100%; font-size:0.82rem; background:#c2d4e8; border:1px solid #333; color:#3a5a7a;"
+-        data-i18n="retrans.btn.quitter">✕ Quitter sans sauver</button>
++      <button class="btn btn-warning retrans-game-btn-undo" data-action="retrans_undo" data-i18n="retrans.btn.undo">↩ Annuler coup</button>
++      <button class="btn retrans-game-btn-flip" data-action="retrans_flip" data-i18n="retrans.btn.flip">⇅ Retourner l'échiquier</button>
++      <button id="btn-retrans-save-continue" class="btn btn-continuer retrans-game-btn-save-continue" data-action="retrans_save_continue">💾 Sauver et continuer</button>
++      <button class="btn retrans-game-btn-end-blancs" data-action="retrans_end" data-result="1-0" data-i18n="retrans.blancs_gagnent">Blancs gagnent (1-0)</button>
++      <button class="btn retrans-game-btn-end-noirs" data-action="retrans_end" data-result="0-1" data-i18n="retrans.noirs_gagnent">Noirs gagnent (0-1)</button>
++      <button class="btn retrans-game-btn-end-nulle" data-action="retrans_end" data-result="1/2-1/2" data-i18n="retrans.nulle">Nulle (½-½)</button>
++      <button class="btn btn-continuer retrans-game-btn-end-sauver" data-action="retrans_end" data-result="*" data-i18n="retrans.btn.sauver">← Sauver et quitter</button>
++      <div class="retrans-game-corbeille-row">
++        <span class="aide-panier-icone" data-action="aide_panier" data-i18n-title="aide.panier.icone_title" title="Aide sur le classeur">?</span>
++        <button class="btn retrans-game-btn-corbeille" data-action="basket_add_retrans" data-i18n="retrans.btn.corbeille">🗂️ Ajouter au classeur</button>
++      </div>
++      <button class="btn retrans-game-btn-quitter" data-action="retrans_quit_sans_sauver" data-i18n="retrans.btn.quitter">✕ Quitter sans sauver</button>
+     </div>
+   </div>
+ </div>

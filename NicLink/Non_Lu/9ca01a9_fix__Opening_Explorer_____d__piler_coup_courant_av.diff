@@ -1,0 +1,23 @@
+9ca01a9
+
+commit 9ca01a9
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Fri Aug 14 17:28:37 2026 +0200
+
+    fix: Opening Explorer — dépiler coup courant avant alternative dans choose_move (issue #146)
+
+diff --git a/nicsoft/modes/opening_explorer/explorer_session.py b/nicsoft/modes/opening_explorer/explorer_session.py
+index 9106d3d..db614d5 100644
+--- a/nicsoft/modes/opening_explorer/explorer_session.py
++++ b/nicsoft/modes/opening_explorer/explorer_session.py
+@@ -79,6 +79,10 @@ class ExplorerSession:
+         Utilisé quand l'utilisateur clique sur une alternative du tableau.
+         Le coup doit être légal sur le board courant. Retourne get_state()
+         après application, ou get_state() inchangé si le coup est illégal."""
++        # Revenir à la position depuis laquelle les alternatives sont calculées
++        if self._history:
++            self._history.pop()
++            self.board.pop()
+         try:
+             move = chess.Move.from_uci(uci)
+         except Exception:

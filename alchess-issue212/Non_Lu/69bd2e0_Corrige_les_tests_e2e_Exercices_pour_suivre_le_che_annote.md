@@ -1,0 +1,99 @@
+69bd2e0
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 69bd2e0
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Sat Aug 22 10:43:42 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Corrige les tests e2e Exercices pour suivre le chemin menu → Ouvertures → carte (issue #212)
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/CHANGELOG-212.md b/CHANGELOG-212.md
+# ── Ce fichier n'existait pas avant ce commit : il vient d'être créé.
+new file mode 100644
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 0000000..7183cb1
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- /dev/null
+# ── Version APRÈS ce commit.
++++ b/CHANGELOG-212.md
+# ── Zone modifiée : ligne 0 (0 ligne(s)) dans l'ancienne version → ligne 1 (28 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -0,0 +1,28 @@
++# Changelog — Issue #212
++
++## Tests e2e Exercices mis à jour pour le nouveau chemin de navigation
++
++`test_exercices_liste_affichee` et `test_retour_depuis_exercices`
++(`nicsoft/tests/e2e/test_smoke_e2e.py`) ciblaient encore le bouton direct
++"Exercices" du menu principal, retiré au commit e648146 (issue #141,
++réorganisation "Ouvertures"). Le chemin actuel comporte 2 étapes : clic sur
++le bouton du wrapper `#wrap-ouvertures` (mène à `#screen-ouvertures`), puis
++clic sur la carte `.outil-card-clickable` portant
++`onclick="_menuCardLaunch('exercices', this)"` (mène à `#screen-exercices`).
++
++Ajout d'un helper `go_exercices(page)` qui suit ce chemin en 2 étapes avec
++des sélecteurs indépendants de la langue (même approche que le fix #208) :
++- `#wrap-ouvertures button` — id déjà unique, pas de filtre sur le texte.
++- `.outil-card-clickable[onclick*="'exercices'"]` — fragment d'attribut
++  `onclick`, indépendant des libellés traduits ("📖 Openings"/"📚 Exercises"
++  en anglais, langue par défaut de l'environnement de test).
++
++Vérifié : aucune autre référence à l'ancien sélecteur
++`button, has_text="📚 Exercices"` dans le fichier. Le bouton "← Menu" de
++retour depuis `#screen-exercices` (ligne ~873 de `index.html`) est du texte
++brut sans `data-i18n`, donc déjà indépendant de la locale — inchangé.
++
++Suite `nicsoft/tests/e2e/test_smoke_e2e.py` complète : 12 passed, 1 skipped
++(hardware), aucune régression.
++
++Backup pinné : `avant-fix-e2e-exercices-navigation-issue212`.
+# (diff du fichier suivant)
+diff --git a/nicsoft/tests/e2e/test_smoke_e2e.py b/nicsoft/tests/e2e/test_smoke_e2e.py
+# (index — ignorable)
+index 64a81ba..6c1051a 100644
+# (avant — fichier suivant)
+--- a/nicsoft/tests/e2e/test_smoke_e2e.py
+# (après — fichier suivant)
++++ b/nicsoft/tests/e2e/test_smoke_e2e.py
+# ── Zone modifiée : ligne 121 (21 ligne(s)) dans l'ancienne version → ligne 121 (29 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -121,21 +121,29 @@ def test_retour_depuis_analyse(at_menu):
+ 
+ # ── Navigation Exercices ───────────────────────────────────────────────────────
+ 
++def go_exercices(page):
++    """Menu → Ouvertures → carte Exercices (chemin en 2 étapes depuis issue #141).
++
++    Sélecteurs indépendants de la locale (issue #212, même approche que #208) :
++    #wrap-ouvertures button est un id unique, et le fragment d'attribut
++    onclick*="'exercices'" ne dépend pas du texte affiché à l'écran.
++    """
++    page.locator("#wrap-ouvertures button").click()
++    page.wait_for_selector("#screen-ouvertures", state="visible", timeout=5000)
++    page.locator(".outil-card-clickable[onclick*=\"'exercices'\"]").click()
++    page.wait_for_selector("#screen-exercices", state="visible", timeout=5000)
++
++
+ def test_exercices_liste_affichee(at_menu):
+-    """Exercices → liste des ouvertures s'affiche."""
+-    btn_ex = at_menu.locator("button", has_text="📚 Exercices")
+-    if btn_ex.is_disabled():
+-        pytest.skip("Exercices nécessite un échiquier ou mode virtuel non détecté")
+-    btn_ex.click()
+-    at_menu.wait_for_selector("#screen-exercices", state="visible", timeout=5000)
++    """Menu → Ouvertures → Exercices : liste des ouvertures s'affiche."""
++    go_exercices(at_menu)
+     assert at_menu.locator("#screen-exercices").is_visible()
+ 
+ 
+ def test_retour_depuis_exercices(at_menu):
+     """Exercices → retour menu propre."""
+     if not at_menu.locator("#screen-exercices").is_visible():
+-        at_menu.locator("button", has_text="📚 Exercices").click()
+-        at_menu.wait_for_selector("#screen-exercices", state="visible", timeout=5000)
++        go_exercices(at_menu)
+ 
+     at_menu.locator("#screen-exercices button", has_text="Menu").first.click()
+     at_menu.wait_for_selector("#screen-menu", state="visible", timeout=5000)

@@ -1,0 +1,22 @@
+15fd612
+
+commit 15fd612
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Wed Jul 29 08:47:05 2026 +0200
+
+    Issue #322 : animation pioche — retirer le guard mon_tour, conserver le diff (suite #321)
+
+diff --git a/src/scrabble/ui/web/jeu.js b/src/scrabble/ui/web/jeu.js
+index 13ef2f8..b076425 100644
+--- a/src/scrabble/ui/web/jeu.js
++++ b/src/scrabble/ui/web/jeu.js
+@@ -1049,8 +1049,7 @@ document.addEventListener('DOMContentLoaded', async () => {
+             // premier affichage (rien n'est « arrivé », c'est l'état initial), ni
+             // si une animation est déjà en cours (mise à jour rapprochée : on
+             // rebâtit directement pour rester synchrone avec Python).
+-            const arrivees = (premierAppel || animationPiocheEnCours
+-                              || !etatChevalet.mon_tour)
++            const arrivees = (premierAppel || animationPiocheEnCours)
+                 ? []
+                 : nouvellesLettresArrivees(anciennesLettres,
+                                            etatChevalet.lettres || []);

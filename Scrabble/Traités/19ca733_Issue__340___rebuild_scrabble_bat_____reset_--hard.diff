@@ -1,0 +1,22 @@
+19ca733
+
+commit 19ca733
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Fri Jul 31 17:47:40 2026 +0200
+
+    Issue #340 : rebuild_scrabble.bat — reset --hard origin/master du clone CCW en fin de build
+
+diff --git a/build/rebuild_scrabble.bat b/build/rebuild_scrabble.bat
+index 148c54b..71a8e99 100644
+--- a/build/rebuild_scrabble.bat
++++ b/build/rebuild_scrabble.bat
+@@ -192,5 +192,9 @@ echo Rappel : lancez Scrabble.exe vous-meme depuis cette session
+ echo interactive pour verifier que tout fonctionne bien
+ echo ^(WebView2, dictionnaire, interface^).
+ echo.
++echo Nettoyage du clone CCW (reset commits locaux)...
++git -C Z:\CCW\scrabble reset --hard origin/master
++echo Clone CCW propre.
++echo.
+ popd
+ exit /b 0

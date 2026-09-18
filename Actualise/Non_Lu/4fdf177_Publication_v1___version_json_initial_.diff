@@ -1,0 +1,15 @@
+4fdf177
+
+commit 4fdf177
+Author: Alain Delree <alain.delree@gmail.com>
+Date:   Mon Aug 3 01:08:09 2026 +0200
+
+    Publication v1 : version.json initial
+
+diff --git a/version.json b/version.json
+new file mode 100644
+index 0000000..0c05d7a
+--- /dev/null
++++ b/version.json
+@@ -0,0 +1 @@
++{"build": 1, "sha256": "adcef67c4c66779a4e09df4c43c15124476b66411d05e1b1847c10b772f06ac8"}

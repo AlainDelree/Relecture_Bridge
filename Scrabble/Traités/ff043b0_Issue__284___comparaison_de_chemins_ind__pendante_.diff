@@ -1,0 +1,32 @@
+ff043b0
+
+commit ff043b0
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Sun Jul 26 01:35:42 2026 +0200
+
+    Issue #284 : comparaison de chemins indépendante de la plateforme dans test_docstring_liste_fichiers_coherente
+    
+    os.path.basename(f) remplace f.split("/")[-1] pour extraire le nom de
+    fichier, robuste sous Windows (chemins avec \\) et Linux (chemins avec /).
+
+diff --git a/tests/test_jeu_docstring.py b/tests/test_jeu_docstring.py
+index 9e89948..7aa5bad 100644
+--- a/tests/test_jeu_docstring.py
++++ b/tests/test_jeu_docstring.py
+@@ -1,6 +1,7 @@
+ """Garde-fou : vérifie que la docstring de test_jeu.py liste exactement les fichiers test_jeu_*.py existants (issue #265)."""
+ 
+ import glob
++import os
+ import re
+ 
+ 
+@@ -11,7 +12,7 @@ def test_docstring_liste_fichiers_coherente():
+     mentionnes = set(re.findall(r"(test_jeu_\w+\.py)", docstring))
+ 
+     existants = {
+-        f.split("/")[-1]
++        os.path.basename(f)
+         for f in glob.glob("tests/test_jeu_*.py")
+         if not f.endswith("test_jeu_docstring.py")
+     }

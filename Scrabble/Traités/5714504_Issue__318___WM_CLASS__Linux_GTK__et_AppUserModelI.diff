@@ -1,0 +1,33 @@
+5714504
+
+commit 5714504
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Wed Jul 29 08:24:27 2026 +0200
+
+    Issue #318 : WM_CLASS (Linux/GTK) et AppUserModelID (Windows) pour afficher "Scrabble" dans la barre des tâches
+
+diff --git a/main.py b/main.py
+index 15cb776..7a58f6e 100644
+--- a/main.py
++++ b/main.py
+@@ -31,4 +31,20 @@ if not getattr(sys, "frozen", False):
+ from scrabble.ui.application import main  # noqa: E402
+ 
+ if __name__ == "__main__":
++    # Identification de l'application dans la barre des tâches (issue #318),
++    # à faire avant le premier (et unique) ``webview.start()`` (déclenché par
++    # ``main()`` ci-dessous).
++    if sys.platform == "win32":
++        import ctypes
++
++        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Scrabble")
++    elif sys.platform.startswith("linux"):
++        import gi
++
++        gi.require_version("Gtk", "3.0")
++        from gi.repository import GLib
++
++        GLib.set_prgname("Scrabble")
++        GLib.set_application_name("Scrabble")
++
+     raise SystemExit(main())

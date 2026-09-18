@@ -1,0 +1,1412 @@
+ed74a4b
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit ed74a4b
+# ── Qui a fait ce commit.
+Author: CCL agent <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Sun Aug 9 14:38:39 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Issue #404 : refonte niveaux — tests et scripts (D/4)
+    
+    Aligne tests/ et scripts/ sur le nouveau mapping de niveaux IA (issue #400,
+    lot A #401 déjà mergé) : DEBUTANT top 70 %, FACILE top 33 %, INTERMEDIAIRE
+    top 15 %, AVANCE meilleur coup, EXPERT top 5 %/ODS8 complet, CHAMPION_DU_MONDE
+    inchangé.
+    
+    - test_moteur_ia.py : tests de monotonie/stratégie par niveau réécrits pour
+      les nouvelles tranches (nouvelle TestExpert, _NIVEAUX_SANS_PALIER).
+    - test_accueil.py : disponibilité/construction du Trie IA alignées sur EXPERT
+      traité comme CHAMPION_DU_MONDE (toujours disponible, sans palier).
+    - test_dictionnaire.py / test_generer_mots_courants.py : alignés sur les
+      quatre paliers de fichier restants (plus de clé "expert").
+    - scripts/generer_mots_courants.py : SEUILS_PALIER/ORDRE_PALIERS réduits à
+      4 paliers, docstring/CLI mis à jour.
+    - scripts/mesurer_force_niveaux.py : docstring (exemples, câblage
+      vocabulaire) mise à jour.
+    - scripts/_harness_jeu/ : mocks obtenir_niveaux resynchronisés sur les 6
+      niveaux réels, configs niveau:'avance'/'expert' corrigées en majuscules.
+    - test_moteur_partie.py, test_persistance.py, test_jeu_serialisation.py,
+      test_accueil_niveaux_visuels.py et les petits fichiers test_jeu_*/
+      test_application.py/test_journal_integration.py audités : aucun changement
+      nécessaire (niveaux utilisés comme valeur de config arbitraire).
+    
+    pytest tests/ : 891 passed, 9 failed — 4 échecs attendus (issue #402/B4 non
+    mergée dans cette branche : dictionnaire.py garde encore la clé "expert"),
+    5 échecs préexistants sans rapport (vérifiés via git stash), détail dans
+    CHANGELOG-404.md.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/CHANGELOG-404.md b/CHANGELOG-404.md
+# ── Ce fichier n'existait pas avant ce commit : il vient d'être créé.
+new file mode 100644
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 0000000..a2a524c
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- /dev/null
+# ── Version APRÈS ce commit.
++++ b/CHANGELOG-404.md
+# ── Zone modifiée : ligne 0 (0 ligne(s)) dans l'ancienne version → ligne 1 (61 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -0,0 +1,61 @@
++# Issue #404 : refonte niveaux — tests et scripts (D/4)
++
++Dernier lot de la refonte de l'échelle des niveaux IA (issue #400) : aligne
++`tests/` et `scripts/` sur le nouveau mapping (DEBUTANT top 70 %, FACILE
++top 33 %, INTERMEDIAIRE top 15 %, AVANCE meilleur coup, EXPERT top 5 %/ODS8
++complet, CHAMPION_DU_MONDE inchangé).
++
++- `tests/test_moteur_ia.py` : tests de monotonie et de stratégie par niveau
++  entièrement réécrits pour les nouvelles tranches ; nouvelle classe
++  `TestExpert` (top 5 %) ; `_NIVEAUX_SANS_PALIER` pour simuler le câblage
++  vocabulaire réel (EXPERT et CHAMPION_DU_MONDE sur le Trie complet, les
++  quatre autres niveaux sur leur palier restreint).
++- `tests/test_accueil.py` : disponibilité et construction du Trie IA
++  alignées sur EXPERT traité comme CHAMPION_DU_MONDE (toujours disponible,
++  sans fichier de palier) ; nouveaux tests dédiés
++  (`test_expert_toujours_disponible`,
++  `test_construire_trie_ia_expert_reutilise_trie_complet`, etc.).
++  `tests/test_accueil_niveaux_visuels.py` : aucun changement nécessaire
++  (contenu purement CSS/HTML/JS, non affecté).
++- `tests/test_dictionnaire.py` et `tests/test_generer_mots_courants.py` :
++  alignés sur les quatre paliers de fichier restants (debutant/facile/
++  intermediaire/avance, plus de clé "expert").
++- `tests/test_moteur_partie.py`, `test_persistance.py`,
++  `test_jeu_serialisation.py` et les petits fichiers `test_jeu_*`/
++  `test_application.py`/`test_journal_integration.py`/`_aides_test_jeu.py` :
++  audités, aucun changement nécessaire (les niveaux n'y servent que de
++  valeur de configuration arbitraire, sans dépendre de la stratégie précise
++  d'un niveau). `test_config.py` confirmé sans rapport avec l'enum `Niveau`
++  (clé `"niveau_ia"` vestige indépendante).
++- `scripts/generer_mots_courants.py` : `SEUILS_PALIER`/`ORDRE_PALIERS`
++  réduits aux quatre paliers restants, docstring et messages CLI mis à jour
++  (suppression de toute référence au palier "expert").
++- `scripts/mesurer_force_niveaux.py` : docstring (exemples de commandes,
++  description du câblage vocabulaire) mise à jour — EXPERT rejoint
++  CHAMPION_DU_MONDE comme niveau sans palier restreint.
++- `scripts/_harness_jeu/verif_296_webkitgtk.py` et
++  `verif_belgicisme_292_webkitgtk.py` : mock `obtenir_niveaux` étendu aux
++  six niveaux réels (au lieu de quatre) ; configurations de joueurs IA
++  `niveau:'avance'`/`niveau:'expert'` corrigées en `'AVANCE'`/`'EXPERT'`
++  (noms d'enum en majuscules, format réellement envoyé par l'API réelle).
++
++## Résultat des tests
++
++`pytest tests/ -q --timeout=120` : **891 passed, 9 failed** (sur 900 tests).
++
++- **4 échecs attendus**, dus à l'issue #402 (B/4, `dictionnaire.py`/
++  `accueil.py`) pas encore mergée dans cette branche — `dictionnaire.py` y a
++  toujours l'ancien `FICHIERS_VOCABULAIRE_PALIER` à 5 clés (avec "expert") :
++  `test_dictionnaire.py::test_fichiers_vocabulaire_palier_quatre_entrees_sous_dossier_dico`,
++  `test_dictionnaire.py::test_fichiers_cache_ia_palier_meme_cles_que_vocabulaire_et_chemins_distincts`,
++  `test_generer_mots_courants.py::test_ordre_et_seuils_paliers_couvrent_les_memes_cles`,
++  `test_moteur_ia.py::TestResoudrePalier::test_paliers_resolus_correspondent_aux_cles_du_vocabulaire_ia`.
++  Passeront dès que #402 sera mergé dans cette branche.
++- **5 échecs préexistants, sans rapport avec la refonte des niveaux**
++  (vérifiés identiques avant nos modifications, via `git stash`) :
++  `test_accueil.py::TestApiAccueilInfosTirage::test_infos_tirage_memorisees`
++  (fichiers de vocabulaire par palier absents du disque dans cet
++  environnement de dev), `test_application.py::TestRoutageVueActive::…` et
++  `test_application.py::TestParcoursCompletUnifie::…` (thème persisté par un
++  `config.json` local), `test_journal_integration.py::TestJournalAccueil::…`
++  ×2 (assertions sur le contenu exact des messages de journal).
+# (diff du fichier suivant)
+diff --git a/scripts/_harness_jeu/verif_296_webkitgtk.py b/scripts/_harness_jeu/verif_296_webkitgtk.py
+# (index — ignorable)
+index 0807560..14c4be7 100644
+# (avant — fichier suivant)
+--- a/scripts/_harness_jeu/verif_296_webkitgtk.py
+# (après — fichier suivant)
++++ b/scripts/_harness_jeu/verif_296_webkitgtk.py
+# ── Zone modifiée : ligne 34 (7 ligne(s)) dans l'ancienne version → ligne 34 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -34,7 +34,7 @@ setTimeout(() => {
+       peut_ajouter_humain: true, peut_ajouter_ordinateur: true, peut_lancer: false,
+       mode_belgicisme: false,
+     }),
+-    obtenir_niveaux: async () => ['Débutant','Facile','Intermédiaire','Expert'],
++    obtenir_niveaux: async () => ['Débutant','Facile','Intermédiaire','Avancé','Expert','Champion du monde'],
+     lister_parties_en_cours: async () => [],
+     obtenir_prenom_principal: async () => 'Alain',
+     definir_mode_belgicisme: async (actif) => {
+# ── Zone modifiée : ligne 55 (14 ligne(s)) dans l'ancienne version → ligne 55 (14 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -55,14 +55,14 @@ setTimeout(() => {
+       joueurs: [
+         {nom:'Alain', humain:true, niveau:null},
+         {nom:'Béatrice', humain:true, niveau:null},
+-        {nom:'Ordinateur 1', humain:false, niveau:'avance'},
+-        {nom:'Ordinateur 2', humain:false, niveau:'expert'},
++        {nom:'Ordinateur 1', humain:false, niveau:'AVANCE'},
++        {nom:'Ordinateur 2', humain:false, niveau:'EXPERT'},
+       ],
+       nb_humains: 2, nb_ordinateurs: 2, nb_total: 4,
+       peut_ajouter_humain: false, peut_ajouter_ordinateur: false, peut_lancer: true,
+       mode_belgicisme: false,
+     }),
+-    obtenir_niveaux: async () => ['Débutant','Facile','Intermédiaire','Expert'],
++    obtenir_niveaux: async () => ['Débutant','Facile','Intermédiaire','Avancé','Expert','Champion du monde'],
+     lister_parties_en_cours: async () => [
+       {
+         id: 1,
+# (diff du fichier suivant)
+diff --git a/scripts/_harness_jeu/verif_belgicisme_292_webkitgtk.py b/scripts/_harness_jeu/verif_belgicisme_292_webkitgtk.py
+# (index — ignorable)
+index 8491302..d9ec2a6 100644
+# (avant — fichier suivant)
+--- a/scripts/_harness_jeu/verif_belgicisme_292_webkitgtk.py
+# (après — fichier suivant)
++++ b/scripts/_harness_jeu/verif_belgicisme_292_webkitgtk.py
+# ── Zone modifiée : ligne 50 (7 ligne(s)) dans l'ancienne version → ligne 50 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -50,7 +50,7 @@ setTimeout(() => {
+       peut_ajouter_humain: true, peut_ajouter_ordinateur: true, peut_lancer: false,
+       mode_belgicisme: false,
+     }),
+-    obtenir_niveaux: async () => ['Débutant','Facile','Intermédiaire','Expert'],
++    obtenir_niveaux: async () => ['Débutant','Facile','Intermédiaire','Avancé','Expert','Champion du monde'],
+     lister_parties_en_cours: async () => [],
+     obtenir_prenom_principal: async () => 'Alain',
+     definir_mode_belgicisme: async (actif) => {
+# ── Zone modifiée : ligne 74 (14 ligne(s)) dans l'ancienne version → ligne 74 (14 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -74,14 +74,14 @@ setTimeout(() => {
+       joueurs: [
+         {nom:'Alain', humain:true, niveau:null},
+         {nom:'Béatrice', humain:true, niveau:null},
+-        {nom:'Ordinateur 1', humain:false, niveau:'avance'},
+-        {nom:'Ordinateur 2', humain:false, niveau:'expert'},
++        {nom:'Ordinateur 1', humain:false, niveau:'AVANCE'},
++        {nom:'Ordinateur 2', humain:false, niveau:'EXPERT'},
+       ],
+       nb_humains: 2, nb_ordinateurs: 2, nb_total: 4,
+       peut_ajouter_humain: false, peut_ajouter_ordinateur: false, peut_lancer: true,
+       mode_belgicisme: false,
+     }),
+-    obtenir_niveaux: async () => ['Débutant','Facile','Intermédiaire','Expert'],
++    obtenir_niveaux: async () => ['Débutant','Facile','Intermédiaire','Avancé','Expert','Champion du monde'],
+     lister_parties_en_cours: async () => [
+       {
+         id: 1,
+# (diff du fichier suivant)
+diff --git a/scripts/generer_mots_courants.py b/scripts/generer_mots_courants.py
+# (index — ignorable)
+index 9619b20..aec81a7 100644
+# (avant — fichier suivant)
+--- a/scripts/generer_mots_courants.py
+# (après — fichier suivant)
++++ b/scripts/generer_mots_courants.py
+# ── Zone modifiée : ligne 57 (27 ligne(s)) dans l'ancienne version → ligne 57 (17 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -57,27 +57,17 @@ est directement relisible par ``lire_liste_mots`` (même convention que
+ ``mots_ajoutes_*`` / ``classiques_ajoutes.txt``) : l'issue C n'aura qu'à charger
+ cet ensemble et le croiser avec le dictionnaire actif.
+ 
+-Vocabulaire IA par palier (issue #366, lot A)
+-----------------------------------------------
+-Le rapport de lecture #366 découpe le vocabulaire de l'IA en six paliers de
+-richesse croissante. Cinq d'entre eux sont de simples variantes de seuil du
+-même croisement ODS8 × Lexique (:data:`SEUILS_PALIER`, noms de fichiers dans
+-``scrabble.dictionnaire.dictionnaire.FICHIERS_VOCABULAIRE_PALIER``, réutilisés
+-tels quels par le futur lot C) ; le sixième (« champion du monde ») est l'ODS8
+-complet et ne nécessite **aucun fichier** — il se résout directement vers
+-``obtenir_trie()``. L'option ``--tous`` (voir Usage) produit les cinq fichiers
+-en une seule commande.
+-
+-Le palier « expert » correspond à l'**intersection brute** Lexique × ODS8,
+-sans seuil de fréquence : on l'obtient avec ``seuil=0.0`` passé à
+-:func:`selectionner_mots_courants`. Ceci rend bien l'intersection brute et pas
+-un sous-ensemble tronqué : la comparaison de seuil est large (``>=``, pas
+-``>``) et aucune fréquence de Lexique n'est négative (occurrences par
+-million), donc toute forme présente dans Lexique — y compris à fréquence
+-mesurée nulle — passe le test ``frequence >= 0``. ``seuil=0.0`` et
+-« présence dans Lexique sans condition » (:func:`mesurer_couverture`,
+-``intersection_brute``) sont donc rigoureusement équivalents ; vérifié par
+-``test_selection_seuil_zero_egale_intersection_brute``.
++Vocabulaire IA par palier (issue #366, lot A ; refonte issue #401/#404)
++------------------------------------------------------------------------
++Le rapport de lecture #366 découpe le vocabulaire de l'IA en paliers de
++richesse croissante. La refonte de l'échelle de niveaux (issue #400) ramène
++ce découpage à **quatre** paliers de fichier (:data:`SEUILS_PALIER`, noms de
++fichiers dans ``scrabble.dictionnaire.dictionnaire.FICHIERS_VOCABULAIRE_PALIER``,
++réutilisés tels quels par le lot C) : EXPERT et CHAMPION_DU_MONDE jouent tous
++deux sur l'ODS8 complet et ne nécessitent **aucun fichier** — ils se résolvent
++directement vers ``obtenir_trie()`` (voir :func:`~scrabble.moteur.ia.resoudre_palier`).
++L'option ``--tous`` (voir Usage) produit les quatre fichiers en une seule
++commande.
+ 
+ Écrasement des fichiers de palier
+ ----------------------------------
+# ── Zone modifiée : ligne 95 (7 ligne(s)) dans l'ancienne version → ligne 85 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -95,7 +85,7 @@ Usage
+     python scripts/generer_mots_courants.py --dry-run  # mesure seule, sans écrire
+     python scripts/generer_mots_courants.py --seuil 2  # seuil 2/million
+     python scripts/generer_mots_courants.py --corpus livres  # freqlivres seul
+-    python scripts/generer_mots_courants.py --tous     # les 5 fichiers de palier
++    python scripts/generer_mots_courants.py --tous     # les 4 fichiers de palier
+ 
+ Nécessite l'ODS8 et ``Lexique383.tsv`` présents dans ``data/dictionnaire/``.
+ """
+# ── Zone modifiée : ligne 124 (8 ligne(s)) dans l'ancienne version → ligne 114 (8 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -124,8 +114,8 @@ CHEMIN_LEXIQUE = DOSSIER_DICO / "Lexique383.tsv"
+ CHEMIN_MOTS_COURANTS = DOSSIER_DICO / "mots_courants.txt"
+ 
+ # Seuils de fréquence (occ./million) par palier de vocabulaire IA (issue #366,
+-# lot A). « expert » = 0.0 : intersection brute, sans condition de fréquence
+-# (voir le docstring du module). Noms de fichiers dans
++# lot A ; refonte #401/#404 : EXPERT et CHAMPION_DU_MONDE n'ont plus de palier
++# de fichier, voir le docstring du module). Noms de fichiers dans
+ # ``FICHIERS_VOCABULAIRE_PALIER`` (module ``dictionnaire``, réutilisée telle
+ # quelle pour que le lot C n'ait qu'une seule source de vérité pour les noms).
+ SEUILS_PALIER: dict[str, float] = {
+# ── Zone modifiée : ligne 133 (7 ligne(s)) dans l'ancienne version → ligne 123 (6 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -133,7 +123,6 @@ SEUILS_PALIER: dict[str, float] = {
+     "facile": 2.0,
+     "intermediaire": 1.0,
+     "avance": 0.5,
+-    "expert": 0.0,
+ }
+ 
+ # Ordre d'affichage/génération : du vocabulaire le plus restreint au plus large.
+# ── Zone modifiée : ligne 142 (7 ligne(s)) dans l'ancienne version → ligne 131 (6 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -142,7 +131,6 @@ ORDRE_PALIERS: tuple[str, ...] = (
+     "facile",
+     "intermediaire",
+     "avance",
+-    "expert",
+ )
+ 
+ # Corpus de fréquence sélectionnables et colonnes Lexique correspondantes.
+# ── Zone modifiée : ligne 256 (7 ligne(s)) dans l'ancienne version → ligne 244 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -256,7 +244,7 @@ def generer_tous_paliers(
+     corpus: str = CORPUS_DEFAUT,
+     dry_run: bool = False,
+ ) -> list[tuple[str, int]]:
+-    """Produit les cinq fichiers de vocabulaire IA par palier (``--tous``, issue #366).
++    """Produit les quatre fichiers de vocabulaire IA par palier (``--tous``, issue #366).
+ 
+     Un fichier par palier de :data:`ORDRE_PALIERS`, chacun filtré au seuil
+     :data:`SEUILS_PALIER` correspondant et écrit à l'emplacement
+# ── Zone modifiée : ligne 362 (7 ligne(s)) dans l'ancienne version → ligne 350 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -362,7 +350,7 @@ def main(argv: list[str] | None = None) -> int:
+         "--tous",
+         action="store_true",
+         help=(
+-            "génère les cinq fichiers de vocabulaire par palier (issue #366) "
++            "génère les quatre fichiers de vocabulaire par palier (issue #366) "
+             "en une commande, aux emplacements conventionnels ; incompatible "
+             "avec --sortie/--seuil (un seuil par palier est imposé)"
+         ),
+# ── Zone modifiée : ligne 402 (7 ligne(s)) dans l'ancienne version → ligne 390 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -402,7 +390,7 @@ def main(argv: list[str] | None = None) -> int:
+     afficher_couverture(stats)
+ 
+     if args.tous:
+-        print("\nGénération des cinq fichiers de vocabulaire par palier :")
++        print("\nGénération des quatre fichiers de vocabulaire par palier :")
+         resultats = generer_tous_paliers(frequences, mots_ods, args.corpus, args.dry_run)
+         print("\nRécapitulatif :")
+         for palier, effectif in resultats:
+# (diff du fichier suivant)
+diff --git a/scripts/mesurer_force_niveaux.py b/scripts/mesurer_force_niveaux.py
+# (index — ignorable)
+index 619fdda..26ff6f3 100644
+# (avant — fichier suivant)
+--- a/scripts/mesurer_force_niveaux.py
+# (après — fichier suivant)
++++ b/scripts/mesurer_force_niveaux.py
+# ── Zone modifiée : ligne 55 (8 ligne(s)) dans l'ancienne version → ligne 55 (10 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -55,8 +55,10 @@ niveau. Une configuration se compose de :
+ Vocabulaire par palier
+ ----------------------
+ Depuis le lot C (#369), chaque niveau du jeu réel génère ses coups sur un Trie
+-**restreint à son palier de fréquence** (CHAMPION_DU_MONDE seul utilise l'ODS8
+-complet). Le mode ``--vocab`` choisit ce que le script reproduit :
++**restreint à son palier de fréquence** — sauf EXPERT et CHAMPION_DU_MONDE, qui
++utilisent tous deux l'ODS8 complet (issue #401 : EXPERT a rejoint
++CHAMPION_DU_MONDE hors palier restreint). Le mode ``--vocab`` choisit ce que
++le script reproduit :
+ 
+ * ``complet`` (défaut, comportement historique #362) : les deux camps génèrent
+   sur l'ODS8 complet, quel que soit le niveau. Utile pour isoler l'effet de la
+# ── Zone modifiée : ligne 67 (10 ligne(s)) dans l'ancienne version → ligne 69 (10 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -67,10 +69,10 @@ complet). Le mode ``--vocab`` choisit ce que le script reproduit :
+ 
+ ``--vocab-a``/``--vocab-b`` forcent un vocabulaire précis pour un camp,
+ indépendamment de son niveau et du mode ``--vocab`` global. Valeurs possibles :
+-``debutant``, ``facile``, ``intermediaire``, ``avance``, ``expert`` (paliers
+-restreints) ou ``complet`` (ODS8 entier). Si le fichier de vocabulaire d'un
+-palier requis est absent, le script s'arrête avec un message clair, comme il le
+-fait déjà pour l'ODS8.
++``debutant``, ``facile``, ``intermediaire``, ``avance`` (paliers restreints)
++ou ``complet`` (ODS8 entier, issue #401 : plus de palier ``expert`` séparé).
++Si le fichier de vocabulaire d'un palier requis est absent, le script s'arrête
++avec un message clair, comme il le fait déjà pour l'ODS8.
+ 
+ Comparer deux runs
+ ------------------
+# ── Zone modifiée : ligne 114 (10 ligne(s)) dans l'ancienne version → ligne 116 (11 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -114,10 +116,11 @@ niveau avec malus 0, dans la même partie, mêmes graines ::
+         --malus-a -25 --malus-b 0 --parties 200 --csv malus.csv
+ 
+ Effet du vocabulaire à stratégie constante — un EXPERT jouant sur le palier
+-``avance`` contre un EXPERT jouant sur son palier normal ::
++restreint ``avance`` contre un EXPERT jouant sur l'ODS8 complet (son
++vocabulaire normal depuis l'issue #401) ::
+ 
+     python scripts/mesurer_force_niveaux.py EXPERT EXPERT \\
+-        --vocab-a avance --vocab-b expert --parties 200
++        --vocab-a avance --vocab-b complet --parties 200
+ 
+ Effet de la tranche (stratégie) à vocabulaire constant — AVANCE contre EXPERT,
+ tous deux sur l'ODS8 complet ::
+# (diff du fichier suivant)
+diff --git a/tests/test_accueil.py b/tests/test_accueil.py
+# (index — ignorable)
+index 1e0bb7d..d3c3926 100644
+# (avant — fichier suivant)
+--- a/tests/test_accueil.py
+# (après — fichier suivant)
++++ b/tests/test_accueil.py
+# ── Zone modifiée : ligne 308 (7 ligne(s)) dans l'ancienne version → ligne 308 (11 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -308,7 +308,11 @@ class TestDisponibiliteNiveaux:
+         self, monkeypatch
+     ):
+         """Un palier absent est signalé indisponible, avec message (issue #370, lot E :
+-        le vocabulaire par palier s'applique désormais sans condition)."""
++        le vocabulaire par palier s'applique désormais sans condition).
++
++        Depuis la refonte des niveaux (issue #400/#402), ``paliers_disponibles()``
++        ne couvre plus que les 4 niveaux à palier restreint (EXPERT n'en a
++        plus, voir :class:`TestDisponibiliteNiveaux`)."""
+         from scrabble.ui.accueil import ApiAccueil
+ 
+         monkeypatch.setattr(
+# ── Zone modifiée : ligne 318 (7 ligne(s)) dans l'ancienne version → ligne 322 (6 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -318,7 +322,6 @@ class TestDisponibiliteNiveaux:
+                 "facile": True,
+                 "intermediaire": True,
+                 "avance": True,
+-                "expert": True,
+             },
+         )
+         api = ApiAccueil()
+# ── Zone modifiée : ligne 363 (11 ligne(s)) dans l'ancienne version → ligne 366 (11 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -363,11 +366,11 @@ class TestDisponibiliteNiveaux:
+ 
+         monkeypatch.setattr(
+             "scrabble.ui.accueil.paliers_disponibles",
+-            lambda: {"debutant": False, "expert": True},
++            lambda: {"debutant": False, "facile": True},
+         )
+         api = ApiAccueil()
+ 
+-        result = api.ajouter_ordinateur("Expert")
++        result = api.ajouter_ordinateur("Facile")
+ 
+         assert result["succes"] is True
+         assert api.config_partie.nb_ordinateurs == 1
+# ── Zone modifiée : ligne 380 (13 ligne(s)) dans l'ancienne version → ligne 383 (46 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -380,13 +383,46 @@ class TestDisponibiliteNiveaux:
+         assert disponible is True
+         assert message is None
+ 
++    def test_expert_toujours_disponible(self):
++        """EXPERT ne dépend d'aucun fichier : toujours disponible, comme
++        CHAMPION_DU_MONDE (refonte des niveaux, issue #400/#402 : EXPERT joue
++        désormais sur l'ODS8 complet, sans palier de vocabulaire restreint)."""
++        from scrabble.ui.accueil import _disponibilite_niveau
++
++        disponible, message = _disponibilite_niveau(Niveau.EXPERT)
++        assert disponible is True
++        assert message is None
++
++    def test_expert_disponible_meme_sans_fichier_de_palier_expert(self, monkeypatch):
++        """EXPERT ne consulte plus ``paliers_disponibles()`` du tout (issue
++        #400/#402) : même avec une table de paliers ne couvrant plus que les 4
++        niveaux à vocabulaire restreint (plus de clé ``"expert"``), EXPERT
++        reste disponible."""
++        from scrabble.ui.accueil import _disponibilite_niveau
++
++        monkeypatch.setattr(
++            "scrabble.ui.accueil.paliers_disponibles",
++            lambda: {
++                "debutant": True,
++                "facile": True,
++                "intermediaire": True,
++                "avance": True,
++            },
++        )
++        disponible, message = _disponibilite_niveau(Niveau.EXPERT)
++        assert disponible is True
++        assert message is None
++
+     def test_reprise_avec_niveau_stocke_devenu_indisponible_ne_plante_pas(
+         self, monkeypatch
+     ):
+         """Reprise d'une partie sauvegardée dont le niveau est devenu indisponible.
+ 
+         Doit renvoyer une erreur exploitable par le JS (retour à l'accueil),
+-        pas planter (issue #369, point 5).
++        pas planter (issue #369, point 5). Utilise AVANCE (et non EXPERT) : ce
++        dernier n'a plus de palier de vocabulaire restreint depuis la refonte
++        des niveaux (issue #400/#402) et ne peut donc plus jamais devenir
++        indisponible.
+         """
+         from scrabble.dictionnaire.dictionnaire import Trie
+         from scrabble.ui.accueil import ApiAccueil
+# ── Zone modifiée : ligne 398 (17 ligne(s)) dans l'ancienne version → ligne 434 (17 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -398,17 +434,17 @@ class TestDisponibiliteNiveaux:
+         )
+         monkeypatch.setattr(
+             "scrabble.ui.accueil.niveaux_ia_stockes",
+-            lambda id_partie: [Niveau.EXPERT],
++            lambda id_partie: [Niveau.AVANCE],
+         )
+         monkeypatch.setattr(
+-            "scrabble.ui.accueil.paliers_disponibles", lambda: {"expert": False}
++            "scrabble.ui.accueil.paliers_disponibles", lambda: {"avance": False}
+         )
+ 
+         api = ApiAccueil()
+         result = api.reprendre(99)
+ 
+         assert result["succes"] is False
+-        assert "Expert en erreur" in result["erreur"]
++        assert "Avancé en erreur" in result["erreur"]
+         assert api._partie is None
+ 
+ 
+# ── Zone modifiée : ligne 683 (7 ligne(s)) dans l'ancienne version → ligne 719 (10 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -683,7 +719,10 @@ class TestSourceDictionnaireAppliquee:
+         """_construire_trie_ia(source, niveaux) transmet la source à obtenir_trie_ia.
+ 
+         Vérifie aussi (issue #369, lot C) que le mapping renvoyé indexe le Trie
+-        obtenu par le niveau demandé.
++        obtenu par le niveau demandé. Utilise AVANCE (et non EXPERT) : depuis
++        la refonte des niveaux (issue #400/#402), EXPERT n'a plus de palier
++        restreint et ne passe donc plus par ``obtenir_trie_ia`` (voir
++        :meth:`test_construire_trie_ia_expert_reutilise_trie_complet`).
+         """
+         from scrabble.moteur.ia import Niveau
+         from scrabble.ui.accueil import ApiAccueil
+# ── Zone modifiée : ligne 691 (7 ligne(s)) dans l'ancienne version → ligne 730 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -691,7 +730,7 @@ class TestSourceDictionnaireAppliquee:
+ 
+         appels: list[str] = []
+         monkeypatch.setattr(
+-            "scrabble.ui.accueil.paliers_disponibles", lambda: {"expert": True}
++            "scrabble.ui.accueil.paliers_disponibles", lambda: {"avance": True}
+         )
+         monkeypatch.setattr(
+             "scrabble.ui.accueil.obtenir_trie_ia",
+# ── Zone modifiée : ligne 699 (8 ligne(s)) dans l'ancienne version → ligne 738 (8 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -699,8 +738,8 @@ class TestSourceDictionnaireAppliquee:
+             or Trie.depuis_iterable(["TEST"]),
+         )
+ 
+-        tries_ia = ApiAccueil._construire_trie_ia("hunspell", [Niveau.EXPERT])
+-        assert Niveau.EXPERT in tries_ia
++        tries_ia = ApiAccueil._construire_trie_ia("hunspell", [Niveau.AVANCE])
++        assert Niveau.AVANCE in tries_ia
+         assert appels == ["hunspell"]
+ 
+     def test_construire_trie_ia_champion_du_monde_reutilise_trie_complet(
+# ── Zone modifiée : ligne 729 (15 ligne(s)) dans l'ancienne version → ligne 768 (71 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -729,15 +768,71 @@ class TestSourceDictionnaireAppliquee:
+         assert tries_ia == {Niveau.CHAMPION_DU_MONDE: trie_complet}
+         assert appels_ia == []  # jamais de palier restreint pour ce niveau
+ 
++    def test_construire_trie_ia_expert_reutilise_trie_complet(self, monkeypatch):
++        """EXPERT reçoit le Trie complet, exactement comme CHAMPION_DU_MONDE.
++
++        Depuis la refonte des niveaux (issue #400/#402), EXPERT joue sur
++        l'ODS8 complet sans palier de vocabulaire restreint : il réutilise
++        ``trie_complet`` sans jamais appeler ``obtenir_trie_ia``.
++        """
++        from scrabble.moteur.ia import Niveau
++        from scrabble.ui.accueil import ApiAccueil
++        from scrabble.dictionnaire.dictionnaire import Trie
++
++        appels_ia: list[str] = []
++        monkeypatch.setattr(
++            "scrabble.ui.accueil.obtenir_trie_ia",
++            lambda source="ods", **_: appels_ia.append(source),
++        )
++        trie_complet = Trie.depuis_iterable(["TEST"])
++
++        tries_ia = ApiAccueil._construire_trie_ia(
++            "ods", [Niveau.EXPERT], trie_complet=trie_complet
++        )
++
++        assert tries_ia == {Niveau.EXPERT: trie_complet}
++        assert appels_ia == []  # jamais de palier restreint pour ce niveau
++
+     def test_construire_trie_ia_charge_uniquement_les_paliers_presents(
+         self, monkeypatch
+     ):
+         """Chargement paresseux (issue #369, point 3) : seuls les paliers PRÉSENTS.
+ 
+-        Une table avec Débutant + Expert (2 IA) ne doit construire que 2
+-        paliers, jamais les cinq — le rapport #366 chiffre un Trie complet à
++        Une table avec Débutant + Avancé (2 IA) ne doit construire que 2
++        paliers, jamais les quatre — le rapport #366 chiffre un Trie complet à
+         plusieurs dizaines de Mo, inutile de charger un palier absent de la
+-        table.
++        table. Utilise AVANCE (et non EXPERT, sans palier depuis la refonte
++        des niveaux, issue #400/#402) pour exercer ce chargement paresseux par
++        palier restreint.
++        """
++        from scrabble.moteur.ia import Niveau
++        from scrabble.ui.accueil import ApiAccueil
++        from scrabble.dictionnaire.dictionnaire import Trie
++
++        appels: list[str] = []
++        monkeypatch.setattr(
++            "scrabble.ui.accueil.paliers_disponibles",
++            lambda: {p: True for p in ("debutant", "facile", "intermediaire", "avance")},
++        )
++        monkeypatch.setattr(
++            "scrabble.ui.accueil.obtenir_trie_ia",
++            lambda source="ods", palier=None, **_: appels.append(palier)
++            or Trie.depuis_iterable(["TEST"]),
++        )
++
++        tries_ia = ApiAccueil._construire_trie_ia(
++            "ods", [Niveau.DEBUTANT, Niveau.AVANCE]
++        )
++
++        assert set(tries_ia) == {Niveau.DEBUTANT, Niveau.AVANCE}
++        assert set(appels) == {"debutant", "avance"}  # jamais facile/intermediaire
++
++    def test_construire_trie_ia_expert_ne_charge_jamais_de_palier(self, monkeypatch):
++        """EXPERT n'apparaît jamais dans les paliers chargés par obtenir_trie_ia.
++
++        Contrairement aux 4 premiers niveaux, EXPERT (comme CHAMPION_DU_MONDE)
++        ne consulte aucun fichier de vocabulaire par palier depuis la refonte
++        des niveaux (issue #400/#402) : seul le Trie complet est utilisé.
+         """
+         from scrabble.moteur.ia import Niveau
+         from scrabble.ui.accueil import ApiAccueil
+# ── Zone modifiée : ligne 746 (20 ligne(s)) dans l'ancienne version → ligne 841 (24 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -746,20 +841,24 @@ class TestSourceDictionnaireAppliquee:
+         appels: list[str] = []
+         monkeypatch.setattr(
+             "scrabble.ui.accueil.paliers_disponibles",
+-            lambda: {p: True for p in ("debutant", "facile", "intermediaire", "avance", "expert")},
++            lambda: {p: True for p in ("debutant", "facile", "intermediaire", "avance")},
+         )
+         monkeypatch.setattr(
+             "scrabble.ui.accueil.obtenir_trie_ia",
+             lambda source="ods", palier=None, **_: appels.append(palier)
+             or Trie.depuis_iterable(["TEST"]),
+         )
++        monkeypatch.setattr(
++            "scrabble.ui.accueil.obtenir_trie",
++            lambda source="ods", **_: Trie.depuis_iterable(["TEST"]),
++        )
+ 
+         tries_ia = ApiAccueil._construire_trie_ia(
+             "ods", [Niveau.DEBUTANT, Niveau.EXPERT]
+         )
+ 
+         assert set(tries_ia) == {Niveau.DEBUTANT, Niveau.EXPERT}
+-        assert set(appels) == {"debutant", "expert"}  # jamais facile/intermediaire/avance
++        assert appels == ["debutant"]
+ 
+     def test_construire_trie_ia_niveau_indisponible_leve(self, monkeypatch):
+         """Un palier requis mais indisponible lève ValueError (issue #369, point 5).
+# ── Zone modifiée : ligne 767 (17 ligne(s)) dans l'ancienne version → ligne 866 (19 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -767,17 +866,19 @@ class TestSourceDictionnaireAppliquee:
+         Filet de sécurité : la sélection est censée être bloquée en amont à
+         l'accueil (:meth:`~scrabble.ui.accueil.ApiAccueil.ajouter_ordinateur`),
+         mais une partie sauvegardée peut redemander un niveau devenu
+-        indisponible depuis (ex. reprise).
++        indisponible depuis (ex. reprise). Utilise AVANCE (et non EXPERT, qui
++        depuis la refonte des niveaux — issue #400/#402 — n'a plus de palier
++        et ne peut donc plus jamais devenir indisponible).
+         """
+         from scrabble.moteur.ia import Niveau
+         from scrabble.ui.accueil import ApiAccueil
+ 
+         monkeypatch.setattr(
+-            "scrabble.ui.accueil.paliers_disponibles", lambda: {"expert": False}
++            "scrabble.ui.accueil.paliers_disponibles", lambda: {"avance": False}
+         )
+ 
+-        with pytest.raises(ValueError, match="Expert en erreur"):
+-            ApiAccueil._construire_trie_ia("ods", [Niveau.EXPERT])
++        with pytest.raises(ValueError, match="Avancé en erreur"):
++            ApiAccueil._construire_trie_ia("ods", [Niveau.AVANCE])
+ 
+     def test_lancer_partie_hunspell_valide_mot_hunspell_rejette_ods(
+         self, monkeypatch
+# (diff du fichier suivant)
+diff --git a/tests/test_dictionnaire.py b/tests/test_dictionnaire.py
+# (index — ignorable)
+index 2e03a14..ef63112 100644
+# (avant — fichier suivant)
+--- a/tests/test_dictionnaire.py
+# (après — fichier suivant)
++++ b/tests/test_dictionnaire.py
+# ── Zone modifiée : ligne 57 (26 ligne(s)) dans l'ancienne version → ligne 57 (27 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -57,26 +57,27 @@ from scrabble.dictionnaire.dictionnaire import (
+ # Vocabulaire IA par palier (issue #366, lot A)
+ # --------------------------------------------------------------------------- #
+ 
+-def test_fichiers_vocabulaire_palier_cinq_entrees_sous_dossier_dico():
+-    """La constante de mapping palier → fichier couvre les cinq paliers filtrés.
++def test_fichiers_vocabulaire_palier_quatre_entrees_sous_dossier_dico():
++    """La constante de mapping palier → fichier couvre les quatre paliers filtrés.
+ 
+-    Le sixième palier (« champion du monde », ODS8 complet) n'a volontairement
+-    aucune entrée : il se résout vers :func:`obtenir_trie`, sans fichier.
++    Depuis la refonte de l'échelle de niveaux (issue #400/#402), EXPERT et
++    CHAMPION_DU_MONDE (ODS8 complet) n'ont volontairement aucune entrée : ils
++    se résolvent tous deux vers :func:`obtenir_trie`, sans fichier.
+     """
+     assert set(FICHIERS_VOCABULAIRE_PALIER) == {
+         "debutant",
+         "facile",
+         "intermediaire",
+         "avance",
+-        "expert",
+     }
++    assert "expert" not in FICHIERS_VOCABULAIRE_PALIER
+     assert "champion_du_monde" not in FICHIERS_VOCABULAIRE_PALIER
+     noms = set()
+     for palier, chemin in FICHIERS_VOCABULAIRE_PALIER.items():
+         assert chemin.parent == DOSSIER_DICO
+         assert chemin.name == f"mots_courants_{palier}.txt"
+         noms.add(chemin.name)
+-    assert len(noms) == 5  # aucun doublon de nom de fichier entre paliers
++    assert len(noms) == 4  # aucun doublon de nom de fichier entre paliers
+ 
+ 
+ # --------------------------------------------------------------------------- #
+# ── Zone modifiée : ligne 90 (17 ligne(s)) dans l'ancienne version → ligne 91 (19 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -90,17 +91,19 @@ def test_fichiers_cache_ia_palier_meme_cles_que_vocabulaire_et_chemins_distincts
+     cache fixe unique partagé entre paliers ferait écraser silencieusement le
+     cache d'un palier par le suivant. Un chemin distinct par palier, dérivé de
+     :data:`FICHIERS_VOCABULAIRE_PALIER` (même source de vérité), élimine ce
+-    risque. Le palier « champion_du_monde » n'a pas d'entrée : il réutilise le
+-    cache du Trie complet via :func:`obtenir_trie`.
++    risque. Depuis la refonte #400/#402, les paliers EXPERT et
++    « champion_du_monde » n'ont pas d'entrée : ils réutilisent le cache du
++    Trie complet via :func:`obtenir_trie`.
+     """
+     assert set(FICHIERS_CACHE_IA_PALIER) == set(FICHIERS_VOCABULAIRE_PALIER)
++    assert "expert" not in FICHIERS_CACHE_IA_PALIER
+     assert "champion_du_monde" not in FICHIERS_CACHE_IA_PALIER
+     noms = set()
+     for palier, chemin in FICHIERS_CACHE_IA_PALIER.items():
+         assert chemin.parent == DOSSIER_DICO
+         assert chemin.name == f"trie_ia_cache_{palier}.pkl"
+         noms.add(chemin.name)
+-    assert len(noms) == 5  # aucun doublon de nom de fichier entre paliers
++    assert len(noms) == 4  # aucun doublon de nom de fichier entre paliers
+ 
+ 
+ # --------------------------------------------------------------------------- #
+# ── Zone modifiée : ligne 135 (7 ligne(s)) dans l'ancienne version → ligne 138 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -135,7 +138,7 @@ def test_paliers_disponibles_signale_le_fichier_manquant(tmp_path):
+ 
+ 
+ def test_paliers_disponibles_defaut_utilise_fichiers_vocabulaire_palier():
+-    """Sans argument, porte sur les cinq vrais paliers de production."""
++    """Sans argument, porte sur les quatre vrais paliers de production."""
+     assert set(paliers_disponibles()) == set(FICHIERS_VOCABULAIRE_PALIER)
+ 
+ 
+# (diff du fichier suivant)
+diff --git a/tests/test_generer_mots_courants.py b/tests/test_generer_mots_courants.py
+# (index — ignorable)
+index bedc600..b2111f1 100644
+# (avant — fichier suivant)
+--- a/tests/test_generer_mots_courants.py
+# (après — fichier suivant)
++++ b/tests/test_generer_mots_courants.py
+# ── Zone modifiée : ligne 173 (7 ligne(s)) dans l'ancienne version → ligne 173 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -173,7 +173,7 @@ def test_mesure_couverture_intersection_et_balayage(tmp_path):
+ 
+ 
+ # --------------------------------------------------------------------------- #
+-# Palier « expert » : seuil 0 == intersection brute (issue #366, lot A)
++# Seuil 0 == intersection brute (issue #366, lot A)
+ # --------------------------------------------------------------------------- #
+ 
+ def test_selection_seuil_zero_egale_intersection_brute(tmp_path):
+# ── Zone modifiée : ligne 181 (8 ligne(s)) dans l'ancienne version → ligne 181 (10 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -181,8 +181,10 @@ def test_selection_seuil_zero_egale_intersection_brute(tmp_path):
+ 
+     Y compris pour une forme à fréquence mesurée nulle dans les deux corpus :
+     la comparaison est large (``>=``), pas stricte, donc rien n'est exclu à
+-    tort — c'est cette propriété que le palier Expert exploite (voir le
+-    docstring du script).
++    tort. Note (refonte #400/#404) : ce comportement à seuil 0 n'est plus
++    exploité par un palier de fichier — depuis la refonte, EXPERT et
++    CHAMPION_DU_MONDE jouent directement sur l'ODS8 complet, sans passer par
++    un fichier de vocabulaire filtré (voir :data:`SEUILS_PALIER` plus bas).
+     """
+     lexique = tmp_path / "lex.tsv"
+     _ecrire_lexique(
+# ── Zone modifiée : ligne 205 (21 ligne(s)) dans l'ancienne version → ligne 207 (25 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -205,21 +207,25 @@ def test_selection_seuil_zero_egale_intersection_brute(tmp_path):
+ 
+ 
+ # --------------------------------------------------------------------------- #
+-# Mode --tous : cinq paliers en une commande (issue #366, lot A)
++# Mode --tous : quatre paliers en une commande (issue #366, lot A ; refonte #400/#404)
+ # --------------------------------------------------------------------------- #
+ 
+ def test_ordre_et_seuils_paliers_couvrent_les_memes_cles():
+     """``ORDRE_PALIERS``, ``SEUILS_PALIER`` et ``FICHIERS_VOCABULAIRE_PALIER``.
+ 
+-    doivent porter exactement les mêmes cinq paliers, sans quoi
++    doivent porter exactement les mêmes quatre paliers, sans quoi
+     :func:`generer_tous_paliers` lèverait un ``KeyError`` à l'exécution.
++    Depuis la refonte de l'échelle de niveaux (issue #400/#404), EXPERT et
++    CHAMPION_DU_MONDE n'ont plus de palier de fichier (ODS8 complet) : il ne
++    reste que debutant/facile/intermediaire/avance.
+     """
+     assert set(gmc.ORDRE_PALIERS) == set(gmc.SEUILS_PALIER)
+     assert set(gmc.ORDRE_PALIERS) == set(gmc.FICHIERS_VOCABULAIRE_PALIER)
+-    assert len(gmc.ORDRE_PALIERS) == 5
++    assert set(gmc.ORDRE_PALIERS) == {"debutant", "facile", "intermediaire", "avance"}
++    assert len(gmc.ORDRE_PALIERS) == 4
+ 
+ 
+-def test_generer_tous_paliers_ecrit_les_cinq_fichiers(tmp_path, monkeypatch):
++def test_generer_tous_paliers_ecrit_les_quatre_fichiers(tmp_path, monkeypatch):
+     """``generer_tous_paliers`` écrit un fichier par palier, filtré à son seuil."""
+     chemins = {palier: tmp_path / f"{palier}.txt" for palier in gmc.ORDRE_PALIERS}
+     monkeypatch.setattr(gmc, "FICHIERS_VOCABULAIRE_PALIER", chemins)
+# ── Zone modifiée : ligne 229 (9 ligne(s)) dans l'ancienne version → ligne 235 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -229,9 +235,9 @@ def test_generer_tous_paliers_ecrit_les_cinq_fichiers(tmp_path, monkeypatch):
+         lexique,
+         [
+             ("tres", 10.0, 10.0),      # >= 3.0 : dans tous les paliers
+-            ("moyen", 1.5, 1.5),       # >= 1.0 mais < 2.0 : intermédiaire/avancé/expert
+-            ("faible", 0.6, 0.6),      # >= 0.5 mais < 1.0 : avancé/expert seuls
+-            ("nul", 0.0, 0.0),         # présent mais fréquence nulle : expert seul
++            ("moyen", 1.5, 1.5),       # >= 1.0 mais < 2.0 : intermédiaire/avancé
++            ("faible", 0.6, 0.6),      # >= 0.5 mais < 1.0 : avancé seul
++            ("nul", 0.0, 0.0),         # présent mais fréquence nulle : aucun palier
+         ],
+     )
+     freq = gmc.lire_frequences_lexique(lexique)
+# ── Zone modifiée : ligne 244 (7 ligne(s)) dans l'ancienne version → ligne 250 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -244,7 +250,7 @@ def test_generer_tous_paliers_ecrit_les_cinq_fichiers(tmp_path, monkeypatch):
+     assert effectifs["facile"] == 1       # TRES seul (seuil 2.0)
+     assert effectifs["intermediaire"] == 2  # TRES + MOYEN (seuil 1.0)
+     assert effectifs["avance"] == 3       # + FAIBLE (seuil 0.5)
+-    assert effectifs["expert"] == 4       # + NUL (seuil 0.0, intersection brute)
++    assert "expert" not in effectifs      # plus de palier de fichier pour EXPERT
+ 
+     for palier, chemin in chemins.items():
+         assert chemin.exists()
+# ── Zone modifiée : ligne 253 (7 ligne(s)) dans l'ancienne version → ligne 259 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -253,7 +259,7 @@ def test_generer_tous_paliers_ecrit_les_cinq_fichiers(tmp_path, monkeypatch):
+ 
+ 
+ def test_generer_tous_paliers_dry_run_ecrit_rien(tmp_path, monkeypatch):
+-    """``dry_run=True`` mesure sans écrire aucun des cinq fichiers."""
++    """``dry_run=True`` mesure sans écrire aucun des quatre fichiers."""
+     chemins = {palier: tmp_path / f"{palier}.txt" for palier in gmc.ORDRE_PALIERS}
+     monkeypatch.setattr(gmc, "FICHIERS_VOCABULAIRE_PALIER", chemins)
+ 
+# ── Zone modifiée : ligne 268 (7 ligne(s)) dans l'ancienne version → ligne 274 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -268,7 +274,7 @@ def test_generer_tous_paliers_dry_run_ecrit_rien(tmp_path, monkeypatch):
+ 
+ 
+ def test_main_tous_produit_le_recapitulatif(tmp_path, monkeypatch, capsys):
+-    """``main(["--tous"])`` génère les cinq fichiers et affiche un récapitulatif."""
++    """``main(["--tous"])`` génère les quatre fichiers et affiche un récapitulatif."""
+     chemins = {palier: tmp_path / f"{palier}.txt" for palier in gmc.ORDRE_PALIERS}
+     monkeypatch.setattr(gmc, "FICHIERS_VOCABULAIRE_PALIER", chemins)
+     monkeypatch.setattr(gmc, "charger_ods", lambda: {"MAISON", "ZEBRE"})
+# (diff du fichier suivant)
+diff --git a/tests/test_moteur_ia.py b/tests/test_moteur_ia.py
+# (index — ignorable)
+index 2aa912f..ff9d448 100644
+# (avant — fichier suivant)
+--- a/tests/test_moteur_ia.py
+# (après — fichier suivant)
++++ b/tests/test_moteur_ia.py
+# ── Zone modifiée : ligne 1 (22 ligne(s)) dans l'ancienne version → ligne 1 (28 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,22 +1,28 @@
+ """Tests des stratégies IA à niveaux de difficulté.
+ 
+-Couvre les 6 niveaux (EXPERT, CHAMPION_DU_MONDE, AVANCE, INTERMEDIAIRE,
+-FACILE, DEBUTANT) sur la base du générateur exhaustif, la reproductibilité
++Couvre les 6 niveaux (DEBUTANT, FACILE, INTERMEDIAIRE, AVANCE, EXPERT,
++CHAMPION_DU_MONDE) sur la base du générateur exhaustif, la reproductibilité
+ avec graine fixée, les cas limites (un seul coup, aucun coup), et
+ l'intégration avec Partie/creer_partie.
+ 
+-CHAMPION_DU_MONDE et EXPERT partagent EXACTEMENT la même stratégie de
+-sélection (:func:`~scrabble.moteur.ia._choisir_expert`) : à dictionnaire
+-identique, les deux niveaux restent mécaniquement égaux — c'est ce que
+-vérifient la plupart des tests ci-dessous, qui appellent
+-``choisir_coup(..., dico, niveau, ...)`` avec un seul ``dico`` partagé. Ce
+-qui les distingue en jeu réel est le vocabulaire reçu en paramètre, câblé par
+-l'appelant (issue #369, lot C, voir ``scrabble.moteur.ia.resoudre_palier`` et
+-``scrabble.ui.accueil``) : EXPERT sur le Trie restreint du palier
+-``"expert"``, CHAMPION_DU_MONDE sur le Trie complet. Les tests de monotonie
+-de ``TestProgressionTrieIaRestreint`` simulent ce câblage en donnant
+-explicitement un dictionnaire plus large à CHAMPION_DU_MONDE
+-(``dico_champion``), pour vérifier l'inégalité stricte qui en résulte.
++Échelle refondue par l'issue #401 (sur la base du rapport #400) : chaque
++niveau reprend la stratégie de sélection d'un ancien niveau plus fort, ce qui
++resserre l'échelle vers le haut, et EXPERT devient un niveau à part entière
++intercalé entre AVANCE et CHAMPION_DU_MONDE. AVANCE et CHAMPION_DU_MONDE
++partagent EXACTEMENT la même stratégie de sélection (:func:`~scrabble.moteur.ia._choisir_avance`,
++meilleur coup) : à dictionnaire identique, les deux niveaux restent
++mécaniquement égaux — c'est ce que vérifient la plupart des tests
++ci-dessous, qui appellent ``choisir_coup(..., dico, niveau, ...)`` avec un
++seul ``dico`` partagé. Ce qui les distingue en jeu réel est le vocabulaire
++reçu en paramètre, câblé par l'appelant (issue #369, lot C, voir
++``scrabble.moteur.ia.resoudre_palier`` et ``scrabble.ui.accueil``) : AVANCE
++sur le Trie restreint du palier ``"avance"``, CHAMPION_DU_MONDE sur le Trie
++complet. EXPERT, lui, change à la fois de stratégie (top 5 % plutôt que
++meilleur coup) et de vocabulaire (Trie complet ODS8, comme CHAMPION_DU_MONDE
++— ``resoudre_palier`` renvoie ``None`` pour les deux, issue #401). Les tests
++de monotonie de ``TestProgressionTrieIaRestreint`` simulent ce câblage en
++donnant explicitement le dictionnaire complet à EXPERT et CHAMPION_DU_MONDE
++(``dico_champion``), pour vérifier l'inégalité qui en résulte.
+ """
+ 
+ from __future__ import annotations
+# ── Zone modifiée : ligne 78 (14 ligne(s)) dans l'ancienne version → ligne 84 (22 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -78,14 +84,22 @@ class TestResoudrePalier:
+             (Niveau.FACILE, "facile"),
+             (Niveau.INTERMEDIAIRE, "intermediaire"),
+             (Niveau.AVANCE, "avance"),
+-            (Niveau.EXPERT, "expert"),
+         ],
+     )
+-    def test_cinq_premiers_niveaux_resolvent_vers_leur_palier(
++    def test_quatre_premiers_niveaux_resolvent_vers_leur_palier(
+         self, niveau, palier_attendu
+     ):
+         assert resoudre_palier(niveau) == palier_attendu
+ 
++    def test_expert_ne_resout_vers_aucun_palier(self):
++        """EXPERT n'a pas de palier (issue #401) : Trie complet, pas de fichier.
++
++        Contrairement aux quatre premiers niveaux, EXPERT joue sur le Trie ODS8
++        complet — comme CHAMPION_DU_MONDE, dont il reprend le vocabulaire (mais
++        pas la stratégie de sélection, voir :func:`~scrabble.moteur.ia._choisir_top5`).
++        """
++        assert resoudre_palier(Niveau.EXPERT) is None
++
+     def test_champion_du_monde_ne_resout_vers_aucun_palier(self):
+         """CHAMPION_DU_MONDE n'a pas de palier : Trie complet, pas de fichier."""
+         assert resoudre_palier(Niveau.CHAMPION_DU_MONDE) is None
+# ── Zone modifiée : ligne 225 (50 ligne(s)) dans l'ancienne version → ligne 239 (17 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -225,50 +239,17 @@ class TestLeaveValue:
+ # --------------------------------------------------------------------------- #
+ 
+ 
+-class TestExpert:
+-    """EXPERT choisit toujours le meilleur coup."""
+-
+-    def test_choisit_le_meilleur_score(self):
+-        plateau = PlateauPartie()
+-        chevalet = list("CADRES")
+-        dico = _trie("CADRE", "CADRES", "AS", "A")
+-        coup = choisir_coup(plateau, chevalet, dico, Niveau.EXPERT, random.Random(42))
+-        coups = generer_coups(plateau, chevalet, dico)
+-        meilleur_score = coups[0].score
+-        assert coup is not None
+-        coup_note = next(cn for cn in coups if cn.coup == coup)
+-        assert coup_note.score == meilleur_score
+-
+-    def test_egalite_choisit_parmi_les_meilleurs(self):
+-        plateau = PlateauPartie()
+-        chevalet = list("AB")
+-        dico = _trie("AB", "BA")
+-        coups = generer_coups(plateau, chevalet, dico)
+-        scores = [cn.score for cn in coups]
+-        max_score = max(scores)
+-        meilleurs_coups = [cn.coup for cn in coups if cn.score == max_score]
+-        choisis = set()
+-        for graine in range(100):
+-            coup = choisir_coup(
+-                plateau, chevalet, dico, Niveau.EXPERT, random.Random(graine)
+-            )
+-            if coup is not None:
+-                choisis.add((coup.ligne, coup.colonne, coup.direction.value))
+-        assert len(choisis) >= 1
+-
+-
+ class TestDebutant:
+-    """DEBUTANT choisit uniformément dans les 85 % meilleurs coups (top 85 %).
++    """DEBUTANT choisit uniformément dans les 70 % meilleurs coups (top 70 %).
+ 
+-    Depuis l'issue #361, DEBUTANT passe par le même mécanisme de tranche que
+-    les autres niveaux (il n'a plus le filtre dur ``nb_nouvelles >= 3`` de
+-    l'issue #359, qui le rendait plus sélectif que FACILE). Le dictionnaire
++    Depuis l'issue #401, DEBUTANT fusionne les anciens DEBUTANT (top 85 %) et
++    FACILE (top 60 %) en un seul niveau d'entrée de gamme. Le dictionnaire
+     de ce test mélange mots de 3+ lettres (CADRE, ACRE, CAR) et mots courts
+-    pour offrir assez de coups : la tranche top 85 % y écarte réellement les
++    pour offrir assez de coups : la tranche top 70 % y écarte réellement les
+     coups les plus faibles au sens du score stratégique.
+     """
+ 
+-    def test_choisit_dans_le_top_85_pct(self):
++    def test_choisit_dans_le_top_70_pct(self):
+         plateau = PlateauPartie()
+         chevalet = list("CADRE")
+         dico = _trie("CADRE", "ACRE", "CAR", "DE", "RE", "A", "DA")
+# ── Zone modifiée : ligne 278 (7 ligne(s)) dans l'ancienne version → ligne 259 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -278,7 +259,7 @@ class TestDebutant:
+             reverse=True,
+         )
+         assert len(coups) > 1
+-        taille_haut = max(1, len(coups) * 85 // 100)
++        taille_haut = max(1, len(coups) * 70 // 100)
+         haut = coups[:taille_haut]
+ 
+         choisis: dict[tuple, int] = {}
+# ── Zone modifiée : ligne 318 (24 ligne(s)) dans l'ancienne version → ligne 299 (32 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -318,24 +299,32 @@ class TestScoreMoyenParNiveau:
+         moy_debutant = moyenne_scores(Niveau.DEBUTANT)
+         assert moy_expert > moy_debutant
+ 
+-    def test_avance_score_moyen_entre_intermediaire_et_expert(self):
+-        """AVANCE se situe strictement entre INTERMEDIAIRE et EXPERT.
++    def test_expert_score_moyen_entre_intermediaire_et_avance(self):
++        """EXPERT (top 5 %) se situe strictement entre INTERMEDIAIRE et AVANCE.
+ 
+         Vérification statistique sur de nombreux tirages à graines variées
+-        (issue #202) : sur un plateau/chevalet offrant de nombreux coups aux
+-        scores étalés, la distribution de scores d'AVANCE (top 15 %) doit être
+-        supérieure à celle d'INTERMEDIAIRE (top 33 %) et inférieure ou égale à
+-        celle d'EXPERT (meilleur coup).
++        (issue #202, seuils issue #401) : sous un MÊME vocabulaire (pas de
++        câblage palier vs Trie complet ici, voir
++        ``TestProgressionTrieIaRestreint`` pour ce cas), les tranches restent
++        strictement emboîtées jusqu'à AVANCE — top 15 % (INTERMEDIAIRE) ⊃
++        top 5 % (EXPERT) ⊃ meilleur coup (AVANCE, qui choisit littéralement
++        le premier de la liste triée). Le score moyen d'AVANCE majore donc
++        celui d'EXPERT ; l'inégalité inverse (AVANCE < EXPERT), observée en
++        jeu réel, tient uniquement au vocabulaire différent reçu par chacun
++        (voir la fixture dédiée plus bas).
++
++        Réutilise le vocabulaire riche ``_MOTS_COMPLET``/chevalet ``CARTONS``
++        (voir plus bas) plutôt qu'un petit dictionnaire ad hoc : sur une
++        tranche aussi étroite que le top 5 %, un vocabulaire trop pauvre est
++        instable (le reliquat pondéré, issue #397, peut faire basculer les
++        quelques coups de la bande).
+         """
+         plateau = PlateauPartie()
+-        chevalet = list("CADRES")
+-        dico = _trie(
+-            "CADRE", "CADRES", "AS", "A", "SA", "DE", "RE", "DA", "ES",
+-            "SE", "ED", "AR", "RA", "CAR", "ARC", "SAC", "ACRE", "CARDE",
+-        )
++        chevalet = list("CARTONS")
++        dico = _trie(*_MOTS_COMPLET)
+         coups_ref = generer_coups(plateau, chevalet, dico)
+         # Le test n'a de sens que si les coups sont assez nombreux et étalés
+-        # pour que top 15 % et top 33 % diffèrent réellement.
++        # pour que top 5 % et top 15 % diffèrent réellement.
+         assert len(coups_ref) >= 10
+         assert len({cn.score for cn in coups_ref}) >= 3
+ 
+# ── Zone modifiée : ligne 351 (23 ligne(s)) dans l'ancienne version → ligne 340 (22 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -351,23 +340,22 @@ class TestScoreMoyenParNiveau:
+             return statistics.mean(scores) if scores else 0.0
+ 
+         moy_inter = moyenne_scores(Niveau.INTERMEDIAIRE)
+-        moy_avance = moyenne_scores(Niveau.AVANCE)
+         moy_expert = moyenne_scores(Niveau.EXPERT)
+-        assert moy_inter < moy_avance < moy_expert
++        moy_avance = moyenne_scores(Niveau.AVANCE)
++        assert moy_inter < moy_expert <= moy_avance
+ 
+ 
+ class TestIntermediaire:
+-    """INTERMEDIAIRE choisit dans le meilleur tiers."""
++    """INTERMEDIAIRE choisit dans les 15 % meilleurs coups (top 15 %) — issue #401."""
+ 
+-    def test_choisit_dans_le_tiers_superieur(self):
++    def test_choisit_dans_le_top_15_pct(self):
+         plateau = PlateauPartie()
+         chevalet = list("CADRES")
+         dico = _trie("CADRE", "CADRES", "AS", "A", "SA", "DE", "RE", "DA", "ES")
+         coups = generer_coups(plateau, chevalet, dico)
+-        if len(coups) < 3:
+-            pytest.skip("Pas assez de coups pour tester le tiers")
+-        taille_tiers = max(1, len(coups) // 3)
+-        scores_tiers = {cn.score for cn in coups[:taille_tiers]}
++        taille_haut = max(1, len(coups) * 15 // 100)
++        haut = coups[:taille_haut]
++        scores_haut = {cn.score for cn in haut}
+ 
+         for graine in range(50):
+             coup = choisir_coup(
+# ── Zone modifiée : ligne 375 (59 ligne(s)) dans l'ancienne version → ligne 363 (128 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -375,59 +363,128 @@ class TestIntermediaire:
+             )
+             if coup is not None:
+                 cn = next(c for c in coups if c.coup == coup)
+-                assert cn.score in scores_tiers or cn in coups[:taille_tiers]
++                assert cn.score in scores_haut or cn in haut
+ 
+ 
+ class TestAvance:
+-    """AVANCE choisit dans les 15 % meilleurs coups (top 15 %)."""
++    """AVANCE choisit toujours le meilleur coup (issue #401, reprend la
++    stratégie de sélection de l'ancien EXPERT)."""
+ 
+-    def test_choisit_dans_le_top_15_pct(self):
++    def test_choisit_le_meilleur_score(self):
+         plateau = PlateauPartie()
+         chevalet = list("CADRES")
+-        dico = _trie("CADRE", "CADRES", "AS", "A", "SA", "DE", "RE", "DA", "ES")
++        # Pas de mot alternatif de longueur intermédiaire (ex. CADRE) : depuis
++        # l'issue #397, AVANCE pondère aussi le reliquat (_POIDS_LEAVE non
++        # nul), qui pourrait sinon faire préférer un coup à score brut
++        # inférieur mais au reliquat plus précieux. Ce dictionnaire ne laisse
++        # le choix qu'entre le mot consommant tout le chevalet et des hooks
++        # courts nettement pénalisés.
++        dico = _trie("CADRES", "AS", "A")
++        coup = choisir_coup(plateau, chevalet, dico, Niveau.AVANCE, random.Random(42))
+         coups = generer_coups(plateau, chevalet, dico)
+-        taille_haut = max(1, len(coups) * 15 // 100)
+-        haut = coups[:taille_haut]
+-        scores_haut = {cn.score for cn in haut}
++        meilleur_score = coups[0].score
++        assert coup is not None
++        coup_note = next(cn for cn in coups if cn.coup == coup)
++        assert coup_note.score == meilleur_score
+ 
+-        for graine in range(50):
++    def test_egalite_choisit_parmi_les_meilleurs(self):
++        plateau = PlateauPartie()
++        chevalet = list("AB")
++        dico = _trie("AB", "BA")
++        coups = generer_coups(plateau, chevalet, dico)
++        scores = [cn.score for cn in coups]
++        max_score = max(scores)
++        meilleurs_coups = [cn.coup for cn in coups if cn.score == max_score]
++        choisis = set()
++        for graine in range(100):
+             coup = choisir_coup(
+                 plateau, chevalet, dico, Niveau.AVANCE, random.Random(graine)
+             )
+             if coup is not None:
+-                cn = next(c for c in coups if c.coup == coup)
+-                assert cn.score in scores_haut or cn in haut
++                choisis.add((coup.ligne, coup.colonne, coup.direction.value))
++        assert len(choisis) >= 1
++
++
++class TestExpert:
++    """EXPERT choisit dans les 5 % meilleurs coups (top 5 %, issue #401).
++
++    Nouveau niveau intercalé entre AVANCE (meilleur coup, palier de
++    vocabulaire restreint) et CHAMPION_DU_MONDE (meilleur coup, vocabulaire
++    complet) — voir :func:`~scrabble.moteur.ia._choisir_top5`.
++    """
++
++    def test_choisit_dans_le_top_5_pct(self):
++        """Bande de référence calculée avec le même tri à deux passes que
++        :func:`~scrabble.moteur.ia.choisir_coup` (score stratégique puis
++        reliquat), pas le score brut : EXPERT pondère le reliquat
++        (``_POIDS_LEAVE`` non nul depuis l'issue #397), qui peut réordonner
++        des coups à score brut proche — surtout sur une tranche aussi étroite
++        que le top 5 %.
++        """
++        plateau = PlateauPartie()
++        chevalet = list("CADRES")
++        dico = _trie(
++            "CADRE", "CADRES", "AS", "A", "SA", "DE", "RE", "DA", "ES",
++            "SE", "ED", "AR", "RA", "CAR", "ARC", "SAC", "ACRE", "CARDE",
++        )
++        coups = generer_coups(plateau, chevalet, dico)
++
++        def _lettres_restantes(cn):
++            restantes = list(chevalet)
++            for lettre in cn.lettres_du_chevalet:
++                restantes.remove(lettre)
++            return restantes
++
++        coups_tries = sorted(
++            coups, key=lambda cn: _score_strategique(cn, Niveau.EXPERT), reverse=True
++        )
++        coups_tries = sorted(
++            coups_tries,
++            key=lambda cn: _score_strategique(
++                cn, Niveau.EXPERT, _lettres_restantes(cn)
++            ),
++            reverse=True,
++        )
++        taille_haut = max(1, len(coups_tries) * 5 // 100)
++        haut = coups_tries[:taille_haut]
++
++        for graine in range(50):
++            coup = choisir_coup(
++                plateau, chevalet, dico, Niveau.EXPERT, random.Random(graine)
++            )
++            if coup is not None:
++                assert any(cn.coup == coup for cn in haut)
+ 
+ 
+ class TestFacile:
+-    """FACILE choisit dans les 60 % meilleurs coups (top 60 %) — issue #208."""
++    """FACILE choisit dans le meilleur tiers des coups (top 33 %) — issue #401."""
+ 
+-    def test_choisit_dans_le_top_60_pct(self):
++    def test_choisit_dans_le_top_33_pct(self):
+         plateau = PlateauPartie()
+         chevalet = list("CADRES")
+         dico = _trie("CADRE", "CADRES", "AS", "A", "SA", "DE", "RE", "DA", "ES")
+         coups = generer_coups(plateau, chevalet, dico)
+-        if len(coups) < 2:
+-            pytest.skip("Pas assez de coups pour tester le top 60 %")
+-        taille_haut = max(1, len(coups) * 60 // 100)
+-        haut = coups[:taille_haut]
++        if len(coups) < 3:
++            pytest.skip("Pas assez de coups pour tester le top 33 %")
++        taille_tiers = max(1, len(coups) // 3)
++        haut = coups[:taille_tiers]
++        scores_haut = {cn.score for cn in haut}
+ 
+         for graine in range(50):
+             coup = choisir_coup(
+                 plateau, chevalet, dico, Niveau.FACILE, random.Random(graine)
+             )
+             if coup is not None:
+-                assert any(cn.coup == coup for cn in haut)
++                cn = next(c for c in coups if c.coup == coup)
++                assert cn.score in scores_haut or cn in haut
+ 
+     def test_score_moyen_superieur_a_debutant(self):
+         """FACILE bat DEBUTANT en score moyen, tout en restant sous INTERMEDIAIRE.
+ 
+-        Cœur de l'issue #208 : l'ancienne stratégie (moitié inférieure) rendait
+-        FACILE plus FAIBLE que DEBUTANT ; le passage au top 60 % corrige cette
+-        inversion sur un plateau/chevalet offrant des scores étalés. Depuis
+-        l'issue #361, DEBUTANT tire dans le top 85 % (sur-ensemble strict du
+-        top 60 % de FACILE), donc la chaîne DEBUTANT < FACILE < INTERMEDIAIRE
+-        est structurelle et vérifiée en entier.
++        Les tranches restent strictement emboîtées (issue #401) : top 70 %
++        (DEBUTANT) ⊃ top 33 % (FACILE) ⊃ top 15 % (INTERMEDIAIRE), donc la
++        chaîne DEBUTANT < FACILE < INTERMEDIAIRE est structurelle et vérifiée
++        en entier sur un plateau/chevalet offrant des scores étalés.
+         """
+         plateau = PlateauPartie()
+         chevalet = list("CADRES")
+# ── Zone modifiée : ligne 671 (26 ligne(s)) dans l'ancienne version → ligne 728 (28 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -671,26 +728,28 @@ _MOTS_IA_RESTREINT = (
+ )
+ 
+ # Ordre des niveaux par score moyen croissant, tel qu'il découle RÉELLEMENT des
+-# stratégies de sélection (cf. ia.py) :
+-#   * DEBUTANT tire dans le top 85 % (n'écarte que les 15 % plus faibles)
+-#     → moyenne la plus basse (issue #361) ;
+-#   * FACILE tire dans le top 60 % (écarte les 40 % plus faibles) → au-dessus
+-#     de DEBUTANT mais nettement sous INTERMEDIAIRE ;
+-#   * INTERMEDIAIRE (top 33 %), AVANCE (top 15 %), EXPERT (meilleur) → croissant.
+-#   * CHAMPION_DU_MONDE réutilise EXACTEMENT la stratégie et les tranches
+-#     d'EXPERT (:func:`~scrabble.moteur.ia._choisir_expert` sert les deux
+-#     identiquement) : ce qui les distingue est le vocabulaire reçu en
+-#     paramètre, câblé par l'appelant (issue #369, lot C) — EXPERT sur le
+-#     Trie restreint du palier, CHAMPION_DU_MONDE sur le Trie complet. Les
+-#     tests ci-dessous simulent ce câblage via ``dico_champion``.
+-# NB : depuis l'issue #208, FACILE n'est plus la moitié INFÉRIEURE (ce qui le
+-# plaçait sous DEBUTANT, contrairement à ce que suggèrent les noms) mais le
+-# top 60 %. L'ordre réel coïncide désormais avec l'ordre des noms et avec
+-# l'énoncé de l'issue #207 : « Débutant < Facile < Intermédiaire < Avancé <
+-# Expert ». Cette monotonie est structurelle — les tranches sont strictement
+-# emboîtées (85 % ⊃ 60 % ⊃ 33 % ⊃ 15 % ⊃ meilleur) — et vaut donc à
+-# l'identique avec et sans le filtre de vocabulaire ; ces tests le vérifient
+-# empiriquement, y compris en présence de mots courts (hooks) depuis #361.
++# stratégies de sélection ET du câblage vocabulaire (cf. ia.py, issue #401) :
++#   * DEBUTANT tire dans le top 70 % (n'écarte que les 30 % plus faibles) sur
++#     le palier restreint "debutant" → moyenne la plus basse ;
++#   * FACILE (top 33 %), INTERMEDIAIRE (top 15 %), chacun sur son propre
++#     palier restreint → croissant, tranches strictement emboîtées ;
++#   * AVANCE choisit le meilleur coup, mais toujours sur un palier de
++#     vocabulaire restreint ("avance", issue #369, lot C) — moins large que
++#     le Trie complet reçu par les deux derniers niveaux ;
++#   * EXPERT (top 5 %) et CHAMPION_DU_MONDE (meilleur coup) jouent tous deux
++#     sur le Trie ODS8 complet, ``resoudre_palier`` renvoyant ``None`` pour
++#     les deux (issue #401) : aucun filtre de vocabulaire ne s'applique à ces
++#     deux niveaux, contrairement aux quatre premiers.
++# Le dernier maillon AVANCE < EXPERT n'est donc PAS structurel comme les
++# précédents (une stratégie moins "gourmande", top 5 %, l'emporte sur le
++# meilleur coup d'AVANCE) : c'est l'accès à un vocabulaire strictement plus
++# large qui fait basculer la moyenne en faveur d'EXPERT. EXPERT <
++# CHAMPION_DU_MONDE, à l'inverse, reste structurel : à vocabulaire identique
++# (le Trie complet, pour les deux), seule la stratégie diffère (top 5 % ⊆
++# meilleur coup). Les fixtures ci-dessous donnent donc le Trie complet
++# (``dico_champion``) à EXPERT ET CHAMPION_DU_MONDE simultanément, et le Trie
++# restreint aux quatre premiers niveaux, pour reproduire fidèlement ce
++# câblage réel (``scrabble.ui.accueil``).
+ _ORDRE_CROISSANT_ATTENDU = [
+     Niveau.DEBUTANT,
+     Niveau.FACILE,
+# ── Zone modifiée : ligne 700 (6 ligne(s)) dans l'ancienne version → ligne 759 (10 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -700,6 +759,10 @@ _ORDRE_CROISSANT_ATTENDU = [
+     Niveau.CHAMPION_DU_MONDE,
+ ]
+ 
++# Niveaux dont resoudre_palier() renvoie None (issue #401) : toujours sur le
++# Trie complet en jeu réel, jamais sur un palier de vocabulaire restreint.
++_NIVEAUX_SANS_PALIER = (Niveau.EXPERT, Niveau.CHAMPION_DU_MONDE)
++
+ 
+ def _moyennes_par_niveau(
+     plateau: PlateauPartie,
+# ── Zone modifiée : ligne 715 (12 ligne(s)) dans l'ancienne version → ligne 778 (14 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -715,12 +778,14 @@ def _moyennes_par_niveau(
+     score du coup choisi pour chaque graine. Le score d'un coup ne dépend que
+     des tuiles/plateau, pas du dictionnaire.
+ 
+-    ``dico_champion`` (issue #369, lot C), s'il est fourni, est le
+-    dictionnaire utilisé pour :data:`Niveau.CHAMPION_DU_MONDE` à la place de
+-    ``dico`` — simule le câblage réel (``scrabble.ui.accueil``), où
+-    CHAMPION_DU_MONDE joue sur le Trie complet quand les autres niveaux jouent
+-    sur un palier restreint. ``None`` (défaut) : CHAMPION_DU_MONDE partage
+-    ``dico`` avec les autres niveaux, comme avant l'issue #369.
++    ``dico_champion`` (issue #369, lot C ; étendu à EXPERT par l'issue #401),
++    s'il est fourni, est le dictionnaire utilisé pour :data:`Niveau.EXPERT` et
++    :data:`Niveau.CHAMPION_DU_MONDE` à la place de ``dico`` — simule le
++    câblage réel (``scrabble.ui.accueil``), où ces deux niveaux jouent
++    toujours sur le Trie complet (:func:`~scrabble.moteur.ia.resoudre_palier`
++    renvoie ``None`` pour les deux) quand les quatre premiers niveaux jouent
++    chacun sur leur palier restreint. ``None`` (défaut) : EXPERT et
++    CHAMPION_DU_MONDE partagent ``dico`` avec les autres niveaux.
+     """
+     coups_ref = generer_coups(plateau, chevalet, dico)
+     coups_ref_champion = (
+# ── Zone modifiée : ligne 732 (7 ligne(s)) dans l'ancienne version → ligne 797 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -732,7 +797,7 @@ def _moyennes_par_niveau(
+     for niveau in Niveau:
+         dico_niveau = (
+             dico_champion
+-            if niveau is Niveau.CHAMPION_DU_MONDE and dico_champion is not None
++            if niveau in _NIVEAUX_SANS_PALIER and dico_champion is not None
+             else dico
+         )
+         reference = (
+# ── Zone modifiée : ligne 770 (14 ligne(s)) dans l'ancienne version → ligne 835 (12 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -770,14 +835,12 @@ class TestProgressionTrieIaRestreint:
+     def test_progression_monotone_avec_filtre_actif(self):
+         """La progression reste STRICTEMENT monotone avec le Trie IA restreint.
+ 
+-        Confirme l'hypothèse du rapport #203 : le filtre étant appliqué
+-        uniformément aux cinq premiers niveaux, la monotonie des scores moyens
+-        est préservée. Le dernier maillon EXPERT < CHAMPION_DU_MONDE est
+-        désormais lui aussi strict (issue #369, lot C) : on simule ici le
+-        câblage réel en donnant à CHAMPION_DU_MONDE le Trie complet
+-        (``dico_champion``) pendant qu'EXPERT reste sur le Trie restreint —
+-        le bingo CARTONS (70 pts, absent de ``_MOTS_IA_RESTREINT``) n'est
+-        alors accessible qu'à CHAMPION_DU_MONDE.
++        Confirme l'hypothèse du rapport #203, adaptée au câblage de l'issue
++        #401 : le filtre de vocabulaire ne s'applique plus qu'aux quatre
++        premiers niveaux (chacun sur son palier restreint) ; EXPERT et
++        CHAMPION_DU_MONDE reçoivent toujours le Trie complet
++        (``dico_champion``), le bingo CARTONS (70 pts, absent de
++        ``_MOTS_IA_RESTREINT``) leur restant accessible à tous les deux.
+         """
+         dico_ia = Trie.depuis_iterable(_MOTS_IA_RESTREINT)
+         dico_complet = Trie.depuis_iterable(_MOTS_COMPLET)
+# ── Zone modifiée : ligne 796 (8 ligne(s)) dans l'ancienne version → ligne 859 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -796,8 +859,9 @@ class TestProgressionTrieIaRestreint:
+         distinguerait plus suffisamment d'un autre. On exige un écart d'au
+         moins 1 point entre niveaux adjacents dans l'ordre de progression,
+         seuil au-delà duquel la différence reste perceptible en jeu — y
+-        compris désormais pour la paire EXPERT/CHAMPION_DU_MONDE (issue #369,
+-        lot C, monotonie devenue stricte : voir ``dico_champion``).
++        compris désormais pour la paire AVANCE/EXPERT (issue #401 : palier
++        restreint contre Trie complet) et EXPERT/CHAMPION_DU_MONDE (issue
++        #369, lot C, monotonie devenue stricte : voir ``dico_champion``).
+         """
+         dico_ia = Trie.depuis_iterable(_MOTS_IA_RESTREINT)
+         dico_complet = Trie.depuis_iterable(_MOTS_COMPLET)
+# ── Zone modifiée : ligne 809 (40 ligne(s)) dans l'ancienne version → ligne 873 (62 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -809,40 +873,62 @@ class TestProgressionTrieIaRestreint:
+             assert ecart >= 1.0, f"{a} et {b} trop proches sous filtre : {moy}"
+ 
+     def test_ordre_relatif_identique_avec_et_sans_filtre(self):
+-        """L'ordre RELATIF des niveaux est identique avec et sans filtre.
+-
+-        Cœur de la vérification #207 / hypothèse #203 : le filtre global ne
+-        réordonne pas les niveaux ; il n'abaisse que les scores absolus.
++        """L'ordre RELATIF des quatre niveaux à palier est identique avec et
++        sans filtre.
++
++        Cœur de la vérification #207 / hypothèse #203, restreinte depuis
++        l'issue #401 aux quatre niveaux réellement soumis au filtre de
++        vocabulaire par palier (DEBUTANT, FACILE, INTERMEDIAIRE, AVANCE) : le
++        filtre ne les réordonne pas entre eux, il n'abaisse que leurs scores
++        absolus. EXPERT et CHAMPION_DU_MONDE, jamais filtrés en jeu réel, sont
++        exclus de la comparaison — leur position relative à AVANCE peut au
++        contraire s'inverser sous filtre (c'est tout l'intérêt du câblage de
++        l'issue #401 : EXPERT franchit AVANCE une fois débarrassé de la
++        restriction de vocabulaire), voir
++        ``test_progression_monotone_avec_filtre_actif``.
+         """
++        niveaux_a_palier = [
++            Niveau.DEBUTANT,
++            Niveau.FACILE,
++            Niveau.INTERMEDIAIRE,
++            Niveau.AVANCE,
++        ]
+         moy_complet = _moyennes_par_niveau(
+             self.plateau, self.chevalet, Trie.depuis_iterable(_MOTS_COMPLET)
+         )
+         moy_ia = _moyennes_par_niveau(
+             self.plateau, self.chevalet, Trie.depuis_iterable(_MOTS_IA_RESTREINT)
+         )
+-        assert sorted(Niveau, key=lambda niv: moy_complet[niv]) == sorted(
+-            Niveau, key=lambda niv: moy_ia[niv]
++        assert sorted(niveaux_a_palier, key=lambda niv: moy_complet[niv]) == sorted(
++            niveaux_a_palier, key=lambda niv: moy_ia[niv]
+         )
+ 
+-    def test_ecart_expert_debutant_se_resserre_sous_filtre(self):
+-        """Mesure le resserrement Expert↔Débutant sous filtre (point #4).
+-
+-        Point de vigilance du rapport #203 : même monotonie préservée, l'écart
+-        absolu entre le meilleur et le plus faible niveau peut se resserrer si le
+-        filtre retire les coups à très fort score (vocabulaire rare). Dans ce
+-        scénario, le bingo CARTONS (70 pts) est retiré du vocabulaire IA, donc
+-        Expert perd sa pointe : l'écart Expert↔Débutant chute nettement, tout en
+-        restant strictement positif (les niveaux restent ordonnés).
++    def test_ecart_avance_debutant_se_resserre_sous_filtre(self):
++        """Mesure le resserrement Avancé↔Débutant sous filtre (point #4).
++
++        Point de vigilance du rapport #203, reporté sur la paire pertinente
++        depuis l'issue #401 : AVANCE et DEBUTANT sont désormais les deux
++        niveaux réellement soumis au filtre de vocabulaire par palier (EXPERT
++        et CHAMPION_DU_MONDE y échappent, voir ci-dessus). Même monotonie
++        préservée, l'écart absolu entre AVANCE (meilleur coup) et DEBUTANT
++        (top 70 %) peut se resserrer si le filtre retire les coups à très
++        fort score (vocabulaire rare). Dans ce scénario, le bingo CARTONS
++        (70 pts) est retiré du vocabulaire IA restreint, donc AVANCE perd sa
++        pointe : l'écart Avancé↔Débutant chute nettement, tout en restant
++        strictement positif (les niveaux restent ordonnés).
+         """
+         moy_complet = _moyennes_par_niveau(
+             self.plateau, self.chevalet, Trie.depuis_iterable(_MOTS_COMPLET)
+         )
+         moy_ia = _moyennes_par_niveau(
+-            self.plateau, self.chevalet, Trie.depuis_iterable(_MOTS_IA_RESTREINT)
++            self.plateau,
++            self.chevalet,
++            Trie.depuis_iterable(_MOTS_IA_RESTREINT),
++            dico_champion=Trie.depuis_iterable(_MOTS_COMPLET),
+         )
+-        ecart_complet = moy_complet[Niveau.EXPERT] - moy_complet[Niveau.DEBUTANT]
+-        ecart_ia = moy_ia[Niveau.EXPERT] - moy_ia[Niveau.DEBUTANT]
+-        # Reste ordonné (Expert > Débutant) même sous filtre...
++        ecart_complet = moy_complet[Niveau.AVANCE] - moy_complet[Niveau.DEBUTANT]
++        ecart_ia = moy_ia[Niveau.AVANCE] - moy_ia[Niveau.DEBUTANT]
++        # Reste ordonné (Avancé > Débutant) même sous filtre...
+         assert ecart_ia > 0
+         # ... mais se resserre sensiblement quand le vocabulaire rare disparaît.
+         assert ecart_ia < ecart_complet

@@ -1,0 +1,243 @@
+3b2c47f
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 3b2c47f
+# ── Qui a fait ce commit.
+Author: CCL agent <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Wed Jul 29 09:07:17 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Issue #325 : animation pioche — lettres_pioches passées par Python via _etat_chevalet (suite #323)
+    
+    Python capture désormais les lettres réellement piochées par diff (Counter)
+    du chevalet du joueur de référence avant/après poser_mot, echanger_tout et
+    echanger_selection, et les expose sérialisées (lettre/valeur/joker) dans
+    _etat_chevalet()["lettres_pioches"], remises à vide après chaque diffusion.
+    jeu.js anime désormais ces lettres précises au lieu de rejouer tout le
+    chevalet à chaque mise à jour.
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/src/scrabble/ui/api_diffusion.py b/src/scrabble/ui/api_diffusion.py
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 701925b..2d0395e 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/src/scrabble/ui/api_diffusion.py
+# ── Version APRÈS ce commit.
++++ b/src/scrabble/ui/api_diffusion.py
+# ── Zone modifiée : ligne 13 (6 ligne(s)) dans l'ancienne version → ligne 13 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -13,6 +13,7 @@ import json
+ from typing import Any, TYPE_CHECKING
+ 
+ from scrabble import journal
++from scrabble.regles.lettres import JOKER, valeur_lettre
+ 
+ if TYPE_CHECKING:
+     import webview
+# ── Zone modifiée : ligne 34 (6 ligne(s)) dans l'ancienne version → ligne 35 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -34,6 +35,7 @@ class MixinDiffusion:
+     _mode_echange: bool
+     _selection_echange: list[int]
+     _window_plateau: "webview.Window | None"
++    _lettres_pioches: list[str]
+ 
+     def _placements_publics(self) -> list[dict[str, Any]]:
+         """Placements en attente **sans** l'index de chevalet (part côté plateau).
+# ── Zone modifiée : ligne 109 (6 ligne(s)) dans l'ancienne version → ligne 111 (17 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -109,6 +111,17 @@ class MixinDiffusion:
+             # Lettres privées : toujours celles du joueur de référence (issue #99),
+             # jamais un ordinateur ni un autre humain.
+             "lettres": serialiser_chevalet(reference),
++            # Lettres tout juste piochées (issue #325) : capturées par diff du
++            # chevalet avant/après l'action par les mixins Pose/Échange
++            # (``self._lettres_pioches``, une liste de jetons bruts), puis
++            # sérialisées ici dans le même format que ``lettres`` (lettre,
++            # valeur, joker) pour que le calque d'animation du chevalet
++            # (``animerNouvellesLettres`` côté JS) les affiche sans traitement
++            # supplémentaire.
++            "lettres_pioches": [
++                {"lettre": jeton, "valeur": valeur_lettre(jeton), "joker": jeton == JOKER}
++                for jeton in self._lettres_pioches
++            ],
+             "selection": self._selection,
+             "en_attente": [dict(p) for p in self._en_attente],
+             "joker_demande": self._joker_demande,
+# ── Zone modifiée : ligne 154 (6 ligne(s)) dans l'ancienne version → ligne 167 (11 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -154,6 +167,11 @@ class MixinDiffusion:
+         self._pousser(
+             self._window_plateau, "appliquerEtatChevalet", self._etat_chevalet()
+         )
++        # Les lettres piochées ne concernent que CETTE diffusion (issue #325) :
++        # une fois poussées, on repart vierge pour ne pas rejouer l'animation
++        # d'arrivée à la diffusion suivante si aucune nouvelle pioche n'a eu
++        # lieu entre-temps.
++        self._lettres_pioches = []
+ 
+     @staticmethod
+     def _pousser(
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/api_echange.py b/src/scrabble/ui/api_echange.py
+# (index — ignorable)
+index c3c617e..206147b 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/api_echange.py
+# (après — fichier suivant)
++++ b/src/scrabble/ui/api_echange.py
+# ── Zone modifiée : ligne 36 (6 ligne(s)) dans l'ancienne version → ligne 36 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -36,6 +36,7 @@ class MixinEchange:
+     _type_echange: str
+     _mode_echange: bool
+     _selection_echange: list[int]
++    _lettres_pioches: list[str]
+ 
+     # Méthodes attendues de MixinDiffusion (via l'héritage multiple d'ApiJeu).
+     def _diffuser(self) -> None: ...
+# ── Zone modifiée : ligne 56 (13 ligne(s)) dans l'ancienne version → ligne 57 (21 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -56,13 +57,21 @@ class MixinEchange:
+         ``{"succes": False, "erreur": <message clair>}`` — l'état n'est pas
+         modifié.
+         """
++        from collections import Counter
++
+         from scrabble.ui import jeu as mod_jeu
+-        from scrabble.ui.jeu import echanger_chevalet_complet
++        from scrabble.ui.jeu import echanger_chevalet_complet, index_humain_reference
+ 
+         nom = self._partie.joueur_courant().nom
+         nb_avant = len(self._partie.historique)
++        # Capture du chevalet du joueur de référence avant l'échange, pour en
++        # déduire par diff les lettres tout juste piochées (issue #325).
++        index_ref = index_humain_reference(self._partie.joueurs)
++        avant = list(self._partie.joueurs[index_ref].chevalet)
+         resultat = echanger_chevalet_complet(self._partie, self._id_partie)
+         if resultat.get("succes"):
++            apres = self._partie.joueurs[index_ref].chevalet
++            self._lettres_pioches = list((Counter(apres) - Counter(avant)).elements())
+             mod_jeu.journal.info(f"Jeu : échange complet du chevalet par {nom}.")
+             self._persister_entrees(self._partie.historique[nb_avant:])
+             self._finaliser_si_terminee()
+# ── Zone modifiée : ligne 170 (8 ligne(s)) dans l'ancienne version → ligne 179 (10 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -170,8 +179,10 @@ class MixinEchange:
+         issue #99/#130) : c'est cette garde qui assure que les index visent bien
+         le chevalet du joueur de référence (alors joueur courant).
+         """
++        from collections import Counter
++
+         from scrabble.ui import jeu as mod_jeu
+-        from scrabble.ui.jeu import echanger_jetons
++        from scrabble.ui.jeu import echanger_jetons, index_humain_reference
+ 
+         refus = self._refuser_hors_tour()
+         if refus is not None:
+# ── Zone modifiée : ligne 195 (8 ligne(s)) dans l'ancienne version → ligne 206 (14 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -195,8 +206,14 @@ class MixinEchange:
+         jetons = [joueur.chevalet[i] for i in indices]
+         nom = joueur.nom
+         nb_avant = len(self._partie.historique)
++        # Capture du chevalet du joueur de référence avant l'échange, pour en
++        # déduire par diff les lettres tout juste piochées (issue #325).
++        index_ref = index_humain_reference(self._partie.joueurs)
++        avant = list(self._partie.joueurs[index_ref].chevalet)
+         resultat = echanger_jetons(self._partie, self._id_partie, jetons)
+         if resultat.get("succes"):
++            apres = self._partie.joueurs[index_ref].chevalet
++            self._lettres_pioches = list((Counter(apres) - Counter(avant)).elements())
+             mod_jeu.journal.info(
+                 f"Jeu : échange partiel de {len(jetons)} lettre(s) par {nom}."
+             )
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/api_pose.py b/src/scrabble/ui/api_pose.py
+# (index — ignorable)
+index fdc0d23..544b2cb 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/api_pose.py
+# (après — fichier suivant)
++++ b/src/scrabble/ui/api_pose.py
+# ── Zone modifiée : ligne 39 (6 ligne(s)) dans l'ancienne version → ligne 39 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -39,6 +39,7 @@ class MixinPose:
+     _selection: int | None
+     _en_attente: list[dict[str, Any]]
+     _joker_demande: dict[str, Any] | None
++    _lettres_pioches: list[str]
+ 
+     # Méthodes attendues de MixinDiffusion (via l'héritage multiple d'ApiJeu).
+     def _diffuser(self) -> None: ...
+# ── Zone modifiée : ligne 327 (14 ligne(s)) dans l'ancienne version → ligne 328 (23 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -327,14 +328,23 @@ class MixinPose:
+         Confidentialité : la réponse ne contient jamais l'identité des lettres
+         d'un chevalet (``etat`` est l'état public, sans chevalet).
+         """
++        from collections import Counter
++
+         from scrabble.ui import jeu as mod_jeu
+-        from scrabble.ui.jeu import etat_public, jouer_placements
++        from scrabble.ui.jeu import etat_public, index_humain_reference, jouer_placements
+ 
+         if placements is not None:
+             self._en_attente = [self._normaliser_placement(p) for p in placements]
+         nb_avant = len(self._partie.historique)
++        # Capture du chevalet du joueur de référence avant la pioche déclenchée
++        # par le coup, pour en déduire par diff les lettres tout juste piochées
++        # (issue #325 — animation du chevalet).
++        index_ref = index_humain_reference(self._partie.joueurs)
++        avant = list(self._partie.joueurs[index_ref].chevalet)
+         resultat = jouer_placements(self._partie, self._en_attente)
+         if resultat.get("succes"):
++            apres = self._partie.joueurs[index_ref].chevalet
++            self._lettres_pioches = list((Counter(apres) - Counter(avant)).elements())
+             detail = resultat.get("detail")
+             mot = (
+                 detail["mots"][0]["texte"]
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/jeu.py b/src/scrabble/ui/jeu.py
+# (index — ignorable)
+index 8aab253..d1092bb 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/jeu.py
+# (après — fichier suivant)
++++ b/src/scrabble/ui/jeu.py
+# ── Zone modifiée : ligne 1177 (6 ligne(s)) dans l'ancienne version → ligne 1177 (11 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1177,6 +1177,11 @@ class ApiJeu(MixinDiffusion, MixinTirageOrdre, MixinTourEtFinPartie, MixinPose,
+         # même pour un joker dont la lettre a été choisie).
+         self._selection: int | None = None
+         self._en_attente: list[dict[str, Any]] = []
++        # Lettres tout juste piochées par la dernière action (issue #325) :
++        # capturées par diff du chevalet avant/après une pose ou un échange
++        # (mixins Pose/Échange), consommées et remises à vide par
++        # ``MixinDiffusion._diffuser`` à chaque diffusion.
++        self._lettres_pioches: list[str] = []
+         # Échange partiel (issue #138). ``_type_echange`` fige, au chargement de
+         # la partie (donc à son démarrage), le mode choisi dans les réglages :
+         # "complet" (bouton « Remettre toutes ses lettres ») ou "partiel"
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/web/jeu.js b/src/scrabble/ui/web/jeu.js
+# (index — ignorable)
+index 19a19ef..317c806 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/web/jeu.js
+# (après — fichier suivant)
++++ b/src/scrabble/ui/web/jeu.js
+# ── Zone modifiée : ligne 1044 (14 ligne(s)) dans l'ancienne version → ligne 1044 (16 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1044,14 +1044,16 @@ document.addEventListener('DOMContentLoaded', async () => {
+         const sig = signatureLettres(etatChevalet.lettres);
+         if (sig !== panneauSignature) {
+             panneauSignature = sig;
+-            // Lettres tout juste arrivées (pose/échange/passage de tour, issue
+-            // #317) : animées au centre avant de rejoindre le panneau. Ni au tout
+-            // premier affichage (rien n'est « arrivé », c'est l'état initial), ni
+-            // si une animation est déjà en cours (mise à jour rapprochée : on
+-            // rebâtit directement pour rester synchrone avec Python).
++            // Lettres tout juste piochées (pose/échange, issue #325) : Python les
++            // calcule par diff du chevalet avant/après l'action et les fournit
++            // directement via ``etatChevalet.lettres_pioches`` — animées au centre
++            // avant de rejoindre le panneau. Ni au tout premier affichage (rien
++            // n'est « arrivé », c'est l'état initial), ni si une animation est déjà
++            // en cours (mise à jour rapprochée : on rebâtit directement pour rester
++            // synchrone avec Python).
+             const arrivees = (premierAppel || animationPiocheEnCours)
+                 ? []
+-                : etatChevalet.lettres || [];
++                : (etatChevalet.lettres_pioches || []);
+             if (arrivees.length > 0) {
+                 animerNouvellesLettres(arrivees).then(() => {
+                     reconstruirePanneau();

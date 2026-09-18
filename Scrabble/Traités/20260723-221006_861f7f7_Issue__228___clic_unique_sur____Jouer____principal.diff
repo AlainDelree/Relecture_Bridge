@@ -1,0 +1,81 @@
+commit 861f7f7920d17c833b483af119755caa30380b02
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Thu Jul 23 22:10:06 2026 +0200
+
+    Issue #228 : clic unique sur « Jouer » principal depuis la modale de score
+    
+    Le calque plein écran de #score-modale captait le premier clic sur
+    #btn-valider comme un « clic dehors » et se contentait de fermer la
+    modale, imposant un second clic pour poser le coup (double clic résiduel
+    de #225).
+    
+    creerModaleScore (commun.js) accepte désormais un hook facultatif
+    surClicDehors(evt) appelé avant la fermeture par défaut. jeu.js le
+    fournit : si le clic tombe sur le rectangle de #btn-valider et qu'un
+    coup est en attente (bouton actif), jouerCoup() est appelé (il referme
+    lui-même la modale) et la pose se fait en un seul clic. Sinon,
+    comportement inchangé (fermeture simple).
+
+diff --git a/src/scrabble/ui/web/commun.js b/src/scrabble/ui/web/commun.js
+index cdeb92d..d9a98e5 100644
+--- a/src/scrabble/ui/web/commun.js
++++ b/src/scrabble/ui/web/commun.js
+@@ -305,7 +305,11 @@
+      * ``auFermer`` (facultatif, issue #128) est appelé à chaque fermeture, quelle
+      * qu'en soit l'origine (bouton, clic sur le fond) : l'écran de jeu s'en sert
+      * pour retirer la surbrillance du coup consulté et rendre la main au dernier
+-     * coup réel. Renvoie un objet {afficher, afficherSansDetail, fermer}.
++     * coup réel. ``surClicDehors(evt)`` (facultatif, issue #228) intercepte le
++     * clic sur le calque de fond avant la fermeture : s'il renvoie ``true``, il a
++     * traité le clic lui-même (p. ex. poser le coup quand le clic vise le
++     * « Jouer » principal masqué) et la fermeture par défaut est annulée.
++     * Renvoie un objet {afficher, afficherSansDetail, fermer}.
+      */
+     function creerModaleScore(refs) {
+         function fermer() {
+@@ -368,6 +372,17 @@
+         }
+         refs.modale.addEventListener('click', (evt) => {
+             if (evt.target === refs.modale) {
++                // Clic sur le calque de fond : par défaut on ferme simplement.
++                // Mais le consommateur peut fournir ``surClicDehors`` (issue #228)
++                // pour intercepter d'abord ce clic : le calque plein écran masque
++                // les boutons du bandeau, et un clic « dehors » peut en réalité
++                // viser le « Jouer » principal. Si le hook renvoie ``true``, il a
++                // pris le clic en charge (et refermé la modale lui-même) ; sinon
++                // on conserve la fermeture simple habituelle.
++                if (typeof refs.surClicDehors === 'function'
++                    && refs.surClicDehors(evt)) {
++                    return;
++                }
+                 fermer();
+             }
+         });
+diff --git a/src/scrabble/ui/web/jeu.js b/src/scrabble/ui/web/jeu.js
+index 9909a43..09b8ecd 100644
+--- a/src/scrabble/ui/web/jeu.js
++++ b/src/scrabble/ui/web/jeu.js
+@@ -139,6 +139,23 @@ document.addEventListener('DOMContentLoaded', async () => {
+             retirerSurbrillanceCoupConsulte();
+             if (btnScoreJouer) btnScoreJouer.hidden = true;
+         },
++        // Clic « dehors » sur le calque de la modale (issue #228, suite de #225).
++        // Ce calque plein écran (z-index 100) recouvre le bandeau d'actions : un
++        // clic sur le bouton « Jouer » principal (#btn-valider) est alors capté
++        // ici comme un clic dehors et ne faisait que fermer la modale, imposant
++        // un second clic pour poser réellement le coup. Si le clic tombe sur le
++        // rectangle de #btn-valider et qu'un coup est en attente (bouton actif),
++        // on pose le coup en un seul clic ; jouerCoup() referme lui-même la
++        // modale. Sinon on renvoie false : fermeture simple habituelle.
++        surClicDehors: (evt) => {
++            if (btnValider.disabled) return false;
++            const r = btnValider.getBoundingClientRect();
++            const surBouton = evt.clientX >= r.left && evt.clientX <= r.right
++                && evt.clientY >= r.top && evt.clientY <= r.bottom;
++            if (!surBouton) return false;
++            jouerCoup();
++            return true;
++        },
+     });
+ 
+     // Thèmes reconnus (alignés avec scrabble.config.THEMES_PLATEAU et le CSS).

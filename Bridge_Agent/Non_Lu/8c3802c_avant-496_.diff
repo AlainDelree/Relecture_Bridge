@@ -1,0 +1,21 @@
+8c3802c
+
+commit 8c3802c
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Thu Aug 27 18:42:07 2026 +0200
+
+    avant-496
+
+diff --git a/new_issue.py b/new_issue.py
+index 7567f0e..6ac6fd8 100644
+--- a/new_issue.py
++++ b/new_issue.py
+@@ -32,6 +32,8 @@ from app import create_app, etat
+ from app.tunnel import demarrer_tunnel, arreter_tunnel
+ from app.cycle_vie import surveiller_heartbeat
+ from app.notifications_poller import surveiller_transitions
++from app.issues_inbox import (watcher_inbox_actif, demarrer_watcher_inbox,
++                              arreter_watcher_inbox)
+ 
+ DOSSIER_SCRIPT = Path(__file__).resolve().parent
+ 

@@ -1,0 +1,301 @@
+d7e7124
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit d7e7124
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Tue Jul 28 03:19:24 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    initialiser_git() : détecter le contenu préexistant sur ce que git suivrait, pas sur le disque brut (issue #260)
+    
+    Réordonne init/remote/.gitignore/add -A puis liste l'index réel (git diff
+    --cached --name-only) au lieu d'un rglob() du disque avant écriture : un
+    venv/ ou __pycache__/ exclu par le .gitignore minimal ne compte plus comme
+    contenu préexistant et ne retient plus le push à tort. Remplace
+    _fichiers_preexistants() par _fichiers_suivis_preexistants(), bornée par
+    TIMEOUT_GIT_LOCAL via le _git() de l'appelant. Sémantique de sortie
+    inchangée. Ajoute le scénario venv/__pycache__ au test #258, met à jour
+    §13 étape 5 et CHANGELOG.md.
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/BRIDGE_AGENT_DOC.md b/BRIDGE_AGENT_DOC.md
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 32bb5ed..6e4e720 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/BRIDGE_AGENT_DOC.md
+# ── Version APRÈS ce commit.
++++ b/BRIDGE_AGENT_DOC.md
+# ── Zone modifiée : ligne 584 (19 ligne(s)) dans l'ancienne version → ligne 584 (29 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -584,19 +584,29 @@ deux, mêmes étapes, mêmes messages, comportement idempotent identique :
+    création : le commit reste local, le compte-rendu indique la commande
+    manuelle à relancer (`git push -u origin master`).
+ 
+-   **Garde-fou supplémentaire (issue #258)** : ce raisonnement ne couvre que
+-   le dépôt **distant**, tout juste créé — il ne dit rien du contenu
+-   **local** du répertoire. Or ce script gère explicitement le cas d'un
+-   `REP_TRAVAIL` **préexistant et non versionné** : avant le push, le
+-   contenu du répertoire est comparé aux seuls fichiers que le script vient
+-   lui-même de créer (`CONTEXTE.md`, fichiers Specs, `.gitignore`). S'il ne
+-   reste rien d'autre → comportement ci-dessus, push automatique. S'il reste
+-   d'autres fichiers → **le push n'est PAS déclenché** : `git init`, le
+-   remote, le `.gitignore` et le commit initial sont faits normalement, mais
+-   le push est laissé à Alain après relecture (le dépôt étant **public**, ce
+-   contenu ne doit pas être publié sans vérification). Le compte-rendu (CLI
+-   et web) liste alors les fichiers préexistants détectés (tronquée à une
+-   dizaine) et la commande manuelle à lancer une fois la relecture faite.
++   **Garde-fou supplémentaire (issue #258, affiné #260)** : ce raisonnement
++   ne couvre que le dépôt **distant**, tout juste créé — il ne dit rien du
++   contenu **local** du répertoire. Or ce script gère explicitement le cas
++   d'un `REP_TRAVAIL` **préexistant et non versionné** : après `git init`,
++   remote et écriture du `.gitignore` minimal, `git add -A` est exécuté,
++   puis ce que git a **réellement indexé** (`git diff --cached --name-only`)
++   est comparé aux seuls fichiers que le script vient lui-même de créer
++   (`CONTEXTE.md`, fichiers Specs, `.gitignore`) — la détection porte sur ce
++   que git **suivrait**, pas sur un simple inventaire du disque : un `venv/`
++   ou `__pycache__/` préexistant, exclu par ce `.gitignore`, n'atteint
++   jamais l'index et ne compte donc pas comme contenu préexistant (issue
++   #260 — l'ancienne détection, faite par inventaire brut du répertoire
++   avant même l'écriture du `.gitignore`, remontait à tort ce genre de
++   contenu jamais destiné à être commité, sur le cas pourtant le plus
++   fréquent d'un `REP_TRAVAIL` préexistant : un projet Python déjà entamé).
++   S'il ne reste rien d'autre → comportement ci-dessus, push automatique.
++   S'il reste d'autres fichiers **suivis** → **le push n'est PAS
++   déclenché** : `git init`, le remote, le `.gitignore` et le commit
++   initial sont faits normalement, mais le push est laissé à Alain après
++   relecture (le dépôt étant **public**, ce contenu ne doit pas être publié
++   sans vérification). Le compte-rendu (CLI et web) liste alors les
++   fichiers préexistants détectés (tronquée à une dizaine) et la commande
++   manuelle à lancer une fois la relecture faite.
+ 6. **`BRIDGE_AGENT_DOC.md`** (§2 Projets actifs, §7 Périmètre, date en bas)
+    mis à jour **localement** — jamais poussé automatiquement : reste à
+    committer/pousser à la main (dépôt Bridge_Agent, distinct du projet créé).
+# (diff du fichier suivant)
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+# (index — ignorable)
+index 7bea4b8..e4f7f53 100644
+# (avant — fichier suivant)
+--- a/CHANGELOG.md
+# (après — fichier suivant)
++++ b/CHANGELOG.md
+# ── Zone modifiée : ligne 9 (6 ligne(s)) dans l'ancienne version → ligne 9 (16 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -9,6 +9,16 @@ milliers de caractères sur une seule ligne logique, coûteux à relire et
+ 
+ Convention d'ajout : voir §10 de `BRIDGE_AGENT_DOC.md`.
+ 
++## 28 juillet 2026 — issue #260
++
++Corrige la façon dont `initialiser_git()` (`nouveau_projet.py`) détecte le contenu préexistant d'un `REP_TRAVAIL` non versionné, en la faisant porter sur ce que git suivrait réellement plutôt que sur le contenu brut du disque (issue #260, suite #258). **Défaut** : `_fichiers_preexistants()` (livrée par #258) listait le répertoire via `rglob("*")` **avant** toute écriture — choix délibéré pour que le futur `.gitignore` ne fausse pas le constat — mais comptait de ce fait aussi tout ce que ce même `.gitignore` exclurait. Le cas typique d'un `REP_TRAVAIL` préexistant est un projet Python déjà commencé, contenant donc un `venv/` et des `__pycache__/` : le scan remontait alors potentiellement des milliers d'entrées, le compte-rendu annonçait un nombre de « fichiers préexistants » sans rapport avec la réalité, et le push était retenu pour des fichiers qui n'auraient de toute façon jamais été committés — un garde-fou qui se déclenche presque systématiquement pour de mauvaises raisons finit par être ignoré, ce qui annule le bénéfice recherché par #258. Point mineur de même famille : `rglob("*")` parcourait l'arborescence entière sans borne, au sein d'une requête Flask, alors que #258 venait précisément de poser des timeouts sur les appels git pour cette raison — un `venv/` volumineux aurait pu rendre la création anormalement lente.
++
++**Solution retenue** : réordonnancement de `initialiser_git()` — `git init`, `remote add`, écriture du `.gitignore` minimal (comportement inchangé), PUIS `git add -A`, PUIS détection sur l'index réel (`git diff --cached --name-only`), PUIS commit. Nouvelle `_fichiers_suivis_preexistants(rep_path, git_runner)` remplace `_fichiers_preexistants()` (supprimée, aucune coexistence des deux mécanismes) : liste les fichiers indexés par `git add -A`, exclut ceux que le script crée lui-même (`CONTEXTE.md`, fichiers Specs, `.gitignore` — `FICHIERS_CREES_PAR_SCRIPT`, inchangée), triés, chemins relatifs. Un `venv/`/`__pycache__/` exclu par le `.gitignore` minimal n'atteint jamais l'index et ne compte donc plus comme contenu préexistant. Sémantique de sortie strictement conservée : `contenu_preexistant` (liste triée), `push_ok=None` en cas de retenue volontaire (distinct de `False` = échec réel), `commande_manuelle`, `detail` expliquant le pourquoi — seule la manière de constituer la liste change. `_fichiers_suivis_preexistants()` réutilise le `_git()` local de l'appelant (déjà borné par `TIMEOUT_GIT_LOCAL` et tolérant au dépassement) pour le `git diff --cached` : pas de second mécanisme de timeout à maintenir.
++
++**Test** (`tests/test_init_git_local_258.py`) : scénario « contenu préexistant » (#258) inchangé, continue de passer. Nouveau scénario `scenario_venv_ignore_par_gitignore_pas_de_retenue` : répertoire non versionné contenant un `venv/lib/module.py` et un `__pycache__/module.cpython-311.pyc`, aucun fichier réellement suivi → `contenu_preexistant` vide et push tenté normalement (`push_ok:false`, dépôt distant inexistant — pas `None`). Vérifié comme échouant sur le code d'avant correction (`git stash` du seul `nouveau_projet.py`, test relancé : `venv/lib/module.py` et `__pycache__/module.cpython-311.pyc` remontaient tous les deux) puis passant sur le code corrigé. Les 4 autres scénarios de ce fichier ainsi que `test_nettoyage_arbre_247.py`, `test_auto_extinction_217.py`, `test_verification_commentaire_237.py` repassés sans régression.
++
++**Doc** : §13 étape 5 reformulé — le garde-fou porte désormais explicitement sur les fichiers que git suivrait après `git add -A`, pas sur un inventaire brut du répertoire.
++
+ ## 28 juillet 2026 — issue #259
+ 
+ Ajoute un garde-fou d'idempotence à `reactiverTousLesFiltres()` (bouton « Tous » de l'onglet Résultats, `static/js/app.js`), suite à un signalement de second clic masquant tous les projets (issue #259). **Diagnostic** : la piste envisagée (`nomsProjetsDisponibles()` retournant vide au second appel, faisant écrire un `Set` vide) ne s'est pas confirmée. `nomsProjetsDisponibles()` lit `[...document.getElementById('projet').options]` — le `<select>` global, peuplé une seule fois côté serveur par `lister_projets()` et jamais vidé/reconstruit côté client (seul `ajouterProjetAuSelecteur()` y ajoute une option, sans jamais en retirer) ; il est donc déjà indépendant de l'état d'affichage/filtre de l'onglet Résultats — `appliquerFiltresListe()` ne fait que masquer des LIGNES d'issues (`ligne.style.display`), jamais les options du select, et `localStorage.removeItem` ne touche pas non plus le DOM. Vérifié par exécution directe du fichier réel (`static/js/app.js` chargé tel quel dans un bac à sable `vm` Node, sans modification) : deux appels consécutifs à `reactiverTousLesFiltres()`, partant d'un état partiellement ou totalement désactivé, produisent chacun l'ensemble complet des projets — aucune régression vers un `Set` vide observée sur ce chemin. Seuls trois points du fichier réaffectent `projetsFiltresActifs` (déclaration initiale, `appliquerListeIssues()` via `restaurerFiltresProjets()`, et `reactiverTousLesFiltres()`) ; les deux derniers ont été rejoués sous test sans reproduire le symptôme. Le symptôme décrit (plus aucune issue affichée, récupérable seulement en recliquant chaque projet un par un) correspond en revanche exactement au comportement déjà connu et documenté de `basculerFiltreProjet()` lorsqu'on désactive le dernier projet actif restant (vérifié : le `Set` devient bien vide dans ce cas précis) — plausiblement la manipulation réellement en cause, plutôt qu'un second clic sur « Tous ».
+# (diff du fichier suivant)
+diff --git a/nouveau_projet.py b/nouveau_projet.py
+# (index — ignorable)
+index 63899e5..9282592 100755
+# (avant — fichier suivant)
+--- a/nouveau_projet.py
+# (après — fichier suivant)
++++ b/nouveau_projet.py
+# ── Zone modifiée : ligne 318 (21 ligne(s)) dans l'ancienne version → ligne 318 (27 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -318,21 +318,27 @@ def _commandes_git_manuelles(rep_path: Path, depot: str, complet: bool) -> str:
+             f"git push -u origin master")
+ 
+ 
+-def _fichiers_preexistants(rep_path: Path) -> list[str]:
+-    """Fichiers présents dans rep_path AUTRES que ceux que le script vient de
+-    créer lui-même (CONTEXTE.md, fichiers Specs, .gitignore) — issue #258.
+-    Une liste non vide signale un répertoire qui contenait déjà du contenu
+-    avant l'initialisation git : le dépôt étant créé **public**, ce contenu
+-    ne doit pas être publié sans relecture. Chemins relatifs à rep_path,
+-    triés, pour un affichage stable côté CLI/web."""
+-    trouves = []
+-    for chemin in rep_path.rglob("*"):
+-        if chemin.is_dir():
+-            continue
+-        if chemin.name in FICHIERS_CREES_PAR_SCRIPT:
+-            continue
+-        trouves.append(str(chemin.relative_to(rep_path)))
+-    return sorted(trouves)
++def _fichiers_suivis_preexistants(rep_path: Path, git_runner) -> list[str]:
++    """Fichiers que git suivrait RÉELLEMENT, autres que ceux que le script
++    vient de créer lui-même (CONTEXTE.md, fichiers Specs, .gitignore) —
++    issue #260, corrige #258. Se fonde sur l'index git (`git diff --cached
++    --name-only`), interrogé APRÈS écriture du `.gitignore` minimal et
++    `git add -A` : contrairement à un scan brut du disque (`rglob`, version
++    #258), un contenu exclu par ce `.gitignore` (`venv/`, `__pycache__/`,
++    `*.pyc`, `*.log`, `.env`) n'a jamais atteint l'index et n'apparaît donc
++    plus ici — c'est ce que git commit/push emporterait réellement. Une
++    liste non vide signale un répertoire qui contenait déjà du contenu
++    SUIVI avant l'initialisation git : le dépôt étant créé **public**, ce
++    contenu ne doit pas être publié sans relecture. `git_runner` est le
++    point d'entrée `_git()` de l'appelant, déjà borné par TIMEOUT_GIT_LOCAL
++    et tolérant au dépassement — réutilisé tel quel, pas de second timeout à
++    gérer ici. Chemins relatifs à rep_path, triés, pour un affichage stable
++    côté CLI/web."""
++    res = git_runner("diff", "--cached", "--name-only")
++    if res.returncode != 0:
++        return []
++    fichiers = [ligne for ligne in res.stdout.splitlines() if ligne.strip()]
++    return sorted(f for f in fichiers if Path(f).name not in FICHIERS_CREES_PAR_SCRIPT)
+ 
+ 
+ def initialiser_git(rep: str, depot: str) -> dict:
+# ── Zone modifiée : ligne 349 (13 ligne(s)) dans l'ancienne version → ligne 355 (19 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -349,13 +355,19 @@ def initialiser_git(rep: str, depot: str) -> dict:
+     timeout — issue #258) ne fait PAS échouer l'étape : le commit reste
+     local et `commande_manuelle` indique la commande à relancer à la main.
+ 
+-    Second garde-fou (issue #258) : cette exception ne repose que sur le
+-    fait que le dépôt DISTANT vient d'être créé et ne contient encore aucun
+-    travail d'un tiers — elle ne dit rien du contenu LOCAL du répertoire. Si
+-    REP_TRAVAIL désigne un dossier préexistant non versionné contenant déjà
+-    des fichiers (cas explicitement couvert par ce script), le push n'est
+-    donc PAS déclenché automatiquement : init/remote/.gitignore/commit sont
+-    faits, mais le push reste à lancer à la main après relecture.
++    Second garde-fou (issue #258, affiné #260) : cette exception ne repose
++    que sur le fait que le dépôt DISTANT vient d'être créé et ne contient
++    encore aucun travail d'un tiers — elle ne dit rien du contenu LOCAL du
++    répertoire. Si REP_TRAVAIL désigne un dossier préexistant non versionné
++    contenant déjà des fichiers que git SUIVRAIT (donc hors de ce
++    qu'exclurait le `.gitignore` minimal — cas explicitement couvert par ce
++    script), le push n'est donc PAS déclenché automatiquement :
++    init/remote/.gitignore/commit sont faits, mais le push reste à lancer à
++    la main après relecture. Un `venv/` ou `__pycache__/` préexistant, lui,
++    n'a jamais atteint l'index git et ne déclenche pas cette retenue
++    (issue #260 : la détection portait auparavant sur le contenu brut du
++    disque, avant même l'écriture du `.gitignore`, ce qui faisait remonter
++    des milliers d'entrées jamais destinées à être commitées).
+ 
+     Renvoie {ok, deja_git, push_ok, contenu_preexistant, detail,
+     commande_manuelle}. `contenu_preexistant` est la liste (triée, chemins
+# ── Zone modifiée : ligne 370 (11 ligne(s)) dans l'ancienne version → ligne 382 (6 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -370,11 +382,6 @@ def initialiser_git(rep: str, depot: str) -> dict:
+                 "detail": "déjà un dépôt git — inchangé.",
+                 "commande_manuelle": None}
+ 
+-    # Détection AVANT toute écriture (le futur .gitignore ne doit pas fausser
+-    # le constat) : c'est le contenu tel qu'il existait avant que ce script
+-    # n'y touche.
+-    preexistants = _fichiers_preexistants(rep_path)
+-
+     def _git(*args: str, timeout: float = TIMEOUT_GIT_LOCAL) -> subprocess.CompletedProcess:
+         try:
+             return subprocess.run(["git", *args], cwd=rep_path,
+# ── Zone modifiée : ligne 400 (6 ligne(s)) dans l'ancienne version → ligne 407 (13 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -400,6 +407,13 @@ def initialiser_git(rep: str, depot: str) -> dict:
+         gitignore.write_text(GITIGNORE_MINIMAL, encoding="utf-8")
+ 
+     _git("add", "-A")
++
++    # Détection APRÈS `.gitignore` + `git add -A` (issue #260, corrige #258) :
++    # on regarde ce que git a réellement indexé, pas le contenu brut du
++    # disque — un `venv/`/`__pycache__/` exclu par le `.gitignore` minimal
++    # n'a jamais atteint l'index et ne compte donc pas comme préexistant.
++    preexistants = _fichiers_suivis_preexistants(rep_path, _git)
++
+     _git("commit", "-m", "Initialisation du projet", "--allow-empty")
+ 
+     detail = (f"git init (branche master), remote origin {url} (HTTPS), "
+# (diff du fichier suivant)
+diff --git a/tests/test_init_git_local_258.py b/tests/test_init_git_local_258.py
+# (index — ignorable)
+index 9afbde7..311f913 100644
+# (avant — fichier suivant)
+--- a/tests/test_init_git_local_258.py
+# (après — fichier suivant)
++++ b/tests/test_init_git_local_258.py
+# ── Zone modifiée : ligne 1 (12 ligne(s)) dans l'ancienne version → ligne 1 (16 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,12 +1,16 @@
+ #!/usr/bin/env python3
+-"""Test de `initialiser_git()` (`nouveau_projet.py`) — issue #257, étendu #258.
++"""Test de `initialiser_git()` (`nouveau_projet.py`) — issue #257, étendu
++#258, affiné #260.
+ 
+ L'issue #257 avait été vérifiée manuellement sur des répertoires jetables
+ sous `/tmp` (deux cas : répertoire neuf, déjà-git), puis ces répertoires
+ supprimés — rien n'était resté sous `tests/`. L'issue #258 ajoute un
+ troisième cas (répertoire non versionné avec contenu préexistant → pas de
+ push automatique) et demande de garder trace des trois : ce fichier
+-persiste désormais les trois scénarios.
++persiste désormais ces scénarios. L'issue #260 corrige la façon dont ce
++contenu préexistant est détecté (ce que git suivrait réellement après
++`git add -A`, pas un scan brut du disque via `rglob`) et ajoute le
++scénario `venv/`/`__pycache__/` qui en est la motivation directe.
+ 
+ Aucun vrai dépôt GitHub n'est créé ni contacté : `depot` pointe vers un
+ dépôt qui n'existe pas, si bien que `git push` échoue proprement (dépôt
+# ── Zone modifiée : ligne 141 (6 ligne(s)) dans l'ancienne version → ligne 145 (53 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -141,6 +145,53 @@ def scenario_contenu_preexistant_pas_de_push():
+             "commande_manuelle": res["commande_manuelle"]}
+ 
+ 
++def scenario_venv_ignore_par_gitignore_pas_de_retenue():
++    """Cœur de l'issue #260 : répertoire non versionné contenant un `venv/`
++    (avec un fichier dedans) et un `__pycache__/`, mais AUCUN fichier
++    réellement suivi par git — le `.gitignore` minimal écrit par le script
++    exclut justement ces deux dossiers. `contenu_preexistant` doit rester
++    VIDE (rien de tout ça n'atteint jamais l'index git) et le push doit être
++    tenté normalement, comme sur un répertoire vide. Sur le code d'avant
++    #260 (scan brut du disque via `rglob`, avant même l'écriture du
++    `.gitignore`), ce scénario échoue : `venv/lib/module.py` et
++    `__pycache__/module.cpython.pyc` remontent tous les deux comme contenu
++    préexistant et le push est retenu à tort."""
++    with tempfile.TemporaryDirectory() as tmp:
++        rep = Path(tmp)
++        venv_lib = rep / "venv" / "lib"
++        venv_lib.mkdir(parents=True)
++        (venv_lib / "module.py").write_text("# faux paquet installé\n", encoding="utf-8")
++        pycache = rep / "__pycache__"
++        pycache.mkdir()
++        (pycache / "module.cpython-311.pyc").write_bytes(b"\x00\x01\x02")
++
++        res = np.initialiser_git(str(rep), DEPOT_INEXISTANT)
++
++        assert res["ok"], f"l'initialisation aurait dû réussir : {res}"
++        assert res["deja_git"] is False
++        assert res["contenu_preexistant"] == [], (
++            f"un venv/__pycache__ exclu par le .gitignore minimal ne doit "
++            f"jamais compter comme contenu préexistant : {res['contenu_preexistant']}")
++        # Aucune retenue volontaire → le push est tenté normalement (et
++        # échoue proprement, dépôt distant inexistant — pas un push_ok=None).
++        assert res["push_ok"] is False, (
++            f"push_ok attendu False (tentative normale, dépôt distant "
++            f"inexistant), pas None (retenue) : {res}")
++        assert res["commande_manuelle"] == f"cd {rep} && git push -u origin master"
++
++        assert (rep / ".git").exists(), "git init n'a pas créé .git"
++        # venv/ et __pycache__/ ne doivent pas être suivis par git.
++        suivis = subprocess.run(
++            ["git", "ls-files"], cwd=rep,
++            capture_output=True, text=True).stdout.splitlines()
++        assert not any(f.startswith("venv/") or f.startswith("__pycache__/")
++                      for f in suivis), (
++            f"venv/__pycache__ ne devraient pas être suivis par git : {suivis}")
++
++    return {"contenu_preexistant": res["contenu_preexistant"],
++            "push_ok": res["push_ok"]}
++
++
+ def scenario_timeout_git_ne_fait_pas_echouer_la_creation():
+     """Point 1 de l'issue #258 : un `git push` qui dépasse son timeout doit
+     être traité comme un échec normal de l'étape (comme un push refusé par
+# ── Zone modifiée : ligne 196 (6 ligne(s)) dans l'ancienne version → ligne 247 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -196,6 +247,9 @@ def main():
+         ("contenu préexistant (issue #258) → init/commit locaux, "
+          "aucun push tenté, commande manuelle renvoyée",
+          scenario_contenu_preexistant_pas_de_push),
++        ("venv/__pycache__ préexistants mais ignorés par .gitignore "
++         "(issue #260) → aucune retenue, push tenté normalement",
++         scenario_venv_ignore_par_gitignore_pas_de_retenue),
+         ("timeout de git push (issue #258) → échec normal de l'étape, "
+          "pas d'exception, création non bloquée",
+          scenario_timeout_git_ne_fait_pas_echouer_la_creation),

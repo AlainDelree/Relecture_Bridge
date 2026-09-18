@@ -1,0 +1,229 @@
+672dba0
+
+commit 672dba0
+Author: Alain Delree <alain.delree@gmail.com>
+Date:   Sat Jul 25 23:21:21 2026 +0200
+
+    implémentation de config.py (issue #12, suite #9)
+    
+    - chemin_config_portable : Windows via %SYSTEMDRIVE% (repli sur "C:"
+      si absent), Linux via ACTUALISE_CONFIG_DIR ou ~/.config/actualise/.
+    - charger_config : FileNotFoundError/json.JSONDecodeError laissées se
+      propager (pas d'exception dédiée) — absence de config valide
+      bloquante, à la différence de verifier_version.
+    - sauvegarder_config : écriture atomique (fichier temporaire dans le
+      même dossier + os.replace), création du dossier parent si besoin.
+    - tests/test_config.py : couverture des 3 fonctions (Windows/Linux,
+      avec/sans variable d'env, chargement valide/absent/invalide,
+      aller-retour et création de dossier).
+
+diff --git a/config.py b/config.py
+index 23c4fc2..dc2f3ea 100644
+--- a/config.py
++++ b/config.py
+@@ -5,19 +5,40 @@ Voir CONCEPTION.md, sections « Contenu de config.json » et
+ « Configuration portable ».
+ """
+ 
++import json
++import os
++import sys
++import tempfile
+ from pathlib import Path
+ from typing import Any
+ 
++_NOM_FICHIER_CONFIG = "config.json"
++
+ 
+ def chemin_config_portable() -> Path:
+     """Retourne le chemin du dossier de configuration selon l'OS.
+ 
+-    Windows : ``C:\\Actualise\\``.
+-    Linux : ``~/.config/actualise/``, ou variable d'environnement dédiée
+-    si définie (voir CONCEPTION.md, « Configuration portable » et
+-    décision actée correspondante dans le tableau « Décisions actées »).
++    Windows : ``%SYSTEMDRIVE%\\Actualise\\`` — la variable
++    d'environnement ``SYSTEMDRIVE`` est préférée à un ``C:`` en dur pour
++    rester correct sur une installation où le disque système n'est pas
++    ``C:`` ; à défaut de cette variable (cas anormal), repli sur
++    ``C:`` (voir CONCEPTION.md, « Configuration portable »).
++
++    Linux (et autres OS non Windows) : variable d'environnement
++    ``ACTUALISE_CONFIG_DIR`` si définie, sinon ``~/.config/actualise/``.
++
++    Ne crée pas le dossier — résolution de chemin uniquement (voir
++    ``sauvegarder_config`` pour la création).
+     """
+-    raise NotImplementedError
++    if sys.platform == "win32":
++        lecteur_systeme = os.environ.get("SYSTEMDRIVE", "C:")
++        return Path(f"{lecteur_systeme}/Actualise")
++
++    dossier_env = os.environ.get("ACTUALISE_CONFIG_DIR")
++    if dossier_env:
++        return Path(dossier_env)
++
++    return Path.home() / ".config" / "actualise"
+ 
+ 
+ def charger_config() -> dict[str, Any]:
+@@ -26,13 +47,47 @@ def charger_config() -> dict[str, Any]:
+     Voir CONCEPTION.md, section « Contenu de config.json », pour le
+     format attendu (blocs ``actualise`` / ``application_cible``,
+     ``zone_attente``, ``topic_ntfy``).
++
++    L'absence de configuration valide est bloquante pour Actualise (à
++    la différence de ``verifier_version``, pas de repli silencieux
++    ici) : les exceptions standard ``FileNotFoundError`` (fichier
++    absent) et ``json.JSONDecodeError`` (JSON malformé) sont laissées
++    se propager telles quelles à l'appelant, plutôt que d'introduire
++    une exception dédiée.
+     """
+-    raise NotImplementedError
++    chemin_fichier = chemin_config_portable() / _NOM_FICHIER_CONFIG
++    with open(chemin_fichier, encoding="utf-8") as f:
++        return json.load(f)
+ 
+ 
+ def sauvegarder_config(config: dict[str, Any]) -> None:
+     """Écrit le contenu de ``config`` dans config.json.
+ 
+     Voir CONCEPTION.md, section « Contenu de config.json ».
++
++    Crée le dossier de configuration si nécessaire. Écriture atomique :
++    le contenu est d'abord écrit dans un fichier temporaire du même
++    dossier, puis basculé via ``os.replace`` — un fichier temporaire
++    partiellement écrit (interruption en cours de route) ne peut donc
++    jamais remplacer un ``config.json`` déjà valide.
+     """
+-    raise NotImplementedError
++    dossier_config = chemin_config_portable()
++    dossier_config.mkdir(parents=True, exist_ok=True)
++    chemin_fichier = dossier_config / _NOM_FICHIER_CONFIG
++
++    fichier_temp = tempfile.NamedTemporaryFile(
++        mode="w",
++        encoding="utf-8",
++        dir=dossier_config,
++        prefix=f".{_NOM_FICHIER_CONFIG}.",
++        suffix=".tmp",
++        delete=False,
++    )
++    chemin_temp = Path(fichier_temp.name)
++    try:
++        with fichier_temp:
++            json.dump(config, fichier_temp, indent=2, ensure_ascii=False)
++        os.replace(chemin_temp, chemin_fichier)
++    except BaseException:
++        chemin_temp.unlink(missing_ok=True)
++        raise
+diff --git a/tests/test_config.py b/tests/test_config.py
+new file mode 100644
+index 0000000..1fee2fe
+--- /dev/null
++++ b/tests/test_config.py
+@@ -0,0 +1,104 @@
++"""Tests unitaires pour ``config.py``.
++
++Aucune modification de l'environnement réel de l'utilisateur : les
++dossiers de configuration utilisés dans les tests sont systématiquement
++des dossiers temporaires (``tempfile``), et ``sys.platform``/``os.environ``
++sont simulés via ``unittest.mock``. Voir CONCEPTION.md, « Configuration
++portable » et « Contenu de config.json ».
++"""
++
++import json
++import tempfile
++import unittest
++from pathlib import Path
++from unittest.mock import patch
++
++from config import chemin_config_portable, charger_config, sauvegarder_config
++
++
++class TestCheminConfigPortable(unittest.TestCase):
++    @patch("config.os.environ", {"SYSTEMDRIVE": "D:"})
++    @patch("config.sys.platform", "win32")
++    def test_windows_avec_systemdrive(self):
++        self.assertEqual(chemin_config_portable(), Path("D:/Actualise"))
++
++    @patch("config.os.environ", {})
++    @patch("config.sys.platform", "win32")
++    def test_windows_sans_systemdrive_repli_sur_c(self):
++        self.assertEqual(chemin_config_portable(), Path("C:/Actualise"))
++
++    @patch("config.os.environ", {"ACTUALISE_CONFIG_DIR": "/tmp/config-actualise-test"})
++    @patch("config.sys.platform", "linux")
++    def test_linux_avec_variable_environnement(self):
++        self.assertEqual(
++            chemin_config_portable(), Path("/tmp/config-actualise-test")
++        )
++
++    @patch("config.os.environ", {})
++    @patch("config.sys.platform", "linux")
++    def test_linux_sans_variable_environnement_repli_sur_home(self):
++        self.assertEqual(
++            chemin_config_portable(), Path.home() / ".config" / "actualise"
++        )
++
++
++class TestChargerConfig(unittest.TestCase):
++    def setUp(self):
++        self.dossier_temp = tempfile.TemporaryDirectory()
++        self.addCleanup(self.dossier_temp.cleanup)
++        self.chemin_dossier = Path(self.dossier_temp.name)
++        patcher = patch("config.chemin_config_portable", return_value=self.chemin_dossier)
++        self.mock_chemin = patcher.start()
++        self.addCleanup(patcher.stop)
++
++    def test_chargement_valide_retourne_le_dict(self):
++        config_attendue = {"actualise": {"build_installe": 12}, "topic_ntfy": "actualise-scrabble"}
++        (self.chemin_dossier / "config.json").write_text(
++            json.dumps(config_attendue), encoding="utf-8"
++        )
++
++        self.assertEqual(charger_config(), config_attendue)
++
++    def test_fichier_absent_leve_une_exception(self):
++        with self.assertRaises(FileNotFoundError):
++            charger_config()
++
++    def test_json_invalide_leve_une_exception(self):
++        (self.chemin_dossier / "config.json").write_text("{ceci n'est pas du json", encoding="utf-8")
++
++        with self.assertRaises(json.JSONDecodeError):
++            charger_config()
++
++
++class TestSauvegarderConfig(unittest.TestCase):
++    def setUp(self):
++        self.dossier_temp = tempfile.TemporaryDirectory()
++        self.addCleanup(self.dossier_temp.cleanup)
++        self.chemin_dossier = Path(self.dossier_temp.name) / "sous_dossier" / "actualise"
++        patcher = patch("config.chemin_config_portable", return_value=self.chemin_dossier)
++        self.mock_chemin = patcher.start()
++        self.addCleanup(patcher.stop)
++
++    def test_aller_retour_avec_charger_config(self):
++        config = {"actualise": {"build_installe": 12}, "topic_ntfy": "actualise-scrabble"}
++
++        sauvegarder_config(config)
++
++        self.assertEqual(charger_config(), config)
++
++    def test_cree_le_dossier_parent_si_absent(self):
++        self.assertFalse(self.chemin_dossier.exists())
++
++        sauvegarder_config({"cle": "valeur"})
++
++        self.assertTrue((self.chemin_dossier / "config.json").is_file())
++
++    def test_aucun_fichier_temporaire_residuel(self):
++        sauvegarder_config({"cle": "valeur"})
++
++        fichiers = list(self.chemin_dossier.iterdir())
++        self.assertEqual(fichiers, [self.chemin_dossier / "config.json"])
++
++
++if __name__ == "__main__":
++    unittest.main()

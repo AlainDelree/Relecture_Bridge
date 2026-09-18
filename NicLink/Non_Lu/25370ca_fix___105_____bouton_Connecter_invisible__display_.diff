@@ -1,0 +1,21 @@
+25370ca
+
+commit 25370ca
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Mon Aug 10 22:24:10 2026 +0200
+
+    fix: #105 — bouton Connecter invisible (display:'' → 'block')
+
+diff --git a/nicsoft/web/static/app.js b/nicsoft/web/static/app.js
+index b226828..3a919d7 100644
+--- a/nicsoft/web/static/app.js
++++ b/nicsoft/web/static/app.js
+@@ -273,7 +273,7 @@ function _applyBoardBadge() {
+   const btnConnecter       = document.getElementById("btn-connecter");
+   if (schemaConnected)    schemaConnected.style.display    = _boardOk ? "block" : "none";
+   if (schemaDisconnected) schemaDisconnected.style.display = _boardOk ? "none"  : "block";
+-  if (btnConnecter)       btnConnecter.style.display       = _boardOk ? "none"  : "";
++  if (btnConnecter)       btnConnecter.style.display       = _boardOk ? "none"  : "block";
+ 
+   // Déplace le wrapper HH selon l'état de l'échiquier : en bas de la colonne
+   // Jouer (après Exercices) si non connecté, à sa place d'origine (avant Labo) sinon.

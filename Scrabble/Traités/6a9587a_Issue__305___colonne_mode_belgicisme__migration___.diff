@@ -1,0 +1,211 @@
+6a9587a
+
+commit 6a9587a
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Mon Jul 27 10:54:05 2026 +0200
+
+    Issue #305 : colonne mode_belgicisme (migration + persistance + filtrage accueil)
+    
+    - stockage.py : migration ALTER TABLE idempotente dans _initialiser_schema
+      (bases existantes -> défaut 0/France) ; ResumePartie.mode_belgicisme ;
+      demarrer_suivi() et lister_parties() lisent/écrivent la colonne.
+    - accueil.py : lancer_partie() persiste le mode actif ; lister_parties_en_cours()
+      filtre les parties selon config_partie.mode_belgicisme avant sélection.
+    - accueil.js : choisirModeDictionnaire() rafraîchit la liste des parties après
+      bascule France/Belgicisme.
+    - tests : adaptation des mocks demarrer_suivi (nouveau paramètre par mot-clé)
+      dans test_accueil.py, test_jeu_pose.py, test_journal_integration.py.
+
+diff --git a/src/scrabble/persistance/stockage.py b/src/scrabble/persistance/stockage.py
+index 15dd304..ee8de0e 100644
+--- a/src/scrabble/persistance/stockage.py
++++ b/src/scrabble/persistance/stockage.py
+@@ -106,6 +106,7 @@ class ResumePartie:
+     scores_finaux: list[int] | None = None
+     gagnants: list[str] | None = None
+     scores_actuels: list[int] | None = None
++    mode_belgicisme: bool = False
+ 
+     @property
+     def terminee(self) -> bool:
+@@ -269,6 +270,17 @@ def _initialiser_schema(connexion: sqlite3.Connection) -> None:
+             ON actions (id_partie, indice);
+         """
+     )
++    # Migration (issue #305) : ajoute la colonne ``mode_belgicisme`` aux bases
++    # créées avant son introduction. Les parties existantes reçoivent la
++    # valeur par défaut 0 (France), comportement souhaité.
++    colonnes = [
++        row[1] for row in connexion.execute("PRAGMA table_info(parties)").fetchall()
++    ]
++    if "mode_belgicisme" not in colonnes:
++        connexion.execute(
++            "ALTER TABLE parties ADD COLUMN "
++            "mode_belgicisme INTEGER NOT NULL DEFAULT 0"
++        )
+     connexion.commit()
+ 
+ 
+@@ -281,7 +293,11 @@ def _maintenant() -> str:
+ # Fonctions principales
+ # --------------------------------------------------------------------------- #
+ 
+-def demarrer_suivi(partie: Partie, chemin: _TypeChemin = CHEMIN_DEFAUT) -> int:
++def demarrer_suivi(
++    partie: Partie,
++    chemin: _TypeChemin = CHEMIN_DEFAUT,
++    mode_belgicisme: bool = False,
++) -> int:
+     """Enregistre une partie fraîche (graine + joueurs), statut « en cours ».
+ 
+     À appeler juste après :func:`~scrabble.moteur.partie.creer_partie`. Renvoie
+@@ -301,14 +317,15 @@ def demarrer_suivi(partie: Partie, chemin: _TypeChemin = CHEMIN_DEFAUT) -> int:
+     with _connexion(chemin) as connexion:
+         curseur = connexion.execute(
+             "INSERT INTO parties "
+-            "(graine, date_creation, date_maj, joueurs, statut) "
+-            "VALUES (?, ?, ?, ?, ?)",
++            "(graine, date_creation, date_maj, joueurs, statut, mode_belgicisme) "
++            "VALUES (?, ?, ?, ?, ?, ?)",
+             (
+                 partie.graine,
+                 horodatage,
+                 horodatage,
+                 _joueurs_vers_json(partie.joueurs),
+                 STATUT_EN_COURS,
++                int(mode_belgicisme),
+             ),
+         )
+         return int(curseur.lastrowid)
+@@ -461,7 +478,8 @@ def lister_parties(chemin: _TypeChemin = CHEMIN_DEFAUT) -> list[ResumePartie]:
+     with _connexion(chemin) as connexion:
+         lignes = connexion.execute(
+             "SELECT id, statut, graine, date_creation, date_maj, joueurs, "
+-            "scores_finaux, gagnants FROM parties ORDER BY date_maj DESC, id DESC"
++            "scores_finaux, gagnants, mode_belgicisme FROM parties "
++            "ORDER BY date_maj DESC, id DESC"
+         ).fetchall()
+         scores_par_partie = _scores_actuels_par_partie(connexion)
+     resumes: list[ResumePartie] = []
+@@ -482,6 +500,7 @@ def lister_parties(chemin: _TypeChemin = CHEMIN_DEFAUT) -> list[ResumePartie]:
+                 scores_finaux=None if scores is None else json.loads(scores),
+                 gagnants=None if gagnants is None else json.loads(gagnants),
+                 scores_actuels=scores_actuels,
++                mode_belgicisme=bool(ligne["mode_belgicisme"]),
+             )
+         )
+     return resumes
+diff --git a/src/scrabble/ui/accueil.py b/src/scrabble/ui/accueil.py
+index 463e5c0..175e5a0 100644
+--- a/src/scrabble/ui/accueil.py
++++ b/src/scrabble/ui/accueil.py
+@@ -560,7 +560,9 @@ class ApiAccueil:
+                 bonus_fin_partie=bonus_fin_partie,
+                 dictionnaire_ia=trie_ia,
+             )
+-            self._id_partie = demarrer_suivi(self._partie)
++            self._id_partie = demarrer_suivi(
++                self._partie, mode_belgicisme=self.config_partie.mode_belgicisme
++            )
+             # Détail à rejouer côté Jeu pour l'écran de tirage (issue #170) :
+             # l'ordre de création (humains puis ordinateurs) et la graine suffisent
+             # à ``detail_tirage_ordre`` pour reproduire exactement le tirage.
+@@ -612,6 +614,11 @@ class ApiAccueil:
+         """
+         try:
+             toutes = lister_parties()
++            # Filtrage par mode de jeu actif (issue #305) : une partie créée en
++            # mode Belgicisme ne doit pas apparaître à l'accueil en mode France,
++            # et inversement.
++            mode_actif = self.config_partie.mode_belgicisme
++            toutes = [p for p in toutes if p.mode_belgicisme == mode_actif]
+             # ``toutes`` est trié date décroissante : le premier de chaque
+             # catégorie est le plus récent.
+             en_cours = next((p for p in toutes if not p.terminee), None)
+diff --git a/src/scrabble/ui/web/accueil.js b/src/scrabble/ui/web/accueil.js
+index 4ed17a4..6c54f5e 100644
+--- a/src/scrabble/ui/web/accueil.js
++++ b/src/scrabble/ui/web/accueil.js
+@@ -330,6 +330,7 @@ document.addEventListener('DOMContentLoaded', async () => {
+     async function choisirModeDictionnaire(modeBelgicisme) {
+         syncModeDictionnaire(modeBelgicisme);
+         await api.definir_mode_belgicisme(modeBelgicisme);
++        await chargerPartiesEnCours();
+     }
+ 
+     drapeauFrance.addEventListener('click', () => choisirModeDictionnaire(false));
+diff --git a/tests/test_accueil.py b/tests/test_accueil.py
+index e8450ce..15f8ba9 100644
+--- a/tests/test_accueil.py
++++ b/tests/test_accueil.py
+@@ -331,7 +331,7 @@ class TestApiAccueilLancement:
+         # Stub de la persistance pour éviter d'écrire sur disque
+         monkeypatch.setattr(
+             "scrabble.ui.accueil.demarrer_suivi",
+-            lambda partie: 42,
++            lambda partie, **_: 42,
+         )
+ 
+         api = ApiAccueil()
+@@ -481,7 +481,7 @@ class TestSourceDictionnaireAppliquee:
+             lambda source="ods", **_: appels.append(source)
+             or Trie.depuis_iterable(["TEST"]),
+         )
+-        monkeypatch.setattr("scrabble.ui.accueil.demarrer_suivi", lambda partie: 7)
++        monkeypatch.setattr("scrabble.ui.accueil.demarrer_suivi", lambda partie, **_: 7)
+ 
+         api = ApiAccueil()
+         api.ajouter_humain("Alice")
+@@ -535,7 +535,7 @@ class TestSourceDictionnaireAppliquee:
+             lambda source="ods", **_: appels.append(source)
+             or Trie.depuis_iterable(["TEST"]),
+         )
+-        monkeypatch.setattr("scrabble.ui.accueil.demarrer_suivi", lambda partie: 1)
++        monkeypatch.setattr("scrabble.ui.accueil.demarrer_suivi", lambda partie, **_: 1)
+ 
+         api = ApiAccueil()
+         api.ajouter_humain("Alice")
+@@ -606,7 +606,7 @@ class TestSourceDictionnaireAppliquee:
+         monkeypatch.setattr(
+             "scrabble.ui.accueil.obtenir_trie", lambda source="ods", **_: tries[source]
+         )
+-        monkeypatch.setattr("scrabble.ui.accueil.demarrer_suivi", lambda partie: 1)
++        monkeypatch.setattr("scrabble.ui.accueil.demarrer_suivi", lambda partie, **_: 1)
+ 
+         api = ApiAccueil()
+         api.ajouter_humain("Alice")
+@@ -818,7 +818,7 @@ class TestApiAccueilInfosTirage:
+         )
+         monkeypatch.setattr(
+             "scrabble.ui.accueil.demarrer_suivi",
+-            lambda partie: 7,
++            lambda partie, **_: 7,
+         )
+         return ApiAccueil()
+ 
+diff --git a/tests/test_jeu_pose.py b/tests/test_jeu_pose.py
+index 1251730..882bffd 100644
+--- a/tests/test_jeu_pose.py
++++ b/tests/test_jeu_pose.py
+@@ -618,7 +618,7 @@ class TestSourceDictionnaireValidationCoup:
+         )
+         # Pas de persistance en base pendant le test : id_partie reste None,
+         # ce qui neutralise aussi ``_persister_entrees`` côté ApiJeu.
+-        monkeypatch.setattr("scrabble.ui.accueil.demarrer_suivi", lambda partie: None)
++        monkeypatch.setattr("scrabble.ui.accueil.demarrer_suivi", lambda partie, **_: None)
+ 
+         api = ApiAccueil()
+         api.ajouter_humain("Alice")
+diff --git a/tests/test_journal_integration.py b/tests/test_journal_integration.py
+index 7bd4ca2..6543b7e 100644
+--- a/tests/test_journal_integration.py
++++ b/tests/test_journal_integration.py
+@@ -117,7 +117,7 @@ class TestJournalAccueil:
+             "scrabble.ui.accueil.obtenir_trie",
+             lambda source="ods", **_: Trie.depuis_iterable(["MAISON", "TEST"]),
+         )
+-        monkeypatch.setattr("scrabble.ui.accueil.demarrer_suivi", lambda partie: 42)
++        monkeypatch.setattr("scrabble.ui.accueil.demarrer_suivi", lambda partie, **_: 42)
+ 
+         api = ApiAccueil()
+         api.ajouter_humain("Alice")

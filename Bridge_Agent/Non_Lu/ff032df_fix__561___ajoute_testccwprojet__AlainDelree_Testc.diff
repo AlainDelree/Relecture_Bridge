@@ -1,0 +1,32 @@
+ff032df
+
+commit ff032df
+Author: Athanatos123 <79310036+AlainDelree@users.noreply.github.com>
+Date:   Thu Sep 17 17:53:14 2026 +0200
+
+    fix #561 : ajoute testccwprojet (AlainDelree/Testccwprojet) à la réinstallation CCW
+
+diff --git a/provisioning/windows/REINSTALLATION_CCW.md b/provisioning/windows/REINSTALLATION_CCW.md
+index 4a1e736..d07ac42 100644
+--- a/provisioning/windows/REINSTALLATION_CCW.md
++++ b/provisioning/windows/REINSTALLATION_CCW.md
+@@ -102,6 +102,7 @@ la réinstallation, puisque le service NSSM et ses tokens ne survivent pas :
+ | `actualise` | `AlainDelree/Actualise` |
+ | `rummikub` | `AlainDelree/Rummikub` |
+ | `scrabble` | `AlainDelree/Scrabble` |
++| `testccwprojet` | `AlainDelree/Testccwprojet` |
+ 
+ Rappel : les fichiers `.conf` de chaque projet (ex. `configs\alchess-ccw.conf`)
+ vivent dans le dépôt du projet lui-même, donc **survivent** à la
+diff --git a/provisioning/windows/reinstaller_projets_ccw.ps1 b/provisioning/windows/reinstaller_projets_ccw.ps1
+index ae5b20f..e39eb49 100644
+--- a/provisioning/windows/reinstaller_projets_ccw.ps1
++++ b/provisioning/windows/reinstaller_projets_ccw.ps1
+@@ -40,6 +40,7 @@ $Projets = @(
+     @{ NomProjet = "actualise"; Depot = "AlainDelree/Actualise" }
+     @{ NomProjet = "rummikub";  Depot = "AlainDelree/Rummikub" }
+     @{ NomProjet = "scrabble";  Depot = "AlainDelree/Scrabble" }
++    @{ NomProjet = "testccwprojet"; Depot = "AlainDelree/Testccwprojet" }
+ )
+ 
+ if ($SeulementProjets) {

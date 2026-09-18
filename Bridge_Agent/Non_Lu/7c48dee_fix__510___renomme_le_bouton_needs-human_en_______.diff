@@ -1,0 +1,32 @@
+7c48dee
+
+commit 7c48dee
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Sun Aug 30 17:00:25 2026 +0200
+
+    fix #510 : renomme le bouton needs-human en '🔄 Retirer needs-human' pour lever l'ambiguïté avec 'Relancer watcher CCL'
+
+diff --git a/static/js/app.js b/static/js/app.js
+index ad41e25..3c2a949 100644
+--- a/static/js/app.js
++++ b/static/js/app.js
+@@ -2285,7 +2285,7 @@ function rendrePanneauLateralActions() {
+   // réutilisée à l'identique, aucune nouvelle route.
+   if (!ferme && nomsLabels.includes('needs-human')) {
+     html += '<button onclick="relancerIssue(\'' + escapeHtml(nom) + '\', '
+-          + Number(numero) + ')">🔄 Relancer</button>';
++          + Number(numero) + ')">🔄 Retirer needs-human</button>';
+     html += '<button class="danger-plein" onclick="fermerIssue(\'' + escapeHtml(nom) + '\', '
+           + Number(numero) + ')">✖ Fermer l\'issue</button>';
+   }
+@@ -3756,8 +3756,8 @@ async function relancerIssue(nom, numero) {
+     alert('Dépôt GitHub introuvable pour le projet « ' + nom + ' » — impossible de relancer.');
+     return;
+   }
+-  if (!confirm("Relancer l'issue #" + numero + " ?\n\n"
+-             + "Le label needs-human sera retiré : l'issue sera reprise par le watcher "
++  if (!confirm("Retirer le label needs-human de l'issue #" + numero + " ?\n\n"
++             + "L'issue sera reprise par le watcher "
+              + "à son prochain cycle (s'il tourne).")) return;
+ 
+   let resultat;

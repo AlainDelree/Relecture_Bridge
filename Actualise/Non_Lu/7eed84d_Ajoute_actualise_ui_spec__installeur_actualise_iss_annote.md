@@ -1,0 +1,461 @@
+7eed84d
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 7eed84d
+# ── Qui a fait ce commit.
+Author: Alain Delree <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Mon Aug 10 15:25:55 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Ajoute actualise_ui.spec, installeur/actualise.iss et build/rebuild_actualise_setup.bat (issue #44)
+    
+    Prépare Actualise-Setup.exe, un installeur InnoSetup indépendant qui
+    installe l'instance partagée d'Actualise dans C:\Actualise\ sans plus
+    dépendre des setups Scrabble/Rummikub — voir INTEGRATION.md.
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/.gitignore b/.gitignore
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 9bd9f86..c14f262 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/.gitignore
+# ── Version APRÈS ce commit.
++++ b/.gitignore
+# ── Zone modifiée : ligne 8 (6 ligne(s)) dans l'ancienne version → ligne 8 (17 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -8,6 +8,17 @@ __pycache__/
+ build/
+ dist/
+ *.spec
+-# Exception : le .spec de l'exécutable Windows est committé volontairement,
+-# contrairement aux artefacts *.spec habituels (temporaires).
++# Exception : les .spec des exécutables Windows sont committés
++# volontairement, contrairement aux artefacts *.spec habituels
++# (temporaires).
+ !actualise.spec
++!actualise_ui.spec
++# Note : les scripts build/*.bat sont committés malgré la règle build/
++# ci-dessus (qui vise le dossier de sortie intermédiaire PyInstaller) —
++# git n'autorise pas de règle "!" pour ré-inclure un fichier dont le
++# dossier parent est exclu, donc chaque script est ajouté explicitement
++# avec `git add -f` (voir issue #328 pour rebuild_actualise.bat, issue #44
++# pour rebuild_actualise_setup.bat).
++
++# Sortie ISCC de l'installeur InnoSetup (issue #44).
++installeur/output/
+# (diff du fichier suivant)
+diff --git a/actualise_ui.spec b/actualise_ui.spec
+# ── Ce fichier n'existait pas avant ce commit : il vient d'être créé.
+new file mode 100644
+# (index — ignorable)
+index 0000000..ae095ad
+# (avant — fichier suivant)
+--- /dev/null
+# (après — fichier suivant)
++++ b/actualise_ui.spec
+# ── Zone modifiée : ligne 0 (0 ligne(s)) dans l'ancienne version → ligne 1 (60 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -0,0 +1,60 @@
++# -*- mode: python ; coding: utf-8 -*-
++"""Spec PyInstaller pour l'exécutable Windows d'ActualiseUI (issue #44).
++
++Build : ``pyinstaller actualise_ui.spec`` (depuis la racine du dépôt, avec
++l'environnement virtuel du projet activé — ``pyinstaller`` installé).
++Sortie en mode ``--onefile`` dans ``dist/ActualiseUI.exe`` (un seul
++fichier, contrairement à ``actualise.spec`` qui produit un dossier
++``dist/Actualise/``) : ActualiseUI est une petite fenêtre de choix
++(tkinter) lancée ponctuellement par l'application cible, pas un service
++persistant — pas besoin d'un ``_internal\\`` séparé pour ce composant.
++
++ActualiseUI doit rester invisible en dehors de sa fenêtre tkinter :
++``console=False``/``noconsole=True`` (voir ``actualise_ui.py``, docstring
++de module — fenêtre de choix affichée sans console parasite).
++
++Données embarquées (``datas``) et imports cachés (``hiddenimports``)
++----------------------------------------------------------------------
++Volontairement vides. ``actualise_ui.py`` n'a pas de dépendance externe
++(``argparse``, ``subprocess``, ``tkinter``, ``pathlib`` — tous dans la
++bibliothèque standard) ; ``tkinter`` est détecté et embarqué
++automatiquement par PyInstaller sans déclaration explicite. Pas de
++ressource statique chargée au runtime (confirmé en lisant
++``actualise_ui.py`` en entier).
++"""
++
++a = Analysis(
++    ['actualise_ui.py'],
++    pathex=[],
++    binaries=[],
++    datas=[],
++    hiddenimports=[],
++    hookspath=[],
++    hooksconfig={},
++    runtime_hooks=[],
++    excludes=[],
++    noarchive=False,
++    optimize=0,
++)
++pyz = PYZ(a.pure)
++
++exe = EXE(
++    pyz,
++    a.scripts,
++    a.binaries,
++    a.datas,
++    [],
++    name='ActualiseUI',
++    debug=False,
++    bootloader_ignore_signals=False,
++    strip=False,
++    upx=True,
++    upx_exclude=[],
++    runtime_tmpdir=None,
++    console=False,  # Invisible hors de sa fenêtre tkinter (issue #44).
++    disable_windowed_traceback=False,
++    argv_emulation=False,
++    target_arch=None,
++    codesign_identity=None,
++    entitlements_file=None,
++)
+# (diff du fichier suivant)
+diff --git a/build/rebuild_actualise_setup.bat b/build/rebuild_actualise_setup.bat
+# ── Ce fichier n'existait pas avant ce commit : il vient d'être créé.
+new file mode 100644
+# (index — ignorable)
+index 0000000..6490ecd
+# (avant — fichier suivant)
+--- /dev/null
+# (après — fichier suivant)
++++ b/build/rebuild_actualise_setup.bat
+# ── Zone modifiée : ligne 0 (0 ligne(s)) dans l'ancienne version → ligne 1 (203 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -0,0 +1,203 @@
++@echo off
++setlocal enabledelayedexpansion
++pushd "%~dp0.."
++set "ORIGDIR=%CD%"
++
++echo ============================================
++echo   Rebuild Actualise-Setup.exe
++echo ============================================
++echo.
++
++REM --- 1. Copier les sources vers un repertoire local de la VM ---------------
++REM Staging local IMPERATIF (meme raison que rebuild_actualise.bat, issue
++REM #297) : PyInstaller/ISCC produisent des resultats corrompus quand ils
++REM tournent directement sur le partage VirtualBox (\\VBOXSVR\...). On copie
++REM donc tout ce qui est necessaire vers un dossier local
++REM (C:\Temp\ActualiseBuild), on construit et on compile l'installeur
++REM entierement la-bas, puis on ne recopie vers le partage QUE le setup final
++REM (installeur\output\Actualise-Setup-v<N>.exe).
++echo [1/8] Copie des sources vers le repertoire de build local...
++set "LOCALBUILD=C:\Temp\ActualiseBuild"
++if exist "%LOCALBUILD%" (
++    echo Nettoyage de l'ancien repertoire de build local...
++    rmdir /s /q "%LOCALBUILD%"
++)
++mkdir "%LOCALBUILD%"
++if errorlevel 1 (
++    echo.
++    echo ERREUR : impossible de creer %LOCALBUILD%.
++    echo Rappel ^(issue #328^) : ce chemin doit figurer dans le PERIMETRE de
++    echo configs\ccw.conf pour que CCW puisse y ecrire.
++    popd
++    exit /b 1
++)
++robocopy "%ORIGDIR%" "%LOCALBUILD%" /E /XD ".git" "venv" ".venv_build" "dist" "build" "__pycache__" ".pytest_cache" "logs" "installeur\output" /NFL /NDL /NJH /NJS /NC /NS /NP >nul
++if %errorlevel% geq 8 (
++    echo.
++    echo ERREUR : la copie des sources vers %LOCALBUILD% a echoue.
++    popd
++    exit /b 1
++)
++echo Sources copiees vers %LOCALBUILD%. OK.
++echo.
++
++pushd "%LOCALBUILD%"
++
++REM --- 2. Preparer l'environnement virtuel de build -------------------------
++echo [2/8] Verification de l'environnement virtuel de build...
++if not exist ".venv_build\Scripts\python.exe" (
++    echo .venv_build introuvable : creation en cours...
++    python -m venv .venv_build
++    if errorlevel 1 (
++        echo.
++        echo ERREUR : impossible de creer .venv_build. Verifiez l'installation Python.
++        popd
++        popd
++        exit /b 1
++    )
++    call ".venv_build\Scripts\python.exe" -m pip install --upgrade pip >nul
++    call ".venv_build\Scripts\pip.exe" install -r requirements.txt
++    if errorlevel 1 (
++        echo.
++        echo ERREUR : l'installation de requirements.txt a echoue.
++        popd
++        popd
++        exit /b 1
++    )
++    call ".venv_build\Scripts\pip.exe" install pyinstaller
++    if errorlevel 1 (
++        echo.
++        echo ERREUR : l'installation de pyinstaller a echoue.
++        popd
++        popd
++        exit /b 1
++    )
++) else (
++    echo .venv_build present. OK.
++)
++echo.
++
++REM --- 3. Fermer Actualise.exe / ActualiseUI.exe s'ils tournent encore ------
++echo [3/8] Fermeture d'Actualise.exe / ActualiseUI.exe si necessaire...
++tasklist /fi "imagename eq Actualise.exe" 2>nul | find /i "Actualise.exe" >nul
++if not errorlevel 1 (
++    echo Actualise.exe est en cours d'execution : fermeture...
++    taskkill /im Actualise.exe /f >nul 2>&1
++)
++tasklist /fi "imagename eq ActualiseUI.exe" 2>nul | find /i "ActualiseUI.exe" >nul
++if not errorlevel 1 (
++    echo ActualiseUI.exe est en cours d'execution : fermeture...
++    taskkill /im ActualiseUI.exe /f >nul 2>&1
++)
++timeout /t 2 >nul
++echo.
++
++REM --- 4. Build PyInstaller : Actualise.exe ---------------------------------
++echo [4/8] Build PyInstaller Actualise.exe en cours...
++call ".venv_build\Scripts\pyinstaller.exe" actualise.spec -y
++if errorlevel 1 (
++    echo.
++    echo ERREUR : le build PyInstaller d'Actualise.exe a echoue.
++    popd
++    popd
++    exit /b 1
++)
++echo.
++
++REM --- 5. Build PyInstaller : ActualiseUI.exe -------------------------------
++echo [5/8] Build PyInstaller ActualiseUI.exe en cours...
++call ".venv_build\Scripts\pyinstaller.exe" actualise_ui.spec -y
++if errorlevel 1 (
++    echo.
++    echo ERREUR : le build PyInstaller d'ActualiseUI.exe a echoue.
++    popd
++    popd
++    exit /b 1
++)
++echo.
++echo Builds PyInstaller termines avec succes.
++echo.
++
++REM --- 6. Verifier les deux executables produits ----------------------------
++echo [6/8] Verification des executables generes...
++if not exist "dist\Actualise\Actualise.exe" (
++    echo.
++    echo ERREUR : Actualise.exe introuvable dans dist\Actualise apres le build.
++    popd
++    popd
++    exit /b 1
++)
++if not exist "dist\ActualiseUI\ActualiseUI.exe" (
++    echo.
++    echo ERREUR : ActualiseUI.exe introuvable dans dist\ActualiseUI apres le build.
++    popd
++    popd
++    exit /b 1
++)
++echo dist\Actualise\Actualise.exe et dist\ActualiseUI\ActualiseUI.exe presents. OK.
++echo.
++
++REM --- 7. Compiler l'installeur InnoSetup ------------------------------------
++REM ActualiseVersion en dur a 9 pour l'instant (sera dynamise plus tard,
++REM voir issue #44) : valeur du dernier build publie (voir version.json).
++echo [7/8] Compilation de l'installeur InnoSetup (ISCC)...
++set "ISCC=ISCC"
++where ISCC >nul 2>&1
++if errorlevel 1 (
++    if exist "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" (
++        set "ISCC=%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
++    ) else if exist "%ProgramFiles%\Inno Setup 6\ISCC.exe" (
++        set "ISCC=%ProgramFiles%\Inno Setup 6\ISCC.exe"
++    ) else (
++        echo.
++        echo ERREUR : ISCC.exe introuvable ^(ni sur le PATH, ni dans
++        echo "Program Files\Inno Setup 6"^). Verifiez l'installation d'Inno Setup.
++        popd
++        popd
++        exit /b 1
++    )
++)
++"%ISCC%" "installeur\actualise.iss" /DActualiseVersion=9
++if errorlevel 1 (
++    echo.
++    echo ERREUR : la compilation ISCC a echoue. Voir les messages ci-dessus.
++    popd
++    popd
++    exit /b 1
++)
++if not exist "installeur\output\Actualise-Setup-v9.exe" (
++    echo.
++    echo ERREUR : Actualise-Setup-v9.exe introuvable dans installeur\output
++    echo apres compilation ISCC.
++    popd
++    popd
++    exit /b 1
++)
++echo Installeur compile avec succes : installeur\output\Actualise-Setup-v9.exe
++echo.
++
++REM --- 8. Recopier le setup vers le partage, nettoyer le local --------------
++echo [8/8] Recopie du setup vers le partage et nettoyage...
++robocopy "installeur\output" "%ORIGDIR%\installeur\output" "Actualise-Setup-v9.exe" /NFL /NDL /NJH /NJS /NC /NS /NP >nul
++if %errorlevel% geq 8 (
++    echo.
++    echo ERREUR : la recopie du setup vers le partage a echoue.
++    popd
++    popd
++    exit /b 1
++)
++echo [OK] installeur\output\Actualise-Setup-v9.exe copie vers %ORIGDIR%\installeur\output\
++
++popd
++rmdir /s /q "%LOCALBUILD%"
++echo [OK] Repertoire de build local nettoye ^(%LOCALBUILD%^)
++echo.
++echo ============================================
++echo   REBUILD TERMINE AVEC SUCCES
++echo ============================================
++echo.
++echo Rappel : testez Actualise-Setup-v9.exe sur une VM propre avant toute
++echo publication ^(Release GitHub ou distribution manuelle^).
++echo.
++popd
++exit /b 0
+# (diff du fichier suivant)
+diff --git a/installeur/actualise.iss b/installeur/actualise.iss
+# ── Ce fichier n'existait pas avant ce commit : il vient d'être créé.
+new file mode 100644
+# (index — ignorable)
+index 0000000..cb093f7
+# (avant — fichier suivant)
+--- /dev/null
+# (après — fichier suivant)
++++ b/installeur/actualise.iss
+# ── Zone modifiée : ligne 0 (0 ligne(s)) dans l'ancienne version → ligne 1 (117 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -0,0 +1,117 @@
++; Installeur InnoSetup pour Actualise-Setup.exe (issue #44).
++;
++; Actualise est une instance UNIQUE partagée entre toutes les applications
++; cibles (Scrabble, Rummikub, ...), installée dans C:\Actualise\ — voir
++; INTEGRATION.md, section 2 "Architecture générale". Jusqu'ici Actualise
++; était embarqué dans les setups Scrabble/Rummikub ; ce setup l'installe
++; désormais séparément. Chaque application cible garde son propre setup,
++; qui dépose uniquement son config_<nom>.json dans C:\Actualise\ (voir
++; INTEGRATION.md, §3) — il ne réinstalle plus Actualise.exe lui-même.
++;
++; Pas de raccourci ici : Actualise est lancé par les jeux via
++; "Actualise.exe --config <nom>", jamais directement par l'utilisateur
++; (voir INTEGRATION.md, §3 "Raccourci").
++;
++; Compilation : ISCC installeur\actualise.iss /DActualiseVersion=<N>
++; (voir build\rebuild_actualise_setup.bat). Sans /D, repli sur 9 — dernier
++; build publié au moment de l'écriture de ce script (voir version.json).
++
++#ifndef ActualiseVersion
++  #define ActualiseVersion "9"
++#endif
++
++; Staging local CCW (même pattern que build\rebuild_actualise.bat et
++; Scrabble/Rummikub) : PyInstaller/ISCC ne doivent jamais tourner
++; directement sur le partage VirtualBox (\\VBOXSVR\...).
++#define ActualiseSourceDir "C:\Temp\ActualiseBuild\dist\Actualise"
++#define ActualiseUISourceDir "C:\Temp\ActualiseBuild\dist\ActualiseUI"
++
++[Setup]
++AppId={{8556F922-AD4A-4E8D-A7E9-08AD815D5552}
++AppName=Actualise
++AppVersion={#ActualiseVersion}
++AppPublisher=Alain Delree
++; Dossier partagé fixe, jamais un dossier par application cible (voir
++; INTEGRATION.md, §3 "Dossier Actualise partagé") — pas de choix laissé à
++; l'utilisateur, DisableDirPage=yes.
++DefaultDirName=C:\Actualise
++DisableDirPage=yes
++DisableProgramGroupPage=yes
++; C:\ est inaccessible en écriture aux utilisateurs standards ; admin est
++; requis pour créer/écrire C:\Actualise\ (voir INTEGRATION.md, §3 "Droits
++; d'installation" — incident réel documenté avec PrivilegesRequired=lowest).
++PrivilegesRequired=admin
++OutputDir=output
++OutputBaseFilename=Actualise-Setup-v{#ActualiseVersion}
++Compression=lzma
++SolidCompression=yes
++
++[Files]
++Source: "{#ActualiseSourceDir}\Actualise.exe"; DestDir: "{app}"; Flags: ignoreversion
++; Dossier _internal complet, jamais l'exe seul (incident réel documenté :
++; "Failed to load Python DLL" si _internal\ manque — voir INTEGRATION.md).
++Source: "{#ActualiseSourceDir}\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
++Source: "{#ActualiseUISourceDir}\ActualiseUI.exe"; DestDir: "{app}"; Flags: ignoreversion
++
++[Dirs]
++Name: "{app}\attente"
++
++[Code]
++// config_actualise.json est une instance PARTAGÉE entre toutes les
++// applications cibles (voir INTEGRATION.md, §4) : ne jamais l'écraser si
++// une autre application l'a déjà créé, sous peine de perdre son
++// build_installe / zone_attente déjà à jour.
++procedure CurStepChanged(CurStep: TSetupStep);
++var
++  CheminConfig: string;
++  Contenu: string;
++begin
++  if CurStep = ssPostInstall then
++  begin
++    CheminConfig := ExpandConstant('{app}\config_actualise.json');
++    if not FileExists(CheminConfig) then
++    begin
++      Contenu := '{"build_installe": {#ActualiseVersion}, "depot_github": "AlainDelree/Actualise", "zone_attente": "C:\\Actualise\\attente\\"}';
++      SaveStringToFile(CheminConfig, Contenu, False);
++    end;
++  end;
++end;
++
++// Vrai si un config_<nom>.json d'une AUTRE application cible subsiste
++// encore dans {app} (config_actualise.json exclu de la recherche).
++function AutresConfigsPresents(): Boolean;
++var
++  FindRec: TFindRec;
++  Trouve: Boolean;
++begin
++  Trouve := False;
++  if FindFirst(ExpandConstant('{app}\config_*.json'), FindRec) then
++  begin
++    try
++      repeat
++        if CompareText(FindRec.Name, 'config_actualise.json') <> 0 then
++          Trouve := True;
++      until not FindNext(FindRec);
++    finally
++      FindClose(FindRec);
++    end;
++  end;
++  Result := Trouve;
++end;
++
++// C:\Actualise\ ne doit être retiré que si aucune autre application cible
++// n'y a encore de config_<nom>.json (même logique que Scrabble/Rummikub) :
++// sinon on désinstallerait Actualise sous des applications qui en
++// dépendent encore.
++procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
++begin
++  if CurUninstallStep = usPostUninstall then
++  begin
++    if not AutresConfigsPresents() then
++    begin
++      DeleteFile(ExpandConstant('{app}\config_actualise.json'));
++      DelTree(ExpandConstant('{app}\attente'), True, True, True);
++      RemoveDir(ExpandConstant('{app}'));
++    end;
++  end;
++end;

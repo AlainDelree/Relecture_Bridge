@@ -1,0 +1,108 @@
+de86de0
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit de86de0
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Sun Jul 26 16:12:30 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    docs(readme): #75 — mentionne AlChess_Setup.exe, corrige la note PowerShell obsolete
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/README.md b/README.md
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 05f7ff0..628d2f0 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/README.md
+# ── Version APRÈS ce commit.
++++ b/README.md
+# ── Zone modifiée : ligne 19 (12 ligne(s)) dans l'ancienne version → ligne 19 (24 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -19,12 +19,24 @@ Application d'entraînement aux échecs qui connecte un échiquier physique **Ch
+ Pas besoin de connaître Git ou Python. Rendez-vous sur la page **[Releases](https://github.com/AlainDelree/AlChess/releases/latest)** et téléchargez le paquet correspondant à votre système.
+ 
+ **Windows 10 / 11**
++
++Deux méthodes d'installation sont disponibles :
++
++**Option A — Installeur `.exe` (recommandée, la plus simple)**
++1. Téléchargez `AlChess-vX.Y.Z-windows-x86_64.zip` depuis les [Releases](https://github.com/AlainDelree/AlChess/releases/latest)
++2. Extrayez le ZIP (clic droit → « Extraire tout »)
++3. Double-cliquez sur **`AlChess_Setup.exe`** et suivez l'assistant d'installation — il installe Python si nécessaire, prépare l'environnement, télécharge les moteurs et crée un raccourci **AlChess** sur le Bureau
++4. Lancez AlChess avec le raccourci **AlChess** créé sur le Bureau, ou avec **`2-Lancer_AlChess.bat`**
++
++**Option B — Script PowerShell (méthode historique)**
+ 1. Téléchargez `AlChess-vX.Y.Z-windows-x86_64.zip` depuis les [Releases](https://github.com/AlainDelree/AlChess/releases/latest)
+ 2. Extrayez le ZIP (clic droit → « Extraire tout »)
+-3. Double-cliquez sur **`1-Installer.bat`** — le script installe Python si nécessaire, prépare l'environnement, télécharge les moteurs et crée un raccourci **AlChess** sur le Bureau
+-4. Lancez AlChess avec **`2-Lancer_AlChess.bat`** (ou le raccourci **AlChess** créé sur le Bureau) — l'interface s'ouvre dans votre navigateur
++3. Double-cliquez sur **`1-Installer.bat`**
++4. Lancez AlChess avec **`2-Lancer_AlChess.bat`** (ou le raccourci **AlChess** créé sur le Bureau)
++
++> 💡 Utilisez l'option A si l'option B échoue avec une erreur de policy d'exécution PowerShell (fréquent sur les PC d'entreprise ou d'école). L'option B reste utile si vous préférez inspecter le script avant de l'exécuter.
+ 
+-> ℹ️ Ne fermez pas la fenêtre PowerShell pendant l'utilisation.
++> ℹ️ Ne fermez pas la fenêtre du serveur pendant l'utilisation d'AlChess.
+ 
+ **Linux (Ubuntu 22.04 / 24.04)**
+ 1. Téléchargez `AlChess-vX.Y.Z-linux-x86_64.zip` depuis les [Releases](https://github.com/AlainDelree/AlChess/releases/latest)
+# ── Zone modifiée : ligne 109 (12 ligne(s)) dans l'ancienne version → ligne 121 (24 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -109,12 +121,24 @@ A chess training application that connects a **Chessnut Air** physical chessboar
+ No need to know Git or Python. Go to the **[Releases](https://github.com/AlainDelree/AlChess/releases/latest)** page and download the package for your system.
+ 
+ **Windows 10 / 11**
++
++Two installation methods are available:
++
++**Option A — `.exe` installer (recommended, simplest)**
++1. Download `AlChess-vX.Y.Z-windows-x86_64.zip` from the [Releases](https://github.com/AlainDelree/AlChess/releases/latest)
++2. Extract the ZIP (right-click → "Extract All")
++3. Double-click **`AlChess_Setup.exe`** and follow the setup wizard — it installs Python if needed, sets up the environment, downloads the engines and creates an **AlChess** shortcut on the Desktop
++4. Launch AlChess with the **AlChess** shortcut on the Desktop, or with **`2-Lancer_AlChess.bat`**
++
++**Option B — PowerShell script (legacy method)**
+ 1. Download `AlChess-vX.Y.Z-windows-x86_64.zip` from the [Releases](https://github.com/AlainDelree/AlChess/releases/latest)
+ 2. Extract the ZIP (right-click → "Extract All")
+-3. Double-click **`1-Installer.bat`** — it installs Python if needed, sets up the environment, downloads the engines and creates an **AlChess** shortcut on the Desktop
+-4. Launch AlChess with **`2-Lancer_AlChess.bat`** (or the **AlChess** shortcut created on the Desktop) — the interface opens in your browser
++3. Double-click **`1-Installer.bat`**
++4. Launch AlChess with **`2-Lancer_AlChess.bat`** (or the **AlChess** shortcut created on the Desktop)
++
++> 💡 Use option A if option B fails with a PowerShell execution policy error (common on corporate or school PCs). Option B remains useful if you'd rather inspect the script before running it.
+ 
+-> ℹ️ Do not close the PowerShell window while using the app.
++> ℹ️ Do not close the server window while using AlChess.
+ 
+ **Linux (Ubuntu 22.04 / 24.04)**
+ 1. Download `AlChess-vX.Y.Z-linux-x86_64.zip` from the [Releases](https://github.com/AlainDelree/AlChess/releases/latest)
+# (diff du fichier suivant)
+diff --git a/TACHES.md b/TACHES.md
+# (index — ignorable)
+index de588d9..104b925 100644
+# (avant — fichier suivant)
+--- a/TACHES.md
+# (après — fichier suivant)
++++ b/TACHES.md
+# ── Zone modifiée : ligne 10 (7 ligne(s)) dans l'ancienne version → ligne 10 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -10,7 +10,7 @@
+   - 📋 **ACTION ALAIN (inchangée)** : relancer l'installeur sur la VM, récupérer **`C:\<dossier de l'installeur>\alchess_install_debug.log`** et **coller son contenu intégral** dans l'issue #65. Cette fois le log révèle explicitement la valeur de `$PythonExe` et confirme/infirme s'il s'agit d'un interpréteur réellement fonctionnel.
+ - **🔎 DIAGNOSTIC EN COURS — points de contrôle horodatés pour traquer la disparition du venv** `[Windows]` (issue #64, suite de #62) — Le diagnostic #62 n'a trouvé **aucune cause dans notre code** à la disparition du venv après une création réussie. Plutôt que d'attendre Process Monitor sur la VM, on a instrumenté `installer-exe/alchess_setup.nsi` avec des **points de contrôle horodatés durables** (fichier log persistant, pas des `DetailPrint` qui disparaissent si la fenêtre se ferme). Deux fonctions utilitaires ajoutées : `LogCheckpoint` (écrit `%date% %time% - <message>` — horodatage système fiable fourni par `cmd` — dans `$EXEDIR\alchess_install_debug.log`, préserve `$0`) et `LogVenvState` (vérifie `venv\Scripts\python.exe` via `IfFileExists` et journalise `PRESENT`/`ABSENT`). **5 checkpoints** placés dans l'ordre du flux : (1) juste après `deps_ok` dans `SecVenv` — « venv créé, deps installées » + état immédiat, puis `Sleep 1000` + re-vérif « +1s » ; (3) fin de `SecStockfish` ; (4) fin de `SecVCRedist` ; (5) juste avant `SecShortcut` (fin de toute l'installation). Chaque ligne permet de déterminer **sans ambiguïté** à quel stade précis le venv disparaît — ou de confirmer qu'il ne disparaît jamais (auquel cas le problème est ailleurs, ex. au lancement de l'app plutôt que dans l'installation). Le log vit dans `$EXEDIR` (**pas** `$TEMP`) pour être consultable même après un plantage/fermeture, et **n'est JAMAIS supprimé automatiquement** (retrait manuel une fois le diagnostic terminé). **`makensis` : 0 erreur, 0 warning.** Backup pinné avant modif.
+   - 📋 **ACTION ALAIN** : après un run complet de l'installeur sur la VM (**succès OU échec**, peu importe), ouvrir le fichier **`C:\<dossier de l'installeur>\alchess_install_debug.log`** (le dossier où se trouve `AlChess_Setup.exe`) et **coller son contenu intégral** dans un commentaire de l'issue #64 pour analyse. Si le fichier est absent → l'installeur n'a jamais atteint `deps_ok` (checkpoint 1 pas écrit) : le noter aussi.
+-- **Chantier NSIS — CODE COMPLET, 6 phases faites — VALIDATION VM WINDOWS RESTE À FAIRE** `[Windows]` (issue #58, phase 6 finitions, suite #50) — Phase 6 : (1) **raccourci bureau natif** `CreateShortcut "$DESKTOP\AlChess.lnk"` ciblant `2-Lancer_AlChess.bat` (jamais le `.ps1`), dans une nouvelle section finale `SecShortcut` ; `ClearErrors` + `IfErrors` → avertissement `DetailPrint` **non bloquant** en cas d'échec (comme le `try/catch` COM du `.ps1`). (2) **`LaunchAlChess` réellement implémentée** (bouton « Lancer AlChess » de la page Finish) : `Exec '"$EXEDIR\2-Lancer_AlChess.bat"'` (Exec, pas ExecWait — l'installeur se ferme juste après). (3) **Message de fin** cohérent avec le `.ps1` (double-clic du raccourci OU de `2-Lancer_AlChess.bat`). **`makensis` : 0 erreur, 0 warning.** Header et commentaires du `.nsi` mis à jour (phase 6, placeholder retiré). README/doc **non touchés** (trop tôt — promotion du `.exe` après validation VM réelle, tâche séparée).
++- **Chantier NSIS — CODE COMPLET, 6 phases faites — VALIDATION VM WINDOWS RESTE À FAIRE** `[Windows]` (issue #58, phase 6 finitions, suite #50) — Phase 6 : (1) **raccourci bureau natif** `CreateShortcut "$DESKTOP\AlChess.lnk"` ciblant `2-Lancer_AlChess.bat` (jamais le `.ps1`), dans une nouvelle section finale `SecShortcut` ; `ClearErrors` + `IfErrors` → avertissement `DetailPrint` **non bloquant** en cas d'échec (comme le `try/catch` COM du `.ps1`). (2) **`LaunchAlChess` réellement implémentée** (bouton « Lancer AlChess » de la page Finish) : `Exec '"$EXEDIR\2-Lancer_AlChess.bat"'` (Exec, pas ExecWait — l'installeur se ferme juste après). (3) **Message de fin** cohérent avec le `.ps1` (double-clic du raccourci OU de `2-Lancer_AlChess.bat`). **`makensis` : 0 erreur, 0 warning.** Header et commentaires du `.nsi` mis à jour (phase 6, placeholder retiré). README/doc mis à jour en #75 une fois le chantier validé en conditions réelles (voir « Bugs résolus récemment »).
+   - ✅ **SIGNAL DE SÉCURITÉ (vérif demandée par #58) — RÉSOLU en #70** : `2-Lancer_AlChess.bat` invoquait `powershell.exe` en interne (2×, `-ExecutionPolicy Bypass`) pour réécrire et lancer `start_alchess.ps1`. Le `Bypass` en ligne de commande (scope Process) surclasse la policy par défaut (`LocalMachine` = `Restricted`) mais est **ignoré** sous une policy imposée par Group Policy (scope `MachinePolicy`/`UserPolicy`, prioritaire) → le lancement aurait échoué sur une machine sous GPO stricte, ressurgissant au LANCEMENT le blocage que tout le chantier NSIS visait à éviter. **Corrigé en #70** : `2-Lancer_AlChess.bat` réécrit en **batch pur** (aucun appel `powershell.exe`/`pwsh.exe`) → voir « Bugs résolus récemment ».
+   - ⚠️ **VALIDATION VM WINDOWS — liste complète des points à vérifier en conditions réelles** (aucune phase n'a jamais tourné sur un vrai Windows, tout n'est validé que par compilation/relecture) :
+     - **Détection Python** (phase 3, #53/#54) : les 3 stratégies — (1) `py -0p`, (2) `python --version` dans le PATH, (3) scan `FindFirst` de `$LOCALAPPDATA\Programs\Python\Python3*`, `$PROGRAMFILES\Python3*`, `$PROGRAMFILES64\Python3*` ; comparaison de version (rejet 3.9/3.11, acceptation 3.12+).
+# ── Zone modifiée : ligne 45 (7 ligne(s)) dans l'ancienne version → ligne 45 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -45,7 +45,9 @@
+ 
+ ## ✅ Bugs résolus récemment
+ 
+-### Session du 15 juillet
++### Session du 26 juillet
++
++- **📄 README.md — mention de l'installeur `AlChess_Setup.exe` + correction de la note PowerShell obsolète** `[Windows]` (issue #75, suite du chantier NSIS #50-#70) — La section Windows du README ne présentait que l'installation historique via `1-Installer.bat` (PowerShell), sans mentionner `AlChess_Setup.exe` (désormais validé en conditions réelles sur VM et sur machine Windows physique — voir #68, #70). Deux problèmes concrets : (1) les utilisateurs bloqués par une policy d'exécution PowerShell (le problème d'origine que tout le chantier NSIS visait à résoudre) ignoraient qu'une alternative existait ; (2) la note « Ne fermez pas la fenêtre PowerShell pendant l'utilisation » était devenue **fausse** depuis #70 (`2-Lancer_AlChess.bat` réécrit en batch pur, sans dépendance PowerShell au lancement). **Correctif** : section Windows 10/11 (FR + EN) réécrite avec deux options côte à côte — **Option A** (installeur `.exe`, recommandée) et **Option B** (script PowerShell, méthode historique pour utilisateurs avancés ou souhaitant inspecter le script avant exécution) — avec une note expliquant le critère de choix (basculer vers A si B échoue sur une erreur de policy PowerShell, fréquent en environnement scolaire/entreprise sous GPO). Note de lancement corrigée en « Ne fermez pas la fenêtre du serveur pendant l'utilisation d'AlChess » (correcte pour les deux méthodes). Vérifié par `grep PowerShell README.md` : plus aucune mention incorrecte concernant le LANCEMENT, seules restent les mentions correctes de l'option B (script) et de la note de choix. Backup pinné + commit checkpoint avant modif.
+ 
+ - **🔒 `2-Lancer_AlChess.bat` réécrit en batch pur — plus aucune dépendance PowerShell au LANCEMENT** `[Windows]` (issue #70, suite du signal de sécurité #58) — **Ferme la dernière porte PowerShell du parcours utilisateur.** Découvert en #58 (validation VM) : le lanceur invoquait `powershell.exe` **2×** (`-ExecutionPolicy Bypass`) pour (1) réécrire `start_alchess.ps1` en UTF-8 BOM dans un `_launch_tmp.ps1` (contrainte de lecture PowerShell 5.1) puis (2) l'exécuter. Le `Bypass` en ligne de commande (scope Process) surclasse la policy par défaut (`LocalMachine` = `Restricted`) **mais est ignoré** si une policy est imposée par Group Policy (scope `MachinePolicy`/`UserPolicy`, prioritaire) → une machine sous GPO stricte pouvait **installer** AlChess (via `AlChess_Setup.exe`, chantier NSIS #50-#69) puis rester **bloquée au lancement** — exactement le blocage que tout le chantier NSIS visait à éviter, un cran plus loin. **Correctif** : `2-Lancer_AlChess.bat` entièrement réécrit en **batch pur**, aucune invocation `powershell.exe`/`pwsh.exe`. `%~dp0` localise le dossier du script de façon fiable (équivalent `$scriptDir`, sans « réécriture » dynamique), les variables d'env du `.ps1` sont reproduites (`PYTHONPYCACHEPREFIX=%TEMP%\alchess_pyc`, `PYTHONIOENCODING=utf-8`), `cd /d "%~dp0"` (≡ `Set-Location`), puis `"%~dp0venv\Scripts\python.exe" -m nicsoft.web`. **Ouverture du navigateur inchangée** : elle n'était PAS faite par le `.ps1` mais par `nicsoft.web` (`webbrowser.open`, `alchess.py:137`) → rien de perdu. **CHOIX DE LOGGING documenté** (point de conception tranché) : cmd.exe n'a pas de « tee » natif (impossible d'afficher ET logger comme `Tee-Object`) → **option (a) retenue : redirection vers `alchess_log.txt` uniquement** (`> … 2>&1`, écrase à chaque run comme l'ancien Tee-Object sans `-Append`). Raison : l'utilisateur final travaille dans le navigateur (ouvert auto), pas dans la fenêtre console ; le log complet reste pour le support/débogage via le bridge. Ajout d'un `pause` final (ne se déclenche **qu'après** l'arrêt du serveur) pour lire un message d'erreur si `python.exe` s'arrête tout de suite (sinon fenêtre qui se referme sans rien montrer, sortie étant redirigée). **`start_alchess.ps1` NON supprimé** (usage manuel/développeur préservé), simplement plus appelé. **Aucune modif des raccourcis** : `SecShortcut` (`.nsi`, l.1618) et `install_alchess.ps1` (l.447) ciblent le `.bat` **par son nom**, pas son contenu → inchangés. `1-Installer.bat` / `install_alchess.ps1` **non touchés** (hors scope, voie d'installation historique). Vérif : `grep powershell\|pwsh` → présent uniquement dans les commentaires `rem`, aucune invocation réelle. Test réel décisif à faire par Alain : double-cliquer `2-Lancer_AlChess.bat` (ou le raccourci) sur une machine où PowerShell est bloqué par policy (simulable via `gpedit.msc` sur Windows Pro) et confirmer que l'app se lance quand même. Backup pinné avant modif.
+ - **🎨 Icône personnalisée pour le raccourci bureau AlChess (`SecShortcut`)** `[Windows]` (issue #69, suite de #58) — Le raccourci bureau créé par `SecShortcut` (phase 6, #58) utilisait l'icône générique `.bat` de Windows, faute d'icône spécifiée dans `CreateShortcut`. Correctif : (1) conversion de `niclink_icon.png` (600×600, déjà à la racine) en **`niclink_icon.ico` multi-résolution** (16/32/48/256) via ImageMagick `convert` disponible sur le poste CCL (`convert niclink_icon.png -background none -define icon:auto-resize=256,48,32,16 niclink_icon.ico`) — pas de blocage outil contrairement aux plugins NSIS #51/#56 ; `.ico` placé à la racine à côté du `.png`. (2) `installer-exe/alchess_setup.nsi`, section `SecShortcut` : `CreateShortcut` mis à jour pour spécifier l'icône — `"$EXEDIR\niclink_icon.ico" 0` (chemin + index 0 = première icône du fichier multi-icônes) aux positions `icon.file`/`icon_index` de la syntaxe NSIS, en conservant `SW_SHOWNORMAL` et la description `"Launch AlChess"`. (3) `make_release.sh` : ajout de `niclink_icon.ico` à la liste blanche `INCLUDE` → le `.ico` est copié à la **racine** du ZIP, exactement là où le `.lnk` le référence (`$EXEDIR` = dossier extrait où vivent le `.exe` et les `.bat`) ; sans cela le raccourci pointerait vers une icône absente une fois installé. Note archi : le raccourci référençant l'icône *en place* dans `$EXEDIR` (comme il cible déjà `2-Lancer_AlChess.bat` en place), aucune copie `File` supplémentaire dans le `.nsi` n'est nécessaire. **`makensis` : 0 erreur, 0 warning.** Test réel décisif à faire par Alain : après une installation sur Windows, vérifier visuellement sur le bureau que le raccourci affiche bien l'icône AlChess plutôt que l'icône `.bat` générique. Backup pinné avant modif.

@@ -1,0 +1,199 @@
+e2f5261
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit e2f5261
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Sun Aug 23 21:43:04 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Extrait onclick/style inline de #screen-game vers data-action + CSS — panneau Pause (issue #242 partie 2/4)
+    
+    - pauseReviewPrev()/pauseReviewNext() -> case unique "pause_review_nav" paramétré par
+      data-direction="prev"/"next" (pattern déjà utilisé par expl_nav/labo_pgn_nav) ; distinct de
+      reviewPrev/reviewNext utilisés ailleurs dans #screen-game (partie 3/4, non touchée ici)
+    - pauseReprendre() -> nouveau case "pause_reprendre"
+    - sendAction({type:'continuer'}) -> réutilise le case "continuer" créé en partie 1/4
+    - sendAction({type:'resume_pause'}) -> nouveau case "resume_pause"
+    - sendAction({type:'meilleur'}) -> réutilise le case "meilleur_coup" de la partie 1/4
+    - jouerSequencePunitive() -> réutilise le case "jouer_sequence_punitive" de la partie 1/4
+    - pauseToggleChangerCouleur() -> nouveau case "pause_toggle_changer_couleur"
+    - ouvrirModalAbandonner() -> réutilise le case "ouvrir_modal_abandonner" de la partie 1/4
+    - ouvrirModal('back_menu', ...) -> réutilise "quit_modal_moteur" de la partie 1/4 (même appel identique)
+    - Aucun case dupliqué avec la partie 1/4
+    
+    17 style inline supprimés -> classes .game-pause-card, .game-pause-info-text,
+    .game-pause-feedback-label/-detail, .game-pause-move-san, .game-pause-nav-row/-btn,
+    .game-pause-actions-card, .game-btn-pause-continuer, .game-btn-changer-couleur,
+    .game-pause-hidden-init (+ réutilisation .game-btn-sequence et .game-btn-quitter de la partie 1/4)
+    
+    3 style="display:none" conservés car lus/écrits directement par le JS (#panel-pause,
+    #pause-feedback-box, #btn-pause-continuer, #btn-pause-sequence) : le gap:12px de #panel-pause
+    (différent du gap:16px partagé par #panel-playing/#panel-gameover) est déplacé dans une règle CSS
+    #panel-pause dédiée ; border-radius/padding de #pause-feedback-box déplacés dans une règle de base
+    .feedback-box-pause (le JS réassigne entièrement className="feedback-box-pause <qualite>", donc le
+    nom de classe doit rester identique pour survivre à cette réaffectation).
+    
+    #btn-changer-couleur : couleurs par défaut déplacées en classe .game-btn-changer-couleur ; le JS
+    (_updateChangerCouleurBtn) continue de les écraser via style inline à chaque affichage, comportement
+    inchangé.
+    
+    #btn-pause-abandonner : bouton jamais montré par aucun JS (grep exhaustif, style="display:none"
+    seul, jamais togglé) -> style figé déplacé en classe .game-pause-hidden-init, comportement
+    (invisible) inchangé à l'identique.
+    
+    Grep exhaustif sur nicsoft/tests/e2e/*.py : aucun sélecteur ne cible ce panneau via un onclick
+    retiré (aucune migration de test nécessaire).
+    
+    Suite pytest complète (78 passed, 1 skipped) au vert, dont la suite e2e complète.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/nicsoft/web/static/app.js b/nicsoft/web/static/app.js
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index cbd53f4..0c727db 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/nicsoft/web/static/app.js
+# ── Version APRÈS ce commit.
++++ b/nicsoft/web/static/app.js
+# ── Zone modifiée : ligne 247 (6 ligne(s)) dans l'ancienne version → ligne 247 (18 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -247,6 +247,18 @@ document.addEventListener("click", (e) => {
+     case "quit_modal_moteur":
+       ouvrirModal("back_menu", t("modal.quitter_moteur"), t("modal.quitter_btn"), "");
+       break;
++    case "pause_review_nav":
++      if (el.dataset.direction === "prev") pauseReviewPrev(); else pauseReviewNext();
++      break;
++    case "pause_reprendre":
++      pauseReprendre();
++      break;
++    case "resume_pause":
++      sendAction({ type: "resume_pause" });
++      break;
++    case "pause_toggle_changer_couleur":
++      pauseToggleChangerCouleur();
++      break;
+   }
+ });
+ 
+# (diff du fichier suivant)
+diff --git a/nicsoft/web/static/css/main.css b/nicsoft/web/static/css/main.css
+# (index — ignorable)
+index 0e95efa..06ec956 100644
+# (avant — fichier suivant)
+--- a/nicsoft/web/static/css/main.css
+# (après — fichier suivant)
++++ b/nicsoft/web/static/css/main.css
+# ── Zone modifiée : ligne 938 (6 ligne(s)) dans l'ancienne version → ligne 938 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -938,6 +938,9 @@
+       flex-direction: column;
+       gap: 16px;
+     }
++    #panel-pause {
++      gap: 12px;
++    }
+ 
+     .card {
+       background: #c2d4e8;
+# ── Zone modifiée : ligne 1127 (6 ligne(s)) dans l'ancienne version → ligne 1130 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1127,6 +1130,7 @@
+ .toast.toast-warning { border-color:#ff9800; color:#ff9800; }
+ .pos-init-error { background: #b71c1c !important; }
+ .sq-error { background: rgba(180,0,0,0.45) !important; }
++.feedback-box-pause { border-radius:6px; padding:10px 12px; }
+ .feedback-box-pause.bon        { background:#1b5e20; border-left:4px solid #4caf50; }
+ .feedback-box-pause.imprecision{ background:#e65100; border-left:4px solid #ff9800; }
+ .feedback-box-pause.erreur     { background:#b71c1c; border-left:4px solid #f44336; }
+# ── Zone modifiée : ligne 1375 (3 ligne(s)) dans l'ancienne version → ligne 1379 (16 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1375,3 +1379,16 @@
+ .game-btn-pause  { background:#9ab8d8; color:#1a2a3a; border:1px solid #2a5a8a; }
+ .game-btn-nulle  { background:#4a4a6a; color:#e0e0e0; }
+ .game-btn-quitter { background:#c2d4e8; color:#1a2a3a; border:1px solid #a0b8d0; }
++
++/* ── Écran #screen-game — panneau "Pause" (issue #242 partie 2/4) ── */
++.game-pause-card { padding:14px 16px; }
++.game-pause-info-text { color:#445; font-size:0.9rem; margin-top:4px; margin-bottom:8px; }
++.game-pause-feedback-label { font-size:1rem; font-weight:700; margin-bottom:4px; color:#f0f0f0; }
++.game-pause-feedback-detail { font-size:0.85rem; color:#f0f0f0; }
++.game-pause-move-san { text-align:center; font-size:1.6rem; font-weight:bold; color:#1a2a3a; min-height:2rem; margin-bottom:10px; }
++.game-pause-nav-row { display:flex; gap:8px; }
++.game-pause-nav-btn { flex:1; margin-bottom:0; padding:8px; }
++.game-pause-actions-card { padding:14px 16px; display:flex; flex-direction:column; gap:8px; }
++.game-btn-pause-continuer { background:#2e7d32; }
++.game-btn-changer-couleur { background:#a0b8d0; color:#1a2a3a; border:1px solid #e94560; }
++.game-pause-hidden-init { display:none; }
+# (diff du fichier suivant)
+diff --git a/nicsoft/web/templates/index.html b/nicsoft/web/templates/index.html
+# (index — ignorable)
+index c4e89f8..3ec5b69 100644
+# (avant — fichier suivant)
+--- a/nicsoft/web/templates/index.html
+# (après — fichier suivant)
++++ b/nicsoft/web/templates/index.html
+# ── Zone modifiée : ligne 619 (43 ligne(s)) dans l'ancienne version → ligne 619 (43 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -619,43 +619,43 @@
+       </div>
+     </div>
+     <!-- ── Pause ── -->
+-    <div id="panel-pause" style="display:none; flex-direction:column; gap:12px;">
++    <div id="panel-pause" style="display:none;">
+ 
+       <!-- Info joueur + feedback coup (si pause auto) -->
+-      <div class="card" style="padding:14px 16px;">
++      <div class="card game-pause-card">
+         <h2 class="card-title-lg" data-i18n="game.pause.titre">Partie en pause</h2>
+-        <div id="pause-info" style="color:#445; font-size:0.9rem; margin-top:4px; margin-bottom:8px;"></div>
++        <div id="pause-info" class="game-pause-info-text"></div>
+         <!-- Feedback visible seulement en pause auto -->
+-        <div id="pause-feedback-box" style="display:none; border-radius:6px; padding:10px 12px;">
+-          <div id="pause-feedback-label" style="font-size:1rem; font-weight:700; margin-bottom:4px; color:#f0f0f0;"></div>
+-          <div id="pause-feedback-detail" style="font-size:0.85rem; color:#f0f0f0;"></div>
++        <div id="pause-feedback-box" class="feedback-box-pause" style="display:none;">
++          <div id="pause-feedback-label" class="game-pause-feedback-label"></div>
++          <div id="pause-feedback-detail" class="game-pause-feedback-detail"></div>
+         </div>
+       </div>
+ 
+       <!-- Navigation historique -->
+-      <div class="card" style="padding:14px 16px;">
++      <div class="card game-pause-card">
+         <h2 data-i18n="game.h2.navigation">Navigation</h2>
+-        <div id="pause-move-san" style="text-align:center; font-size:1.6rem; font-weight:bold; color:#1a2a3a; min-height:2rem; margin-bottom:10px;"></div>
+-        <div style="display:flex; gap:8px;">
+-          <button class="btn btn-continuer" style="flex:1; margin-bottom:0; padding:8px;" onclick="pauseReviewPrev()" data-i18n="game.nav.precedent">← Précédent</button>
+-          <button class="btn btn-reprendre" style="flex:1; margin-bottom:0; padding:8px;" onclick="pauseReviewNext()" data-i18n="game.nav.suivant">Suivant →</button>
++        <div id="pause-move-san" class="game-pause-move-san"></div>
++        <div class="game-pause-nav-row">
++          <button class="btn btn-continuer game-pause-nav-btn" data-action="pause_review_nav" data-direction="prev" data-i18n="game.nav.precedent">← Précédent</button>
++          <button class="btn btn-reprendre game-pause-nav-btn" data-action="pause_review_nav" data-direction="next" data-i18n="game.nav.suivant">Suivant →</button>
+         </div>
+       </div>
+ 
+       <!-- Actions -->
+-      <div class="card" style="padding:14px 16px; display:flex; flex-direction:column; gap:8px;">
++      <div class="card game-pause-actions-card">
+         <h2 data-i18n="game.h2.actions">Actions</h2>
+         <!-- Pause auto uniquement -->
+-        <button class="btn btn-continuer" id="btn-pause-reprendre" onclick="pauseReprendre()" data-i18n="game.btn.reprendre">↩ Reprendre mon coup</button>
+-        <button class="btn btn-reprendre" id="btn-pause-continuer" style="display:none; background:#2e7d32;" onclick="sendAction({type:'continuer'})" data-i18n="game.btn.continuer">▶ Continuer</button>
++        <button class="btn btn-continuer" id="btn-pause-reprendre" data-action="pause_reprendre" data-i18n="game.btn.reprendre">↩ Reprendre mon coup</button>
++        <button class="btn btn-reprendre game-btn-pause-continuer" id="btn-pause-continuer" style="display:none;" data-action="continuer" data-i18n="game.btn.continuer">▶ Continuer</button>
+         <!-- Toujours visible — reprend la partie (= continuer en pause manuelle) -->
+-        <button class="btn btn-reprendre" id="btn-pause-resume" onclick="sendAction({type:'resume_pause'})" data-i18n="game.btn.reprendre_partie">▶ Reprendre la partie</button>
+-        <button class="btn btn-best"      id="btn-pause-meilleur"  disabled onclick="sendAction({type:'meilleur'})" data-i18n="game.btn.meilleur">💡 Voir le meilleur coup</button>
+-        <button class="btn"               id="btn-pause-sequence"  style="display:none; background:#9ab8d8; color:#1a2a3a; border:1px solid #2a5a8a;" disabled onclick="jouerSequencePunitive()" data-i18n="game.btn.sequence">🎬 Voir la séquence</button>
++        <button class="btn btn-reprendre" id="btn-pause-resume" data-action="resume_pause" data-i18n="game.btn.reprendre_partie">▶ Reprendre la partie</button>
++        <button class="btn btn-best"      id="btn-pause-meilleur"  disabled data-action="meilleur_coup" data-i18n="game.btn.meilleur">💡 Voir le meilleur coup</button>
++        <button class="btn game-btn-sequence" id="btn-pause-sequence" style="display:none;" disabled data-action="jouer_sequence_punitive" data-i18n="game.btn.sequence">🎬 Voir la séquence</button>
+         <!-- Toujours disponibles -->
+-        <button class="btn" id="btn-changer-couleur" style="background:#a0b8d0; color:#1a2a3a; border:1px solid #e94560;" onclick="pauseToggleChangerCouleur()" data-i18n="game.btn.changer_couleur">🔄 Changer de couleur</button>
+-        <button class="btn btn-warning" style="display:none;" id="btn-pause-abandonner" onclick="ouvrirModalAbandonner()" data-i18n="game.btn.abandonner">⚐ Abandonner</button>
+-        <button class="btn" style="background:#c2d4e8; color:#1a2a3a; border:1px solid #a0b8d0;" onclick="ouvrirModal('back_menu', t('modal.quitter_moteur'), t('modal.quitter_btn'), '')" data-i18n="common.retour_menu">← Retour au menu</button>
++        <button class="btn game-btn-changer-couleur" id="btn-changer-couleur" data-action="pause_toggle_changer_couleur" data-i18n="game.btn.changer_couleur">🔄 Changer de couleur</button>
++        <button class="btn btn-warning game-pause-hidden-init" id="btn-pause-abandonner" data-action="ouvrir_modal_abandonner" data-i18n="game.btn.abandonner">⚐ Abandonner</button>
++        <button class="btn game-btn-quitter" data-action="quit_modal_moteur" data-i18n="common.retour_menu">← Retour au menu</button>
+       </div>
+     </div>
+     <!-- ── Fin de partie ── -->

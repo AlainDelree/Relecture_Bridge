@@ -1,0 +1,1205 @@
+76d485a
+
+commit 76d485a
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Sun Aug 2 17:29:22 2026 +0200
+
+    avant-327-lecture-active-scratch : sauvegarde avant implémentation
+
+diff --git a/BRIDGE_AGENT_DOC.md b/BRIDGE_AGENT_DOC.md
+index dc4aa22..085ceba 100644
+--- a/BRIDGE_AGENT_DOC.md
++++ b/BRIDGE_AGENT_DOC.md
+@@ -211,6 +211,7 @@ directement dans le champ Corps.
+ | `for-linux` | **Requis** — le watcher ne voit que ces issues |
+ | `bridge` | Marque l'issue comme tâche bridge (traçabilité) |
+ | `mode_write` | **ARME le mode écriture** — CCL peut modifier des fichiers |
++| `mode_scratch` | **ARME la lecture active** — écriture confinée à un dossier scratch, jamais dans le projet (voir §5) |
+ | `needs-human` | Posé automatiquement après 3 échecs — stoppe le retraitement |
+ | `done` | Posé automatiquement au succès |
+ | `notif_pc` | Ajoute une notification bureau (notify-send) |
+@@ -222,12 +223,46 @@ directement dans le champ Corps.
+ 
+ ---
+ 
+-## 5. Modes lecture seule vs écriture
++## 5. Modes lecture seule / lecture active / écriture
++
++Le watcher pilote un MODE à trois valeurs (issue #327 — remplace un ancien
++booléen qui ne pouvait distinguer que deux états), déduit des labels de
++l'issue par ordre de priorité : `mode_write` (écriture) > `mode_scratch`
++(lecture active) > aucun des deux (lecture seule, défaut).
+ 
+ **Lecture seule (défaut)** — CCL peut lire, analyser, grep, rapporter.
+ Ne peut PAS écrire de fichier ni exécuter de commande modifiant le système.
+ Idéal pour : diagnostics, audits, lectures de fichiers, comptages.
+ 
++**Lecture active (`mode_scratch`, issue #327)** — CCL peut écrire, mais
++**UNIQUEMENT** dans un dossier scratch dédié, jamais dans le projet. Utile
++aux outils d'analyse qui exigent un vrai fichier de config sur disque (ex.
++eslint flat config ≥ 9, autres linters) — impossible à satisfaire en lecture
++seule. Le livrable attendu reste un **rapport** de lecture, comme en lecture
++seule : la lecture active n'autorise pas de modifier le projet, seulement
++d'y faire tourner des outils qui ont besoin d'écrire un fichier temporaire.
++- Chemin scratch : `/tmp/bridge_scratch_<projet>/` (`<projet>` = `NOM` du
++  `.conf`), créé par le watcher juste avant le lancement de CCL, supprimé
++  juste après (succès, échec ou timeout confondus) — rien n'y survit d'une
++  tâche à l'autre.
++- Défense en profondeur à deux niveaux (même schéma que le garde-fou
++  `configs/*.conf`, §11/#318) :
++  - **Niveau 1 (prompt)** : un bloc de garde-fou dédié indique explicitement
++    à CCL le chemin scratch exact et lui interdit toute écriture ailleurs
++    (notamment le répertoire de travail du projet), tout `git commit`/`git
++    push`, et toute commande destructrice.
++  - **Niveau 2 (détection technique a posteriori)** : le watcher prend une
++    empreinte de l'état git du répertoire de travail juste avant le
++    lancement de CCL, et la compare juste après. Toute écriture détectée
++    dans le projet (malgré la consigne de niveau 1) est **restaurée**
++    automatiquement et l'issue est marquée en échec (`needs-human`) — le
++    prompt seul ne suffit pas à garantir le confinement, cf. non-déterminisme
++    du modèle (issues #290/#291).
++- Comme la lecture seule, aucun backup du projet n'est nécessaire (le projet
++  n'est jamais modifié par construction) ; `--dangerously-skip-permissions`
++  est ajouté (nécessaire pour écrire dans le scratch), d'où l'importance du
++  niveau 2 puisque ce flag désarme aussi les protections de Claude Code.
++
+ **Mode écriture (`mode_write`)** — CCL peut modifier des fichiers, exécuter
+ des commandes, faire des commits git.
+ Garde-fous automatiques :
+@@ -236,6 +271,9 @@ Garde-fous automatiques :
+ - Aucune commande destructrice sans demande explicite
+ - Périmètre strict : CCL ne travaille que dans le dossier configuré
+ 
++> `configs/*.conf` reste interdit à l'écriture **quel que soit le mode**
++> (lecture active comme écriture) — garde-fou technique #318, voir §11.
++
+ ---
+ 
+ ## 6. Champs spéciaux dans le corps de l'issue
+@@ -490,16 +528,18 @@ les petits changements (une ligne CSS, un label, une couleur).
+ l'onglet Configuration de new_issue.py, ou à la main par Alain — elles
+ ne touchent pas au code et sont gitignorées. **Cette exception vaut
+ uniquement pour Alain** : CCL/CCW ne modifie **jamais** `configs/*.conf`
+-via une issue, même en mode_write et même si l'issue le demande
+-explicitement en toutes lettres (issue #318, suite au diagnostic #298 —
+-ce champ texte simple n'avait aucun garde-fou contre un élargissement ou
+-un rétrécissement silencieux du PÉRIMÈTRE). La règle est injectée à
+-CCL/CCW via `consignes/globales.md`, et doublée d'un garde-fou technique
+-dans `watcher.py` (`_empreinte_configs` / `_restaurer_configs_modifies`) :
++via une issue, même en mode_write (ou en lecture active, mode_scratch,
++depuis #327) et même si l'issue le demande explicitement en toutes
++lettres (issue #318, suite au diagnostic #298 — ce champ texte simple
++n'avait aucun garde-fou contre un élargissement ou un rétrécissement
++silencieux du PÉRIMÈTRE). La règle est injectée à CCL/CCW via
++`consignes/globales.md`, et doublée d'un garde-fou technique dans
++`watcher.py` (`_empreinte_configs` / `_restaurer_configs_modifies`) :
+ toute modification de `configs/*.conf` survenue malgré tout au cours
+-d'un traitement mode_write est détectée (comparaison du contenu avant/
+-après chaque tentative) et annulée automatiquement, avec un WARNING
+-journalisé, sans faire échouer le reste du traitement de l'issue.
++d'un traitement en écriture ou en lecture active est détectée
++(comparaison du contenu avant/après chaque tentative) et annulée
++automatiquement, avec un WARNING journalisé, sans faire échouer le reste
++du traitement de l'issue.
+ 
+ ### 12.1 Consignes injectées — architecture à trois couches (issues #209, #211)
+ 
+@@ -1915,6 +1955,6 @@ issues de la même combinaison s'il le juge utile.
+ 
+ ---
+ 
+-*Dernière mise à jour : 2 août 2026 — §12 « Règles d'usage » : le paragraphe « Exception » sur `configs/*.conf` précise désormais que cette exception (modification directe, hors passage par CC) vaut uniquement pour Alain (à la main ou via l'onglet Configuration de `new_issue.py`), jamais pour CCL/CCW — même en mode_write, même si l'issue le demande explicitement en toutes lettres (issue #318, suite au diagnostic #298 : PERIMETRE est un champ texte simple sans garde-fou contre un élargissement/rétrécissement silencieux). Renvoie vers le garde-fou technique ajouté à `watcher.py` (`_empreinte_configs`/`_restaurer_configs_modifies`) qui détecte et annule automatiquement toute modification de `configs/*.conf` survenue malgré tout en cours de traitement, sans faire échouer le reste de l'issue. Précédemment — Crée `BUILD_WINDOWS_CCW.md` (issue #299) et allège d'autant le §16.3 « Procédure — builder un projet Windows » : la note « staging local » (issue #297) détaillée en toutes lettres — pattern de contournement de la corruption de fichiers sur `\\VBOXSVR\CCW_Share` et checklist par projet buildé — est remplacée par un renvoi de deux lignes vers ce nouveau fichier, qui porte désormais aussi la checklist Scrabble (clone, script de build, `.spec`, TIMEOUT, taille/hash de l'installeur de référence du 31/07/2026) ; objectif — éviter que chaque nouveau projet buildé sous Windows (Rummikub en préparation) n'ajoute encore du contenu spécifique-projet dans ce fichier central. Précédemment — Ajoute au §16 « Agent Windows CCW » la sous-section 16.4 « Interrompre une issue CCW coincée » (issue #287) : symptôme (le watcher `CCW-Watcher` log en boucle « Issue différée : un autre traitement détient déjà le verrou sur \\VBOXSVR\CCW_Share\ » sans jamais progresser), cause (fichier verrou orphelin dans `C:\CCW\Bridge_Agent\logs\verrous\`, non nettoyé après un process tué brutalement ou un redémarrage NSSM sans libération propre), procédure manuelle (`nssm restart CCW-Watcher` puis lister/supprimer le(s) fichier(s) `.lock` restant(s) via `Get-ChildItem`/`Remove-Item`), et note sur le bouton **« Interrompre »** prévu dans l'onglet CCW de `new_issue.py` pour automatiser cette procédure (voir `TACHES.md`).*
++*Dernière mise à jour : 2 août 2026 — §4 « Labels disponibles » et §5, renommé « Modes lecture seule / lecture active / écriture » : implémente la « lecture active » (label `mode_scratch`) préparée côté formulaire/en-tête par #326 mais jusqu'ici ignorée par le watcher (issue #327). Le booléen `autoriser_ecriture` est remplacé par un MODE à trois valeurs (`lecture`/`lecture_active`/`ecriture`), déduit des labels par `watcher.py::_deduire_mode` et lu par les cinq points de décision (flag `--dangerously-skip-permissions`, bloc de garde-fou du prompt, backup, garde-fou `configs/*.conf`, étiquette de calibration TIMEOUT). La lecture active écrit UNIQUEMENT dans `/tmp/bridge_scratch_<projet>/` (créé avant CCL, nettoyé après, quel que soit le résultat) — défense en profondeur niveau 1 (bloc de prompt dédié) + niveau 2 (empreinte de l'état git du répertoire de travail avant/après, restauration + échec `needs-human` si une écriture est détectée hors scratch, même schéma que le garde-fou `configs/*.conf` #318). Le livrable reste un rapport, comme en lecture seule. §12 « Règles d'usage » précise que l'interdiction d'écriture sur `configs/*.conf` (#318) vaut aussi en lecture active. Précédemment — §12 « Règles d'usage » : le paragraphe « Exception » sur `configs/*.conf` précise désormais que cette exception (modification directe, hors passage par CC) vaut uniquement pour Alain (à la main ou via l'onglet Configuration de `new_issue.py`), jamais pour CCL/CCW — même en mode_write, même si l'issue le demande explicitement en toutes lettres (issue #318, suite au diagnostic #298 : PERIMETRE est un champ texte simple sans garde-fou contre un élargissement/rétrécissement silencieux). Renvoie vers le garde-fou technique ajouté à `watcher.py` (`_empreinte_configs`/`_restaurer_configs_modifies`) qui détecte et annule automatiquement toute modification de `configs/*.conf` survenue malgré tout en cours de traitement, sans faire échouer le reste de l'issue. Précédemment — Crée `BUILD_WINDOWS_CCW.md` (issue #299) et allège d'autant le §16.3 « Procédure — builder un projet Windows » : la note « staging local » (issue #297) détaillée en toutes lettres — pattern de contournement de la corruption de fichiers sur `\\VBOXSVR\CCW_Share` et checklist par projet buildé — est remplacée par un renvoi de deux lignes vers ce nouveau fichier, qui porte désormais aussi la checklist Scrabble (clone, script de build, `.spec`, TIMEOUT, taille/hash de l'installeur de référence du 31/07/2026) ; objectif — éviter que chaque nouveau projet buildé sous Windows (Rummikub en préparation) n'ajoute encore du contenu spécifique-projet dans ce fichier central.*
+ 
+ Historique complet : voir [`CHANGELOG.md`](CHANGELOG.md).
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index f5a2fcd..741a0e3 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -9,6 +9,88 @@ milliers de caractères sur une seule ligne logique, coûteux à relire et
+ 
+ Convention d'ajout : voir §10 de `BRIDGE_AGENT_DOC.md`.
+ 
++## 2 août 2026 — issue #327
++
++Implémentation du mode « lecture active » (`mode_scratch`) côté
++`watcher.py` — préparé formulaire/en-tête par #326, resté volontairement
++inactif (une issue `mode_scratch` sans `mode_write` était traitée comme
++lecture seule). Écriture confinée pour les outils d'analyse qui exigent un
++vrai fichier de config sur disque (linters, eslint flat config ≥ 9, ...),
++impossible à satisfaire en lecture seule.
++
++**Mode à trois valeurs, plus un booléen empilé.** `autoriser_ecriture: bool`
++pilotait CINQ points de décision (flag `--dangerously-skip-permissions`,
++bloc de garde-fou du prompt, backup, garde-fou `configs/*.conf` #318,
++étiquette de calibration TIMEOUT) — insuffisant pour un 3e mode. Remplacé
++par `MODE_LECTURE`/`MODE_LECTURE_ACTIVE`/`MODE_ECRITURE` (nouvelle constante
++`LABEL_SCRATCH = "mode_scratch"`), déduits des labels par la nouvelle
++`_deduire_mode` (priorité `mode_write` > `mode_scratch` > lecture seule par
++défaut) et lus par les cinq points ci-dessus — un futur 4e mode n'ajoutera
++qu'une valeur, pas cinq retouches éparses. `lancer_claude` prend désormais
++`mode` (plus `autoriser_ecriture`) et `chemin_scratch` ; les deux tests
++existants qui l'appelaient directement (`test_nettoyage_arbre_247.py`,
++`test_orphelin_verrou_perime_322.py`) sont mis à jour en conséquence.
++
++**Chemin scratch** : `/tmp/bridge_scratch_<projet>/` (`<projet>` = `CFG.nom`,
++validé strictement — aucun `../`, aucun séparateur de chemin — jamais dérivé
++d'une valeur fournie par l'issue). Créé par le watcher juste avant le
++premier lancement de claude en lecture active, supprimé dans un `finally`
++(succès/échec/timeout confondus, même esprit que `_nettoyer_arbre_claude`).
++
++**Défense en profondeur, niveau 1 + niveau 2** (même schéma que le
++garde-fou `configs/*.conf`, #318) :
++- **Niveau 1 (prompt)** : nouveau bloc de garde-fou dédié dans
++  `lancer_claude`, distinct des deux blocs existants — chemin scratch exact,
++  interdiction d'écrire ailleurs (notamment REP_TRAVAIL), interdiction de
++  `git commit`/`git push`/commande destructrice, rappel que le scratch est
++  éphémère et que le livrable reste un rapport de lecture.
++  `--dangerously-skip-permissions` est ajouté (la lecture active doit
++  pouvoir écrire dans le scratch), désarmant les mêmes protections claude
++  que l'écriture libre — d'où le niveau 2.
++- **Niveau 2 (détection technique a posteriori)** : nouvelles
++  `_statut_git_rep_travail`/`_restaurer_rep_travail_modifie`, sur le modèle
++  de `_empreinte_configs`/`_restaurer_configs_modifies` (#318) — empreinte de
++  `git status --porcelain -uall` sur REP_TRAVAIL avant la première tentative,
++  comparée après chaque tentative. Toute écriture détectée (fichier modifié,
++  neuf ou supprimé) est restaurée (`git checkout`/`git clean` ciblés) et
++  l'issue est marquée en échec définitif (`needs-human`, pas de nouvelle
++  tentative) avec un message explicite. Le scratch (`/tmp`, hors REP_TRAVAIL)
++  n'apparaît jamais dans cette empreinte par construction, donc n'est jamais
++  emporté par la restauration.
++
++**Backup et garde-fou configs** : aucun backup projet en lecture active
++(comme la lecture seule — le filet est le niveau 2, pas un commit de
++sauvegarde). Le garde-fou technique `configs/*.conf` (#318) est étendu : il
++s'armait uniquement en mode écriture, il couvre désormais aussi la lecture
++active (`mode != MODE_LECTURE`), cohérent avec le fait que ce mode arme
++aussi `--dangerously-skip-permissions`.
++
++**Calibration (§19)** : nouvelle étiquette `"scratch"` (fonction
++`_etiquette_calibration`), distincte de `"read"`/`"write"`, appliquée aux
++trois points de calibration (succès, timeout, échec définitif) —
++`etat_timeout.json` et `historique_durees.json` gagnent une population
++`projet|TYPE|scratch` propre, pour ne pas refaire le mélange de populations
++que #326 avait corrigé côté UI. `app/issues.py` (estimation de durée d'une
++issue ouverte, badge de progression) mis à jour en cohérence : `mode_scratch`
++y était jusqu'ici classé à tort dans la population `"read"`.
++
++`templates/index.html` : le radio « Lecture active » n'est plus marqué
++« réservé » (le mode est désormais fonctionnel) ; `app/issues.py` (table
++`MODES`) et le commentaire près de `LABEL_ECRITURE`/`LABEL_SCRATCH` dans
++`watcher.py` mis à jour en conséquence.
++
++Tests (`tests/test_lecture_active_327.py`, faux `claude` **et** faux `gh`,
++aucun appel réseau) : déduction du mode depuis les labels (les quatre cas,
++priorité `mode_write` > `mode_scratch`) ; validation stricte de
++`_chemin_scratch` ; traitement complet (`traiter_issue`) d'une lecture
++active qui n'écrit que dans le scratch → succès, REP_TRAVAIL inchangé,
++scratch nettoyé ; traitement complet d'une lecture active qui écrit dans le
++projet hors scratch → détecté, restauré (fichier modifié restauré à son
++contenu d'origine, fichier neuf supprimé), `needs-human` posé, jamais
++`done`.
++
++`TACHES.md` : entrée « mode_scratch » retirée (implémentée).
++
+ ## 2 août 2026 — issue #326
+ 
+ Détection automatique du MODE dans l'en-tête + mode à valeurs extensibles,
+diff --git a/TACHES.md b/TACHES.md
+index b70b63a..1eac810 100644
+--- a/TACHES.md
++++ b/TACHES.md
+@@ -143,49 +143,6 @@ de code, pour valider le concept avant d'écrire le champ `WORKTREE` natif.
+ 
+ ---
+ 
+-## Mode mode_scratch (lecture active) — écriture scratch limitée pour outillage d'audit
+-
+-**Contexte** : certains outils d'analyse (eslint flat config pour les
+-versions ≥ 9, linters divers) exigent un vrai fichier de config sur disque,
+-pas seulement une commande inline. Le mode_lecture actuel interdit toute
+-écriture, y compris hors dépôt — ce qui bloque ces outils. Note : ce n'est
+-PAS ce qui causait les timeouts observés sur Scrabble (#235 vs #238,
+-réglé par une consigne d'abandon immédiat au refus de permission) — c'est
+-un besoin distinct et réel, pour les cas où l'outil a effectivement besoin
+-d'un fichier de config.
+-
+-**Préparation faite (issue #326)** : vocabulaire retenu « lecture active »
+-(label `mode_scratch`, renommé depuis la proposition initiale
+-`mode_tmp_write` ci-dessous) ; formulaire (3e radio) et champ d'en-tête
+-`| MODE | … |` préparés côté `new_issue.py` pour porter cette valeur. Label
+-encore RÉSERVÉ : le watcher actuel ne le connaît pas et traite une issue
+-`mode_scratch` comme lecture seule. Reste à faire ci-dessous : toute la
+-logique d'exécution côté `watcher.py`.
+-
+-**Proposition** (reçue via rapport d'audit Scrabble) : un troisième mode,
+-`mode_scratch`, avec :
+-- Écriture autorisée uniquement dans un chemin scratch bien défini et
+-  validé strictement côté watcher (ex. `/tmp/bridge_scratch_<projet>/`),
+-  jamais dans `REP_TRAVAIL` du projet. Validation stricte du chemin pour
+-  empêcher tout `../` ou équivalent remontant vers le dépôt.
+-- Toujours interdit, comme en lecture seule : `git commit`, `git push`,
+-  toute commande destructrice, toute écriture hors du chemin scratch.
+-- Nettoyage attendu en fin de tâche par CCL, idéalement complété par un
+-  nettoyage automatique du dossier scratch par le watcher en fin de
+-  traitement — pour ne pas reposer uniquement sur la consigne donnée à CCL.
+-- Conceptuellement plus proche du mode lecture seule que du mode écriture :
+-  pas de garde-fou "backup avant modification" nécessaire (aucun fichier du
+-  projet n'est jamais en jeu).
+-
+-**Point de vigilance** : la garantie ne tient que si la validation du
+-chemin scratch est réellement stricte côté `watcher.py` — à concevoir avec
+-soin, pas seulement en confiance sur la consigne donnée à CCL.
+-
+-**Statut** : idée en attente, pas de développement lancé. Reçue via rapport
+-d'audit Scrabble le 24/07/2026.
+-
+----
+-
+ ## Rafraîchir une seule fois la ligne d'une issue quand son décompte atteint zéro
+ 
+ **Contexte** : le décompte de temps restant affiché pour une issue tourne
+diff --git a/app/issues.py b/app/issues.py
+index dd6f89d..f1b427b 100644
+--- a/app/issues.py
++++ b/app/issues.py
+@@ -24,7 +24,7 @@ from app.auth import login_requis  # noqa: F401 (exporté pour l'enregistrement
+ # du watcher fonctionne. On réutilise ses primitives pour éviter toute dérive
+ # entre le calcul du watcher et celui du badge (issues #91 et #106).
+ from watcher import (est_titre_chef, deduire_type_issue, PAUSE_ENTRE_TENTATIVES,
+-                     _est_depot_git)
++                     _est_depot_git, LABEL_ECRITURE, LABEL_SCRATCH)
+ 
+ # Racine du projet (dossier parent du package app/).
+ DOSSIER_SCRIPT = Path(__file__).resolve().parent.parent
+@@ -150,14 +150,11 @@ def _parser_labels_entete(corps: str) -> list:
+ # construire_labels lisent tous deux cette table, si bien qu'un futur 4e mode
+ # ne demande qu'une ligne ici.
+ #
+-# lecture_active (label mode_scratch) est RÉSERVÉ : cette issue prépare le
+-# terrain formulaire/en-tête pour la future « lecture active » du backlog
+-# TACHES.md (écriture scratch limitée pour linters exigeant un fichier de
+-# config sur disque), mais NE PORTE PAS l'implémentation côté watcher. Tant
+-# que cette implémentation n'est pas faite, watcher.py ignore mode_scratch
+-# (LABEL_ECRITURE == "mode_write" seul teste autoriser_ecriture) et traite
+-# l'issue comme lecture seule — comportement sûr, mais pas encore la
+-# « lecture active » annoncée par ce mode.
++# lecture_active (label mode_scratch, issue #327) : écriture confinée à
++# /tmp/bridge_scratch_<projet>/ côté watcher (jamais dans le projet), utile
++# aux linters/outils exigeant un vrai fichier de config sur disque. Voir
++# watcher.py::_deduire_mode / MODE_LECTURE_ACTIVE pour l'implémentation
++# complète (garde-fous niveau 1 prompt + niveau 2 empreinte REP_TRAVAIL).
+ MODES = {
+     "lecture":        ("lecture", None),
+     "lecture_active": ("lecture active", "mode_scratch"),
+@@ -986,7 +983,16 @@ def issues_en_attente(nom_projet):
+         priorite = _parser_priorite(body)
+         labels = [(l.get("name") or "").lower() for l in it.get("labels", [])]
+         type_issue = deduire_type_issue(titre, body)
+-        mode = "write" if "mode_write" in labels else "read"
++        # "scratch" (issue #327) : population de durées distincte de "read", au
++        # même titre que "write" — sinon l'estimation d'une issue en lecture
++        # active emprunterait à tort la population "read" (mélange de profils
++        # de durée hétérogènes, même défaut que celui corrigé côté UI par #326).
++        if LABEL_ECRITURE in labels:
++            mode = "write"
++        elif LABEL_SCRATCH in labels:
++            mode = "scratch"
++        else:
++            mode = "read"
+         it["timeout"]     = _parser_timeout(body, titre, cfg)
+         it["max_essais"]  = cfg.max_essais
+         it["backoff"]     = PAUSE_ENTRE_TENTATIVES
+diff --git a/templates/index.html b/templates/index.html
+index 081217e..61e857b 100644
+--- a/templates/index.html
++++ b/templates/index.html
+@@ -115,16 +115,18 @@
+ 
+     <div class="titre-section">Mode</div>
+     <!-- Ordre du moins au plus permissif (issue #326) : lecture → lecture
+-         active → écriture. Lecture active (label mode_scratch) est RÉSERVÉE :
+-         préparée ici côté formulaire/en-tête, pas encore fonctionnelle côté
+-         watcher (traitée comme lecture seule en attendant l'issue dédiée). -->
++         active → écriture. Lecture active (label mode_scratch, issue #327) :
++         écriture confinée à /tmp/bridge_scratch_<projet>/, jamais dans le
++         projet — utile aux linters/outils exigeant un vrai fichier de config
++         sur disque (eslint flat config ≥ 9, etc.). Livrable = rapport, comme
++         la lecture seule. -->
+     <div class="radio-groupe">
+       <label><input type="radio" name="mode" value="lecture" checked
+                     onchange="mettreAJourBoutonEnvoi()"> Lecture seule</label>
+       <label><input type="radio" name="mode" value="lecture_active"
+                     onchange="mettreAJourBoutonEnvoi()"
+-                    title="Réservé : préparé côté formulaire, pas encore fonctionnel côté watcher.">
+-        Lecture active <span class="badge-alerte">scratch (mode_scratch, réservé)</span>
++                    title="Écriture confinée au dossier scratch (/tmp/bridge_scratch_<projet>/), jamais dans le projet.">
++        Lecture active <span class="badge-alerte">scratch (mode_scratch)</span>
+       </label>
+       <label><input type="radio" name="mode" value="ecriture"
+                     onchange="mettreAJourBoutonEnvoi()">
+diff --git a/tests/test_lecture_active_327.py b/tests/test_lecture_active_327.py
+new file mode 100644
+index 0000000..90e9774
+--- /dev/null
++++ b/tests/test_lecture_active_327.py
+@@ -0,0 +1,317 @@
++#!/usr/bin/env python3
++"""Test de non-régression — issue #327 : implémentation du mode « lecture
++active » (mode_scratch), préparé côté formulaire/en-tête par #326 mais pas
++encore fonctionnel côté watcher.
++
++Vérifie :
++- `_deduire_mode` déduit correctement le MODE à trois valeurs des labels
++  GitHub d'une issue (mode_write → ecriture, mode_scratch seul →
++  lecture_active, aucun des deux → lecture, les deux → l'écriture l'emporte).
++- `_chemin_scratch` valide strictement le nom de projet (aucun '../',
++  aucune remontée hors de /tmp) et dérive le chemin attendu.
++- Un traitement complet en lecture active (`traiter_issue`) qui n'écrit QUE
++  dans le dossier scratch : succès, REP_TRAVAIL inchangé, scratch nettoyé.
++- Un traitement complet en lecture active qui écrit dans REP_TRAVAIL (hors
++  scratch) : détecté par le garde-fou niveau 2, restauré, issue marquée en
++  échec (`needs-human`), jamais fermée/marquée `done`.
++
++`gh` et `claude` sont tous deux remplacés par de faux exécutables (même
++technique que tests/test_nettoyage_arbre_247.py et
++tests/test_orphelin_verrou_perime_322.py) : aucun appel réseau réel. Le faux
++`gh` est minimal mais STATEFUL sur `issue view --json comments` (via un
++fichier marqueur passé par variable d'environnement) : nécessaire pour que
++`commenter_resultat_avec_retry` (qui relit l'issue pour confirmer la
++présence du commentaire, issue #237) fonctionne dans le scénario de succès.
++
++Exécution :  python3 tests/test_lecture_active_327.py
++Sortie      :  code 0 si tous les scénarios passent, 1 sinon.
++"""
++
++import logging
++import os
++import stat
++import subprocess
++import sys
++import tempfile
++from pathlib import Path
++
++RACINE = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(RACINE))
++
++import watcher  # noqa: E402
++
++FAUX_GH = """#!/bin/bash
++# Faux `gh` — issue #327. Stateful uniquement sur `issue view --json comments`
++# (marqueur touché par `issue comment` quand le body contient MARQUEUR_RESULTAT).
++if [ "$1" = "issue" ] && [ "$2" = "comment" ]; then
++    bodyfile=""
++    prev=""
++    for arg in "$@"; do
++        if [ "$prev" = "--body-file" ]; then
++            bodyfile="$arg"
++        fi
++        prev="$arg"
++    done
++    if [ -n "$bodyfile" ] && grep -q -- '<!-- bridge:resultat -->' "$bodyfile" 2>/dev/null; then
++        touch "$TEST_327_MARQUEUR"
++    fi
++    exit 0
++fi
++if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
++    if [ -n "$TEST_327_MARQUEUR" ] && [ -f "$TEST_327_MARQUEUR" ]; then
++        echo '{"comments":[{"body":"<!-- bridge:resultat -->\\nfake"}]}'
++    else
++        echo '{"comments":[]}'
++    fi
++    exit 0
++fi
++exit 0
++"""
++
++
++def _preparer_bin(tmp_path: Path, script_claude: str) -> Path:
++    """Écrit de faux `claude` et `gh` exécutables dans tmp_path/bin, retourne
++    ce dossier (à préfixer au PATH)."""
++    bin_dir = tmp_path / "bin"
++    bin_dir.mkdir(exist_ok=True)
++
++    claude_path = bin_dir / "claude"
++    claude_path.write_text(script_claude, encoding="utf-8")
++    claude_path.chmod(claude_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
++
++    gh_path = bin_dir / "gh"
++    gh_path.write_text(FAUX_GH, encoding="utf-8")
++    gh_path.chmod(gh_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
++
++    return bin_dir
++
++
++def _init_depot_git(rep: Path) -> None:
++    """Dépôt git minimal avec un commit initial, pour que
++    `_statut_git_rep_travail` ait un HEAD contre lequel comparer."""
++    subprocess.run(["git", "init", "-q", "-b", "master", str(rep)], check=True)
++    (rep / "fichier.txt").write_text("original\n", encoding="utf-8")
++    subprocess.run(["git", "add", "-A"], cwd=rep, check=True, capture_output=True)
++    subprocess.run(["git", "commit", "-q", "-m", "initial"], cwd=rep, check=True, capture_output=True)
++
++
++def _issue_minimale(numero: int, titre: str, labels: list[str]) -> dict:
++    return {
++        "number": numero,
++        "title": titre,
++        "body": "| PRIORITE | normale |\n| TIMEOUT | 30s |\n",
++        "labels": [{"name": lab} for lab in labels],
++    }
++
++
++def scenario_deduction_mode():
++    """_deduire_mode (issue #327) : priorité mode_write > mode_scratch >
++    lecture seule par défaut."""
++    assert watcher._deduire_mode(["mode_write"]) == watcher.MODE_ECRITURE
++    assert watcher._deduire_mode(["mode_scratch"]) == watcher.MODE_LECTURE_ACTIVE
++    assert watcher._deduire_mode([]) == watcher.MODE_LECTURE
++    assert watcher._deduire_mode(["for-linux", "notif_pc"]) == watcher.MODE_LECTURE
++    # Les deux labels posés à la fois (erreur) : l'écriture l'emporte, comme
++    # l'ancien comportement où seul LABEL_ECRITURE testait autoriser_ecriture.
++    assert watcher._deduire_mode(["mode_write", "mode_scratch"]) == watcher.MODE_ECRITURE
++    return {}
++
++
++def scenario_chemin_scratch_valide_et_invalide():
++    """_chemin_scratch (issue #327) : dérivé de CFG.nom, validation stricte
++    (aucun séparateur, aucune remontée hors de /tmp)."""
++    chemin = watcher._chemin_scratch("bridge_agent")
++    assert chemin == Path(tempfile.gettempdir()) / "bridge_scratch_bridge_agent", chemin
++
++    for nom_invalide in ("", "../etc", "a/b", "a\\b", "..", "a b"):
++        try:
++            watcher._chemin_scratch(nom_invalide)
++        except ValueError:
++            continue
++        raise AssertionError(f"nom de projet {nom_invalide!r} aurait dû être refusé")
++    return {}
++
++
++def scenario_lecture_active_ecrit_scratch_uniquement():
++    """Lecture active qui n'écrit QUE dans le scratch : succès, REP_TRAVAIL
++    inchangé (git status vide après restauration niveau 2 — rien à
++    restaurer), scratch nettoyé (finally de traiter_issue)."""
++    with tempfile.TemporaryDirectory() as tmp:
++        tmp_path = Path(tmp)
++        rep_travail = tmp_path / "projet"
++        rep_travail.mkdir()
++        _init_depot_git(rep_travail)
++
++        marqueur = tmp_path / "marqueur_resultat"
++
++        # Le faux claude écrit un fichier DANS le scratch (chemin déterministe,
++        # calculé indépendamment ci-dessous) puis répond succès — simule un
++        # linter qui a eu besoin d'un fichier de config sur disque.
++        chemin_scratch_attendu = watcher._chemin_scratch("test327c")
++        script_claude = f"""#!/bin/bash
++# $# -ge 2 distingue le VRAI appel (claude --print <prompt>) de la sonde
++# pre-flight (claude --print, sans prompt positionnel, voir
++# verifier_preflight_token) — la sonde ne doit produire aucun effet de bord.
++if [ "$#" -ge 2 ]; then
++    echo "config" > {chemin_scratch_attendu}/eslint.config.js
++    echo "✅ Tâche terminée — lecture active OK"
++fi
++exit 0
++"""
++        bin_dir = _preparer_bin(tmp_path, script_claude)
++        ancien_path = os.environ.get("PATH", "")
++        os.environ["PATH"] = f"{bin_dir}{os.pathsep}{ancien_path}"
++        os.environ["TEST_327_MARQUEUR"] = str(marqueur)
++
++        ancien_dossier_verrous = watcher.DOSSIER_VERROUS
++        watcher.DOSSIER_VERROUS = tmp_path / "verrous"
++        watcher.CFG = watcher.Config(
++            nom="test327c", depot="AlainDelree/depot-inexistant-test327",
++            rep_travail=rep_travail, topic_ntfy="test327c",
++            max_essais=1, timeout_claude=15, notifier_local=False,
++        )
++        watcher.issues_en_cours.discard(9327)
++
++        try:
++            issue = _issue_minimale(9327, "Test #327 — scratch OK", ["mode_scratch"])
++            watcher.traiter_issue(issue, dry_run=False)
++        finally:
++            if ancien_path:
++                os.environ["PATH"] = ancien_path
++            else:
++                os.environ.pop("PATH", None)
++            os.environ.pop("TEST_327_MARQUEUR", None)
++            watcher.DOSSIER_VERROUS = ancien_dossier_verrous
++
++        assert not chemin_scratch_attendu.exists(), (
++            f"le dossier scratch {chemin_scratch_attendu} aurait dû être nettoyé en fin de traitement")
++
++        statut = subprocess.run(
++            ["git", "status", "--porcelain"], cwd=rep_travail,
++            capture_output=True, text=True,
++        ).stdout
++        assert statut.strip() == "", f"REP_TRAVAIL aurait dû rester inchangé : {statut!r}"
++
++        assert (rep_travail / "fichier.txt").read_text(encoding="utf-8") == "original\n"
++
++        return {"scratch_nettoye": True, "projet_inchange": True}
++
++
++def scenario_lecture_active_ecrit_dans_projet_restauree():
++    """Lecture active qui tente d'écrire dans REP_TRAVAIL (hors scratch) :
++    détecté par le garde-fou niveau 2, restauré, issue marquée en échec
++    (needs-human) — jamais fermée ni marquée 'done'."""
++    with tempfile.TemporaryDirectory() as tmp:
++        tmp_path = Path(tmp)
++        rep_travail = tmp_path / "projet"
++        rep_travail.mkdir()
++        _init_depot_git(rep_travail)
++
++        # Le faux claude viole la consigne de confinement : modifie un fichier
++        # suivi ET crée un fichier neuf, tous les deux DANS REP_TRAVAIL (cwd).
++        script_claude = """#!/bin/bash
++# $# -ge 2 distingue le VRAI appel (claude --print <prompt>) de la sonde
++# pre-flight (voir verifier_preflight_token) — la sonde ne doit produire
++# aucun effet de bord.
++if [ "$#" -ge 2 ]; then
++    echo "hack" > fichier.txt
++    echo "malveillant" > malveillant.txt
++    echo "✅ Tâche terminée — (ne devrait jamais être acceptée telle quelle)"
++fi
++exit 0
++"""
++        bin_dir = _preparer_bin(tmp_path, script_claude)
++        ancien_path = os.environ.get("PATH", "")
++        os.environ["PATH"] = f"{bin_dir}{os.pathsep}{ancien_path}"
++        os.environ["TEST_327_MARQUEUR"] = str(tmp_path / "marqueur_non_utilise")
++
++        ancien_dossier_verrous = watcher.DOSSIER_VERROUS
++        watcher.DOSSIER_VERROUS = tmp_path / "verrous"
++
++        labels_ajoutes = []
++        vrai_ajouter_label = watcher.ajouter_label
++
++        def _capturer_ajouter_label(numero, label):
++            labels_ajoutes.append(label)
++            return vrai_ajouter_label(numero, label)
++
++        watcher.ajouter_label = _capturer_ajouter_label
++        watcher.CFG = watcher.Config(
++            nom="test327d", depot="AlainDelree/depot-inexistant-test327",
++            rep_travail=rep_travail, topic_ntfy="test327d",
++            max_essais=3, timeout_claude=15, notifier_local=False,
++        )
++        watcher.issues_en_cours.discard(9328)
++
++        try:
++            issue = _issue_minimale(9328, "Test #327 — écriture hors scratch", ["mode_scratch"])
++            watcher.traiter_issue(issue, dry_run=False)
++        finally:
++            watcher.ajouter_label = vrai_ajouter_label
++            if ancien_path:
++                os.environ["PATH"] = ancien_path
++            else:
++                os.environ.pop("PATH", None)
++            os.environ.pop("TEST_327_MARQUEUR", None)
++            watcher.DOSSIER_VERROUS = ancien_dossier_verrous
++
++        assert watcher.LABEL_ECHEC in labels_ajoutes, (
++            f"le label '{watcher.LABEL_ECHEC}' aurait dû être posé — labels posés : {labels_ajoutes}")
++        assert watcher.LABEL_FAIT not in labels_ajoutes, (
++            "l'issue n'aurait jamais dû être marquée 'done' après une violation niveau 2")
++
++        assert (rep_travail / "fichier.txt").read_text(encoding="utf-8") == "original\n", (
++            "le fichier suivi modifié hors scratch aurait dû être restauré à son contenu d'origine")
++        assert not (rep_travail / "malveillant.txt").exists(), (
++            "le fichier neuf créé hors scratch aurait dû être supprimé par la restauration"
++        )
++
++        statut = subprocess.run(
++            ["git", "status", "--porcelain"], cwd=rep_travail,
++            capture_output=True, text=True,
++        ).stdout
++        assert statut.strip() == "", f"REP_TRAVAIL aurait dû être restauré à l'identique : {statut!r}"
++
++        assert 9328 not in watcher.issues_en_cours, "l'issue aurait dû être retirée de issues_en_cours"
++
++        return {"restaure": True, "needs_human": True}
++
++
++def main():
++    if os.name == "nt":
++        print("  (ignoré : ce test s'appuie sur bash/git POSIX, non applicable sous Windows)")
++        return 0
++
++    tests = [
++        ("_deduire_mode : priorité mode_write > mode_scratch > lecture", scenario_deduction_mode),
++        ("_chemin_scratch : dérivation + validation stricte du nom de projet", scenario_chemin_scratch_valide_et_invalide),
++        ("lecture active écrivant uniquement dans le scratch → succès, projet inchangé, scratch nettoyé",
++         scenario_lecture_active_ecrit_scratch_uniquement),
++        ("lecture active écrivant dans le projet hors scratch → détecté, restauré, échec (needs-human)",
++         scenario_lecture_active_ecrit_dans_projet_restauree),
++    ]
++
++    logging.getLogger().addHandler(logging.NullHandler())
++    watcher.log.setLevel(logging.CRITICAL)  # silencieux sauf échec de test lui-même
++
++    echecs = 0
++    for nom, fn in tests:
++        try:
++            rap = fn()
++            print(f"  ✓ {nom}  ({rap})")
++        except AssertionError as e:
++            echecs += 1
++            print(f"  ✗ {nom}\n      {e}")
++        except Exception as e:  # noqa: BLE001
++            echecs += 1
++            print(f"  ✗ {nom} — erreur inattendue : {type(e).__name__}: {e}")
++
++    if echecs:
++        print(f"\n❌ {echecs} scénario(s) en échec.")
++        return 1
++    print("\n✅ Tous les scénarios passent.")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/tests/test_nettoyage_arbre_247.py b/tests/test_nettoyage_arbre_247.py
+index 5465d88..e48bd93 100644
+--- a/tests/test_nettoyage_arbre_247.py
++++ b/tests/test_nettoyage_arbre_247.py
+@@ -103,7 +103,7 @@ def scenario_enfant_bloque_tue_apres_retour():
+         try:
+             succes, sortie = watcher.lancer_claude(
+                 numero=9999, titre="Test #247", body="Corps de test",
+-                dry_run=False, autoriser_ecriture=False,
++                dry_run=False, mode=watcher.MODE_LECTURE,
+                 timeout=15, cwd=tmp_path,
+             )
+         finally:
+diff --git a/tests/test_orphelin_verrou_perime_322.py b/tests/test_orphelin_verrou_perime_322.py
+index 9c99361..c481077 100644
+--- a/tests/test_orphelin_verrou_perime_322.py
++++ b/tests/test_orphelin_verrou_perime_322.py
+@@ -298,7 +298,7 @@ def scenario_lancer_claude_ecrit_pgid_dans_verrou():
+ 
+             succes, sortie = watcher.lancer_claude(
+                 numero=9999, titre="Test #322", body="Corps de test",
+-                dry_run=False, autoriser_ecriture=False,
++                dry_run=False, mode=watcher.MODE_LECTURE,
+                 timeout=15, cwd=tmp_path, verrou=verrou,
+             )
+             assert succes, f"lancer_claude aurait dû réussir : {sortie}"
+diff --git a/watcher.py b/watcher.py
+index f79e44f..3f365d6 100644
+--- a/watcher.py
++++ b/watcher.py
+@@ -27,6 +27,7 @@ import hashlib
+ import tempfile
+ import platform
+ import signal
++import shutil
+ import ctypes
+ import ctypes.wintypes
+ from logging.handlers import RotatingFileHandler
+@@ -129,16 +130,50 @@ PEREMPTION_MARGE_VERROU = 120
+ # label réel sur GitHub, un contrat qu'on ne touche pas.
+ 
+ LABEL_ECRITURE  = "mode_write"    # ARME le mode écriture (--dangerously-skip-permissions)
++LABEL_SCRATCH   = "mode_scratch"  # ARME la lecture active (écriture confinée au scratch, issue #327)
+ LABEL_ECHEC     = "needs-human"   # posé après échec définitif : stoppe le retraitement auto
+ LABEL_FAIT      = "done"          # posé au succès
+ 
+-# "mode_scratch" (issue #326) : label RÉSERVÉ pour la future « lecture active »
+-# (TACHES.md) — écriture scratch limitée pour les linters qui exigent un
+-# fichier de config sur disque. #326 ne prépare que le formulaire/en-tête ;
+-# cette constante n'existe PAS encore ici volontairement : autoriser_ecriture
+-# ne teste que LABEL_ECRITURE, donc une issue portant mode_scratch (sans
+-# mode_write) est traitée comme lecture seule par ce watcher — comportement
+-# sûr, en attendant l'issue d'implémentation dédiée qui l'activera.
++# ─── Mode de traitement à trois valeurs (issue #327) ───────────────────────────
++# Remplace l'ancien booléen `autoriser_ecriture`, qui ne pouvait piloter que
++# DEUX états — insuffisant depuis que #326 introduit un 3e mode, la « lecture
++# active » (mode_scratch) : écriture confinée à un dossier scratch, pour les
++# outils d'analyse (linters, eslint flat config ≥ 9, ...) qui exigent un vrai
++# fichier de config sur disque, jamais dans le projet lui-même.
++#
++# Cinq points de décision lisent ce MODE unique (au lieu de tester chacun un
++# booléen puis, à côté, un `if mode_scratch` empilé) : le flag
++# --dangerously-skip-permissions, le bloc de garde-fou du prompt (lancer_claude),
++# le backup projet (traiter_issue), le garde-fou technique configs/*.conf niveau
++# 2 (#318), et l'étiquette de calibration TIMEOUT (§19). Un futur 4e mode
++# n'ajoutera qu'une valeur ici plutôt que de retoucher cinq endroits épars.
++MODE_LECTURE        = "lecture"         # défaut : diagnostic, aucune écriture
++MODE_LECTURE_ACTIVE = "lecture_active"  # écriture confinée au scratch (label mode_scratch)
++MODE_ECRITURE       = "ecriture"        # écriture libre dans REP_TRAVAIL (label mode_write)
++
++
++def _deduire_mode(labels: list[str]) -> str:
++    """Déduit le MODE de traitement (issue #327) des labels GitHub d'une issue.
++    Priorité : mode_write (écriture) > mode_scratch (lecture active) > lecture
++    seule par défaut — si les deux labels sont posés par erreur, l'écriture
++    l'emporte, cohérent avec l'ancien comportement où seul LABEL_ECRITURE
++    testait autoriser_ecriture."""
++    if LABEL_ECRITURE in labels:
++        return MODE_ECRITURE
++    if LABEL_SCRATCH in labels:
++        return MODE_LECTURE_ACTIVE
++    return MODE_LECTURE
++
++
++def _etiquette_calibration(mode: str) -> str:
++    """Étiquette de calibration TIMEOUT (§19, clé projet|TYPE|mode) associée à
++    un MODE de traitement (issue #327) : "write"/"read" existaient déjà,
++    "scratch" est ajouté pour que la lecture active ait sa PROPRE population de
++    durées — sinon on mélange des profils de durée hétérogènes (mêmes
++    conséquences que le problème de mélange de populations corrigé côté UI par
++    #326). Ces trois valeurs alimentent aussi bien etat_timeout.json
++    (maj_calibration_timeout) que historique_durees.json (enregistrer_duree)."""
++    return {MODE_ECRITURE: "write", MODE_LECTURE_ACTIVE: "scratch"}.get(mode, "read")
+ 
+ # Labels de notification (opt-in, cumulatifs avec le bip). Depuis l'issue #187,
+ # le dispatch concret selon ces labels vit dans notifications.py (module partagé
+@@ -1857,25 +1892,35 @@ def verifier_preflight_token(cwd: Path = None) -> None:
+ 
+ 
+ def lancer_claude(numero: int, titre: str, body: str, dry_run: bool,
+-                  autoriser_ecriture: bool = False,
++                  mode: str = MODE_LECTURE,
+                   timeout: int = None,
+                   modele: str = "",
+                   prompt_perso: str = None,
+                   perimetre: str = None,
+                   cwd: Path = None,
+-                  verrou: Path = None) -> tuple[bool, str]:
++                  verrou: Path = None,
++                  chemin_scratch: Path = None) -> tuple[bool, str]:
+     """
+     Lance Claude Code en mode non-interactif sur une issue.
+ 
+-    Par défaut (autoriser_ecriture=False) : LECTURE SEULE (diagnostic, pas d'écriture).
+-    Si autoriser_ecriture=True (label 'mode_write' posé sciemment) : on ajoute
+-    --dangerously-skip-permissions. Le garde-fou anti-push reste dans le prompt.
++    `mode` (issue #327, remplace l'ancien booléen autoriser_ecriture) : un des
++    trois MODE_* — par défaut MODE_LECTURE (diagnostic, aucune écriture). En
++    MODE_ECRITURE (label 'mode_write' posé sciemment) comme en
++    MODE_LECTURE_ACTIVE (label 'mode_scratch'), --dangerously-skip-permissions
++    est ajouté : la lecture active a besoin d'écrire dans le scratch, ce qui
++    désarme les mêmes protections claude que l'écriture libre — d'où le
++    garde-fou niveau 2 (empreinte REP_TRAVAIL, voir traiter_issue). Le
++    garde-fou anti-push/anti-écriture-projet reste dans le prompt (niveau 1).
++
++    chemin_scratch : requis si mode == MODE_LECTURE_ACTIVE — chemin exact du
++    dossier scratch (créé par l'appelant, voir _chemin_scratch), inséré tel
++    quel dans le bloc de garde-fou du prompt. Ignoré pour les deux autres modes.
+ 
+     prompt_perso : si fourni, remplace intégralement le prompt standard (titre/body
+     + garde-fou + format de réponse imposé). Sert aux passes qui ont besoin d'un
+     prompt sur mesure — ex. la passe diagnostique (issue #124), qui ne doit PAS
+     demander de résoudre la tâche. Le reste de la machinerie (dry-run, cwd, timeout,
+-    modèle, --dangerously-skip-permissions selon autoriser_ecriture) est inchangé.
++    modèle, --dangerously-skip-permissions selon le mode) est inchangé.
+ 
+     perimetre / cwd : surchargent respectivement CFG.perimetre (clause de prompt) et
+     CFG.rep_travail (répertoire réel du subprocess). None = valeur du .conf. Servent
+@@ -1891,13 +1936,16 @@ def lancer_claude(numero: int, titre: str, body: str, dry_run: bool,
+ 
+     Retourne (succès, sortie).
+     """
++    if mode == MODE_LECTURE_ACTIVE and chemin_scratch is None:
++        raise ValueError("lancer_claude : chemin_scratch requis en MODE_LECTURE_ACTIVE.")
++
+     if timeout is None:
+         timeout = CFG.timeout_claude
+ 
+     perimetre_effectif = CFG.perimetre if perimetre is None else perimetre
+     cwd_effectif = CFG.rep_travail if cwd is None else cwd
+ 
+-    if autoriser_ecriture:
++    if mode == MODE_ECRITURE:
+         if CFG.cmd_backup:
+             consigne_backup = (
+                 "- Fais TOUJOURS une sauvegarde avant toute modification, en lançant "
+@@ -1919,6 +1967,35 @@ RÈGLES DE SÉCURITÉ IMPÉRATIVES :
+   travail non sauvegardé, git filter-repo, force-push) sans que la tâche le
+   demande EXPLICITEMENT.
+ - En cas de doute, préfère t'arrêter et décrire ce que tu ferais plutôt que d'agir.
++"""
++    elif mode == MODE_LECTURE_ACTIVE:
++        # Défense en profondeur niveau 1 (issue #327, même esprit que le
++        # garde-fou configs #318) : cette consigne réduit le risque au cas
++        # normal, mais ne suffit pas seule (non-déterminisme du prompt, cf.
++        # #290/#291) — le niveau 2 (empreinte REP_TRAVAIL avant/après, dans
++        # traiter_issue) reste le filet déterministe qui restaure et signale
++        # un échec si elle n'est pas respectée.
++        garde_fou = f"""
++MODE LECTURE ACTIVE (scratch confiné) ACTIVÉ — tu peux écrire des fichiers,
++mais UNIQUEMENT dans le dossier scratch suivant, jamais ailleurs :
++  {chemin_scratch}
++RÈGLES DE SÉCURITÉ IMPÉRATIVES :
++- N'écris JAMAIS dans le répertoire de travail du projet ni nulle part hors de
++  {chemin_scratch} — ce dossier scratch sert uniquement aux fichiers qu'un
++  outil d'analyse (linter, config générée) exige sur disque pour tourner, par
++  exemple {chemin_scratch}/eslint.config.js.
++- Ne fais JAMAIS 'git commit', 'git push' ni aucune autre commande modifiant
++  l'état du dépôt du projet.
++- N'exécute aucune commande destructrice (rm -rf large, git reset --hard, git
++  clean, git filter-repo, force-push).
++- Ce dossier scratch est ÉPHÉMÈRE : il est supprimé automatiquement à la fin
++  de cette tâche, quel qu'en soit le résultat — n'y stocke rien qui doive
++  survivre.
++- Le livrable attendu reste un RAPPORT de lecture (comme en lecture seule) :
++  analyse et constats sur le projet, PAS une modification du projet lui-même.
++- Une vérification technique automatique compare l'état du projet avant/après
++  cette tâche et annule/restaure toute écriture détectée hors scratch : respecte
++  donc strictement cette consigne dès le départ plutôt que de t'y fier.
+ """
+     else:
+         garde_fou = """
+@@ -2011,14 +2088,18 @@ Si la tâche échoue, remplace ✅ par ❌ et explique la cause en une ligne.
+ """
+ 
+     if dry_run:
+-        mode = "ÉCRITURE" if autoriser_ecriture else "lecture seule"
+-        log.info(f"[DRY-RUN] Claude Code serait lancé pour issue #{numero} (mode {mode}, cwd {cwd_effectif})")
+-        return True, f"[DRY-RUN] Tâche simulée avec succès (mode {mode})."
++        mode_txt = {
++            MODE_ECRITURE:       "ÉCRITURE",
++            MODE_LECTURE_ACTIVE: "LECTURE ACTIVE (scratch)",
++            MODE_LECTURE:        "lecture seule",
++        }[mode]
++        log.info(f"[DRY-RUN] Claude Code serait lancé pour issue #{numero} (mode {mode_txt}, cwd {cwd_effectif})")
++        return True, f"[DRY-RUN] Tâche simulée avec succès (mode {mode_txt})."
+ 
+     cmd = ["claude", "--print"]
+     if modele:
+         cmd += ["--model", modele]
+-    if autoriser_ecriture:
++    if mode != MODE_LECTURE:
+         cmd.append("--dangerously-skip-permissions")
+     cmd.append(prompt)
+ 
+@@ -2100,10 +2181,10 @@ def diagnostiquer_echec(numero: int, titre: str, body: str,
+     l'échec répété, sans qu'il ait à ouvrir lui-même une session Claude Code pour
+     un diagnostic qui tient souvent en quelques dizaines de secondes de lecture.
+ 
+-    Ne tente JAMAIS de résoudre la tâche : autoriser_ecriture=False (lecture seule,
+-    même si l'issue d'origine était en mode écriture) et prompt dédié qui demande
+-    explicitement de ne PAS corriger. Timeout court et fixe (CFG.timeout_diagnostic),
+-    indépendant du timeout de la tâche d'origine.
++    Ne tente JAMAIS de résoudre la tâche : mode=MODE_LECTURE (lecture seule,
++    même si l'issue d'origine était en mode écriture ou lecture active) et
++    prompt dédié qui demande explicitement de ne PAS corriger. Timeout court et
++    fixe (CFG.timeout_diagnostic), indépendant du timeout de la tâche d'origine.
+ 
+     Best-effort : retourne le texte du diagnostic, ou None si la passe elle-même
+     échoue / timeout (l'appelant n'ajoute alors simplement aucune section). On ne
+@@ -2146,7 +2227,7 @@ probables, sans préambule ni conclusion, et sans tenter de corriger quoi que ce
+     try:
+         succes, sortie = lancer_claude(
+             numero, titre, body, dry_run=False,
+-            autoriser_ecriture=False,
++            mode=MODE_LECTURE,
+             timeout=CFG.timeout_diagnostic,
+             modele=CFG.modele_ccl,
+             prompt_perso=prompt,
+@@ -2451,6 +2532,116 @@ def _restaurer_configs_modifies(numero: int, empreinte_avant: dict[str, bytes])
+             log.error(f"  Restauration de configs/{nom} impossible : {e}")
+ 
+ 
++# ─── Lecture active : scratch confiné (issue #327) ──────────────────────────────
++
++# Nom de projet valide pour dériver un chemin scratch (voir _chemin_scratch) :
++# alphanumérique/tiret/underscore uniquement — exclut par construction tout
++# séparateur de chemin et tout '..', donc toute remontée hors de /tmp.
++_NOM_PROJET_SCRATCH_RE = re.compile(r"^[A-Za-z0-9_-]+$")
++
++
++def _chemin_scratch(nom_projet: str) -> Path:
++    """Chemin du dossier scratch de lecture active (issue #327) :
++    /tmp/bridge_scratch_<projet>/. Dérivé STRICTEMENT de CFG.nom (jamais d'une
++    valeur fournie par l'issue — la lecture active n'accepte aucun chemin
++    arbitraire) et validé strictement : lève ValueError si `nom_projet` est
++    vide ou contient autre chose qu'alphanumérique/tiret/underscore (défense en
++    profondeur — CFG.nom vient normalement d'un fichier .conf de confiance,
++    jamais de l'issue, mais on ne présume rien)."""
++    if not nom_projet or not _NOM_PROJET_SCRATCH_RE.match(nom_projet):
++        raise ValueError(f"nom de projet invalide pour le chemin scratch : {nom_projet!r}")
++    return Path(tempfile.gettempdir()) / f"bridge_scratch_{nom_projet}"
++
++
++def _nettoyer_scratch(numero: int, chemin: Path) -> None:
++    """Supprime le dossier scratch de lecture active (issue #327) en fin de
++    traitement — appelée depuis le `finally` de traiter_issue, donc couvre
++    indifféremment succès, échec et timeout (même esprit que
++    _nettoyer_arbre_claude pour les process). Best-effort : ne lève jamais, une
++    erreur ici ne doit pas faire échouer le reste du traitement de l'issue."""
++    try:
++        if chemin.is_dir():
++            shutil.rmtree(chemin, ignore_errors=True)
++    except Exception as e:
++        log.warning(f"  Nettoyage du dossier scratch {chemin} (issue #{numero}) impossible : {e}")
++
++
++def _statut_git_rep_travail(cwd: Path) -> dict[str, str] | None:
++    """Instantané de l'état git de REP_TRAVAIL sous forme {chemin: code}
++    (garde-fou niveau 2, issue #327 — même esprit que _empreinte_configs #318 :
++    une empreinte avant/après pour détecter toute écriture qui aurait échappé
++    au confinement scratch). `-uall` : les fichiers neufs dans un dossier non
++    suivi apparaissent un par un (pas comme une seule entrée « dossier/ ») —
++    nécessaire pour restaurer précisément fichier par fichier. Retourne None si
++    REP_TRAVAIL n'est pas (ou plus) un dépôt git exploitable — best-effort,
++    n'interrompt jamais le traitement de l'issue."""
++    if not _est_depot_git(cwd):
++        return None
++    try:
++        res = subprocess.run(
++            ["git", "status", "--porcelain", "-uall"],
++            cwd=cwd, capture_output=True, text=True,
++            encoding="utf-8", errors="replace", timeout=30,
++        )
++        if res.returncode != 0:
++            return None
++    except (OSError, subprocess.SubprocessError):
++        return None
++    statut: dict[str, str] = {}
++    for ligne in res.stdout.splitlines():
++        if len(ligne) < 4:
++            continue
++        code, chemin = ligne[:2], ligne[3:]
++        if code[0] == "R" and " -> " in chemin:
++            chemin = chemin.split(" -> ", 1)[1]
++        statut[chemin] = code
++    return statut
++
++
++def _restaurer_rep_travail_modifie(numero: int, cwd: Path,
++                                    statut_avant: dict[str, str]) -> list[str]:
++    """Garde-fou technique niveau 2 (issue #327, même esprit que
++    _restaurer_configs_modifies #318) : après une exécution en lecture active,
++    compare l'état git de REP_TRAVAIL à l'instantané pris juste avant
++    (_statut_git_rep_travail) et annule toute écriture NOUVELLE détectée. Le
++    dossier scratch (/tmp, hors REP_TRAVAIL) n'apparaît jamais dans cette
++    empreinte par construction : il n'est donc jamais emporté par cette
++    restauration. Retourne la liste des chemins restaurés (vide = rien
++    détecté). Best-effort total : aucune exception ne s'échappe, ne bloque
++    jamais le reste du traitement."""
++    statut_apres = _statut_git_rep_travail(cwd)
++    if statut_apres is None:
++        return []
++    nouveaux = {chemin: code for chemin, code in statut_apres.items()
++                if statut_avant.get(chemin) != code}
++    if not nouveaux:
++        return []
++    for chemin, code in nouveaux.items():
++        log.warning(
++            f"  ⚠️  Issue #{numero} : lecture active — écriture détectée hors "
++            f"scratch dans REP_TRAVAIL : '{chemin}' ({code.strip()}) — "
++            f"restauration automatique (garde-fou niveau 2, issue #327)."
++        )
++    try:
++        # Fichiers neufs (untracked '?' ou staged-added 'A') : `git checkout`
++        # ne les toucherait pas (rien à restaurer depuis HEAD) — on les
++        # désindexe puis supprime. Fichiers déjà suivis (modifiés/supprimés) :
++        # `git checkout` les ramène à leur contenu HEAD d'avant exécution.
++        neufs     = [c for c, code in nouveaux.items() if code[0] in ("?", "A")]
++        existants = [c for c in nouveaux if c not in neufs]
++        if neufs:
++            subprocess.run(["git", "reset", "--"] + neufs,
++                            cwd=cwd, capture_output=True, text=True, timeout=30)
++            subprocess.run(["git", "clean", "-fd", "--"] + neufs,
++                            cwd=cwd, capture_output=True, text=True, timeout=30)
++        if existants:
++            subprocess.run(["git", "checkout", "--"] + existants,
++                            cwd=cwd, capture_output=True, text=True, timeout=30)
++    except Exception as e:
++        log.error(f"  Restauration de REP_TRAVAIL (issue #{numero}) incomplète : {e}")
++    return list(nouveaux.keys())
++
++
+ def traiter_issue(issue: dict, dry_run: bool):
+     numero = issue["number"]
+     titre  = issue["title"]
+@@ -2485,18 +2676,27 @@ def traiter_issue(issue: dict, dry_run: bool):
+     timeout  = extraire_timeout(body, titre)
+     modele   = extraire_modele(body)
+ 
+-    autoriser_ecriture = LABEL_ECRITURE in labels
++    mode = _deduire_mode(labels)
+ 
+-    mode_txt = "ÉCRITURE ⚠️" if autoriser_ecriture else "lecture seule"
++    mode_txt = {
++        MODE_ECRITURE:       "ÉCRITURE ⚠️",
++        MODE_LECTURE_ACTIVE: "LECTURE ACTIVE (scratch) ⚠️",
++        MODE_LECTURE:        "lecture seule",
++    }[mode]
+     log.info(f"→ Issue #{numero} détectée : '{titre}' [priorité: {priorite}] [mode: {mode_txt}]")
+-    if autoriser_ecriture:
++    if mode == MODE_ECRITURE:
+         log.warning(f"  ⚠️  MODE ÉCRITURE ARMÉ pour #{numero} (label '{LABEL_ECRITURE}') — actions permises, push interdit.")
+-        if _detecter_demande_modif_configs(body):
+-            log.warning(
+-                f"  ⚠️  Issue #{numero} : le corps mentionne un chemin configs/*.conf — "
+-                f"rappel : CCL/CCW ne doit JAMAIS modifier ces fichiers (consignes/globales.md, "
+-                f"issue #318), même si l'issue le demande explicitement. Garde-fou technique actif."
+-            )
++    elif mode == MODE_LECTURE_ACTIVE:
++        log.warning(
++            f"  ⚠️  MODE LECTURE ACTIVE ARMÉ pour #{numero} (label '{LABEL_SCRATCH}') — "
++            f"écriture confinée au scratch, projet protégé par garde-fou niveau 2 (issue #327)."
++        )
++    if mode != MODE_LECTURE and _detecter_demande_modif_configs(body):
++        log.warning(
++            f"  ⚠️  Issue #{numero} : le corps mentionne un chemin configs/*.conf — "
++            f"rappel : CCL/CCW ne doit JAMAIS modifier ces fichiers (consignes/globales.md, "
++            f"issue #318), même si l'issue le demande explicitement. Garde-fou technique actif."
++        )
+ 
+     # Périmètre effectif de cette exécution (issue #125). Par défaut : celui du
+     # .conf. Pour un projet à périmètre dynamique, il vient du champ REPO_CIBLE de
+@@ -2572,6 +2772,34 @@ def traiter_issue(issue: dict, dry_run: bool):
+         return
+ 
+     try:
++        # Lecture active (issue #327) : dossier scratch créé AVANT tout lancement
++        # de claude (niveau 1), et empreinte de REP_TRAVAIL prise AVANT la
++        # première tentative (niveau 2 — voir _restaurer_rep_travail_modifie).
++        # Préparés avant l'ACK pour ne rien engager (ACK, chrono) si la
++        # préparation échoue — même logique que la validation REPO_CIBLE
++        # ci-dessus : erreur de configuration ⇒ abandon net, needs-human, aucun
++        # retry. `chemin_scratch` est référencé dans le `finally` ci-dessous
++        # (nettoyage) : il DOIT rester défini (None si non applicable) même sur
++        # un retour anticipé de cette branche.
++        chemin_scratch = None
++        statut_rep_travail_avant = None
++        if mode == MODE_LECTURE_ACTIVE and not dry_run:
++            try:
++                chemin_scratch = _chemin_scratch(CFG.nom)
++                chemin_scratch.mkdir(parents=True, exist_ok=True)
++            except (ValueError, OSError) as e:
++                log.error(f"  Issue #{numero} : préparation du dossier scratch impossible ({e}) — abandon.")
++                commenter_issue(
++                    numero,
++                    f"❌ Échec de préparation du dossier scratch (lecture active) : {e}. "
++                    f"Aucun lancement de CCL (erreur de configuration, pas un échec transitoire). "
++                    f"Corrigez puis retirez le label `{LABEL_ECHEC}` pour relancer."
++                )
++                ajouter_label(numero, LABEL_ECHEC)
++                issues_en_cours.discard(numero)
++                return
++            statut_rep_travail_avant = _statut_git_rep_travail(cwd_effectif)
++
+         commenter_issue(
+             numero,
+             f"✅ ACK — Issue #{numero} reçue par watcher.py ({CFG.libelle_agent_effectif}, projet {CFG.nom}). "
+@@ -2592,13 +2820,15 @@ def traiter_issue(issue: dict, dry_run: bool):
+         if not dry_run:
+             verifier_preflight_token(cwd=cwd_effectif)
+ 
+-        # Garde-fou technique configs/*.conf (issue #318) : instantané pris une
+-        # seule fois avant la première tentative — chaque tentative est comparée
+-        # à CE MÊME instantané (l'état légitime d'origine), pas à celui de la
+-        # tentative précédente, pour rester la référence même après une éventuelle
++        # Garde-fou technique configs/*.conf (issue #318, étendu à la lecture
++        # active par #327 : mode_scratch arme aussi --dangerously-skip-permissions,
++        # donc mérite la même protection) : instantané pris une seule fois avant
++        # la première tentative — chaque tentative est comparée à CE MÊME
++        # instantané (l'état légitime d'origine), pas à celui de la tentative
++        # précédente, pour rester la référence même après une éventuelle
+         # restauration intermédiaire.
+         empreinte_configs_avant = (
+-            _empreinte_configs() if (autoriser_ecriture and not dry_run) else None
++            _empreinte_configs() if (mode != MODE_LECTURE and not dry_run) else None
+         )
+ 
+         tentative = 0
+@@ -2606,14 +2836,49 @@ def traiter_issue(issue: dict, dry_run: bool):
+             tentative += 1
+             log.info(f"  Tentative {tentative}/{CFG.max_essais if not critique else '∞'}...")
+ 
+-            succes, sortie = lancer_claude(numero, titre, body, dry_run, autoriser_ecriture,
++            succes, sortie = lancer_claude(numero, titre, body, dry_run, mode,
+                                            timeout, modele,
+                                            perimetre=perimetre_effectif, cwd=cwd_effectif,
+-                                           verrou=verrou)
++                                           verrou=verrou, chemin_scratch=chemin_scratch)
+ 
+             if empreinte_configs_avant is not None:
+                 _restaurer_configs_modifies(numero, empreinte_configs_avant)
+ 
++            # Garde-fou technique niveau 2 (issue #327) : détecté ⇒ échec
++            # DÉFINITIF immédiat (pas de nouvelle tentative — contrairement aux
++            # autres échecs ci-dessous, retenter risquerait de répéter la même
++            # violation), needs-human, sur le même modèle que l'abandon
++            # REPO_CIBLE invalide plus haut dans cette fonction.
++            if statut_rep_travail_avant is not None:
++                chemins_restaures = _restaurer_rep_travail_modifie(numero, cwd_effectif, statut_rep_travail_avant)
++                if chemins_restaures:
++                    log.error(
++                        f"  ✗ Issue #{numero} : lecture active — écriture détectée dans le "
++                        f"projet hors scratch ({', '.join(chemins_restaures)}) — restaurée, "
++                        f"échec définitif (garde-fou niveau 2, issue #327)."
++                    )
++                    commenter_issue(
++                        numero,
++                        f"❌ Lecture active : écriture détectée dans le projet hors scratch — restaurée.\n\n"
++                        f"Fichier(s) concerné(s) : `{', '.join(chemins_restaures)}`\n\n"
++                        f"Garde-fou niveau 2 (empreinte REP_TRAVAIL avant/après, issue #327) déclenché : "
++                        f"la consigne de confinement au dossier scratch n'a pas été respectée malgré le "
++                        f"garde-fou de prompt (niveau 1). Le projet a été restauré à son état d'avant "
++                        f"traitement. Intervention humaine requise. Label `{LABEL_ECHEC}` posé : cette "
++                        f"issue ne sera plus retraitée automatiquement tant que le label n'est pas retiré "
++                        f"manuellement."
++                    )
++                    ajouter_label(numero, LABEL_ECHEC)
++                    notifier(
++                        labels,
++                        titre=f"❌ {CFG.nom} #{numero} — lecture active : écriture hors scratch",
++                        message=f"'{titre}' : écriture détectée hors scratch en lecture active, projet restauré.",
++                        urgence_bureau="critical",
++                        priorite_ntfy="high",
++                    )
++                    issues_en_cours.discard(numero)
++                    return
++
+             if succes:
+                 log.info(f"  ✓ Issue #{numero} traitée avec succès.")
+                 message_resultat = f"{MARQUEUR_RESULTAT}\n## Résultat\n\n{avertissement_conflit}{sortie}"
+@@ -2646,7 +2911,7 @@ def traiter_issue(issue: dict, dry_run: bool):
+                 # Historique des durées (issue #108) : durée réelle ACK → fermeture,
+                 # catégorisée par projet/type/mode, pour l'estimation prédictive.
+                 type_issue_close = deduire_type_issue(titre, body)
+-                mode_close        = "write" if autoriser_ecriture else "read"
++                mode_close        = _etiquette_calibration(mode)
+                 duree_reelle      = time.monotonic() - debut_traitement
+                 date_iso_close    = datetime.now().isoformat(timespec="seconds")
+                 enregistrer_duree(
+@@ -2705,7 +2970,7 @@ def traiter_issue(issue: dict, dry_run: bool):
+             # jamais la branche d'abandon ci-dessous.
+             if sortie.startswith("Timeout après"):
+                 type_issue_expire = deduire_type_issue(titre, body)
+-                mode_expire        = "write" if autoriser_ecriture else "read"
++                mode_expire        = _etiquette_calibration(mode)
+                 duree_expiree      = time.monotonic() - debut_traitement
+                 date_iso_expire    = datetime.now().isoformat(timespec="seconds")
+                 enregistrer_duree(
+@@ -2769,7 +3034,7 @@ def traiter_issue(issue: dict, dry_run: bool):
+                     # mis à jour ci-dessus — le rappeler ici compterait deux fois la
+                     # même observation dans l'EWMA.
+                     type_issue_echec = deduire_type_issue(titre, body)
+-                    mode_echec        = "write" if autoriser_ecriture else "read"
++                    mode_echec        = _etiquette_calibration(mode)
+                     duree_echec       = time.monotonic() - debut_traitement
+                     suggere_echec     = lire_timeout_suggere(CFG.nom, type_issue_echec, mode_echec)
+                     message_echec += formater_bloc_calibration(duree_echec, timeout, suggere_echec)
+@@ -2791,6 +3056,13 @@ def traiter_issue(issue: dict, dry_run: bool):
+         # reprise critique). Sans ce finally, un crash laisserait un verrou
+         # orphelin — d'où aussi la péremption côté acquerir_verrou.
+         liberer_verrou(verrou)
++        # Nettoyage garanti du dossier scratch de lecture active (issue #327),
++        # succès/échec/timeout/exception confondus — même esprit que
++        # _nettoyer_arbre_claude pour les process. `chemin_scratch` est toujours
++        # défini (None si non applicable) : c'est la première affectation du
++        # `try` ci-dessus.
++        if chemin_scratch is not None:
++            _nettoyer_scratch(numero, chemin_scratch)
+ 
+ # ─── Boucle principale ─────────────────────────────────────────────────────────
+ 

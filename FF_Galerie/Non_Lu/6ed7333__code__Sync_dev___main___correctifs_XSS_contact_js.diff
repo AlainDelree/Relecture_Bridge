@@ -1,0 +1,313 @@
+6ed7333
+
+commit 6ed7333
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Sat Aug 22 18:51:25 2026 +0200
+
+    [code] Sync dev→main : correctifs XSS contact.js/infos.js (#84) + expiration session admin (#85)
+
+diff --git a/CHANGELOG-84.md b/CHANGELOG-84.md
+new file mode 100644
+index 0000000..b902d71
+--- /dev/null
++++ b/CHANGELOG-84.md
+@@ -0,0 +1,29 @@
++# CHANGELOG — Issue #84 : Échapper le HTML (XSS stocké)
++
++## Sécurité — contact.js & infos.js
++
++Correction d'une XSS stockée possible via `data/contact.json` (et durcissement
++de `infos.js`), sans changement d'apparence pour toute donnée légitime.
++
++### contact.js
++- Ajout d'un helper `esc()` (échappement HTML : `& < > " '`) et d'un helper
++  `urlSure()` (n'accepte que les schémas `http:`/`https:`).
++- Email : `data.email` échappé dans le `href="mailto:…"` **et** dans le texte du lien.
++- Téléphone : `data.telephone` échappé dans le `href="tel:…"` **et** dans le texte.
++- Réseaux sociaux : URL validée par `urlSure()` (un schéma refusé — `javascript:`,
++  `data:` — omet proprement l'entrée sans casser le rendu), URL et nom affiché
++  (`_nom` ou extraction auto) échappés par `esc()`.
++- Les fragments statiques (icônes SVG internes, `r.label`) restent inchangés.
++
++### infos.js
++- Le texte passait déjà systématiquement par `textContent` (aucune injection
++  HTML) — inchangé.
++- Durcissement des deux seuls `href` issus de données : `e.lien` (agenda) et
++  `c.lien` (collègues) validés par `urlSure()`. Schéma refusé → lien d'événement
++  omis, lien collègue retombe sur `#` (la carte reste affichée).
++
++### Vérification
++- `node --check assets/js/contact.js` : OK
++- `node --check assets/js/infos.js` : OK
++- Rendu visuel identique pour des données normales (les helpers sont neutres sur
++  des chaînes sans caractères spéciaux et sur des URL http/https valides).
+diff --git a/CHANGELOG-85.md b/CHANGELOG-85.md
+new file mode 100644
+index 0000000..8015fdf
+--- /dev/null
++++ b/CHANGELOG-85.md
+@@ -0,0 +1,26 @@
++# CHANGELOG — issue #85
++
++## Expiration de session dans l'admin (token localStorage)
++
++- `assets/js/admin.js` : ajout d'une expiration de session bornée à 7 jours.
++  - Nouvelle constante nommée `DUREE_SESSION_MAX_MS` (7 jours) en haut du
++    fichier, ajustable sans chercher dans le code.
++  - Nouvelle clé de stockage `K.loginTs` (`ff_gh_token_login`) : horodatage
++    du dernier login, stocké à côté du token.
++  - Nouvelle fonction `verifierExpirationSession()`, appelée au démarrage
++    synchrone d'admin.js AVANT `reprendreSessionExistante()`. Si le token
++    présent remonte à plus de 7 jours, elle purge du `localStorage` le token,
++    le secret ff-data et l'horodatage, efface le garde-fou de session
++    (`K.auth`) et réaffiche l'écran de connexion avec un message rassurant
++    (« Ta session a expiré (plus de 7 jours). Reconnecte-toi pour
++    continuer. »), pas une erreur alarmante.
++  - Un token présent sans horodatage (session ouverte avant ce déploiement)
++    n'est PAS déconnecté brutalement : l'horodatage est initialisé à
++    maintenant et la fenêtre de 7 jours démarre au premier chargement.
++  - L'horodatage est rafraîchi à chaque connexion réussie par les deux
++    chemins : `connexionParMotDePasse()` (mot de passe) et `validerToken()`
++    (saisie manuelle du token).
++- Aucun autre flux d'authentification affecté : `reprendreSessionExistante()`
++  n'appelle toujours ni `chargerTout()` ni `initTexturesUI()` ; la nouvelle
++  fonction respecte la même contrainte (aucune dépendance aux modules chargés
++  après). `node --check` passe.
+diff --git a/assets/js/admin.js b/assets/js/admin.js
+index ec83c03..7c17f2f 100644
+--- a/assets/js/admin.js
++++ b/assets/js/admin.js
+@@ -91,10 +91,20 @@ const K = {
+   auth:     ADMIN_CFG.prefix + '_auth',
+   token:    'ff_gh_token',          /* token partagé — même repo */
+   ffSecret: 'ff_data_secret',       /* secret ff-data — partagé, Fred uniquement */
++  loginTs:  'ff_gh_token_login',    /* horodatage du dernier login (expiration de session, #85) */
+   mur_hist: ADMIN_CFG.prefix + '_mur_hist',
+   cad_hist: ADMIN_CFG.prefix + '_cad_hist'
+ };
+ 
++/* Expiration de session (issue #85). Le token GitHub réside sans expiration
++   native dans localStorage : sans backend, impossible de poser un cookie
++   HttpOnly qui expirerait tout seul — compromis assumé. On borne donc la
++   durée de vie de la session par un horodatage de dernier login (K.loginTs)
++   stocké à côté du token. Passé ce délai, verifierExpirationSession() purge
++   le token ET le secret ff-data au démarrage et réaffiche l'écran de
++   connexion. Constante ajustable ici, sans chercher dans le code. */
++const DUREE_SESSION_MAX_MS = 7 * 24 * 60 * 60 * 1000; /* 7 jours */
++
+ const MUR_DEFAULTS = ['#2e2e2e','#1c1c1c','#2a2420','#2c2535','#1e3a2a','#3a2a1e','#e8e4dc','#f5f5f5'];
+ const CAD_DEFAULTS = ['#3a3a3a','#c8a050','#f0f0f0','#1c1c1c','#5c3d2e'];
+ 
+@@ -362,6 +372,45 @@ function entrerDansAdmin() {
+    autres modules (admin-emailjs.js, etc.) ne soient chargés — le hook
+    dédié dans admin.html (après le chargement de tous les modules) s'en
+    charge déjà pour ce cas précis, exactement pour éviter cette course. */
++/* Expiration de session (issue #85) : appelée au démarrage synchrone
++   d'admin.js, AVANT reprendreSessionExistante(). Si un token est présent et
++   que le dernier login (K.loginTs) remonte à plus de DUREE_SESSION_MAX_MS,
++   on purge token + secret ff-data + horodatage du localStorage, on efface le
++   garde-fou de session (K.auth) et on réaffiche l'écran de connexion avec un
++   message rassurant (session expirée, se reconnecter) — pas une erreur
++   alarmante. Retourne true si la session a été purgée (l'appelant NE doit
++   alors PAS enchaîner sur reprendreSessionExistante).
++
++   Cas d'un token présent sans horodatage (session ouverte AVANT le déploiement
++   de cette fonctionnalité) : on ne déconnecte pas brutalement, on initialise
++   simplement l'horodatage à maintenant — la borne des 7 jours démarre au
++   premier chargement post-déploiement.
++
++   Comme reprendreSessionExistante(), cette fonction n'appelle NI chargerTout()
++   NI initTexturesUI() : elle ne fait que lire/nettoyer le localStorage et
++   basculer d'écran, sans dépendre des autres modules pas encore chargés. */
++function verifierExpirationSession() {
++  const tok = localStorage.getItem(K.token);
++  if (!tok) return false;                       /* rien à expirer */
++  const ts = parseInt(localStorage.getItem(K.loginTs) || '', 10);
++  if (!Number.isFinite(ts)) {                   /* session antérieure à #85 : on horodate sans déconnecter */
++    localStorage.setItem(K.loginTs, String(Date.now()));
++    return false;
++  }
++  if (Date.now() - ts < DUREE_SESSION_MAX_MS) return false; /* encore dans la fenêtre */
++  /* Session expirée : purge et retour à l'écran de connexion. */
++  localStorage.removeItem(K.token);
++  localStorage.removeItem(K.ffSecret);
++  localStorage.removeItem(K.loginTs);
++  sessionStorage.removeItem(K.auth);
++  token = '';
++  ffSecret = '';
++  afficherEcran('ecran-token');
++  const err = document.getElementById('auth-err');
++  if (err) err.textContent = 'Ta session a expiré (plus de 7 jours). Reconnecte-toi pour continuer.';
++  return true;
++}
++
+ async function reprendreSessionExistante() {
+   token = localStorage.getItem(K.token) || '';
+   if (!token) { afficherEcran('ecran-token'); return; }
+@@ -982,6 +1031,7 @@ async function connexionParMotDePasse() {
+     const data = await rep.json();
+     token = data.token;
+     localStorage.setItem(K.token, token);
++    localStorage.setItem(K.loginTs, String(Date.now())); /* horodatage login (#85) */
+     if (data.ff_secret) {
+       ffSecret = data.ff_secret;
+       localStorage.setItem(K.ffSecret, ffSecret);
+@@ -1010,6 +1060,7 @@ async function validerToken() {
+     });
+     if (rep.status === 401) throw new Error('token révoqué ou invalide');
+     localStorage.setItem(K.token, t);
++    localStorage.setItem(K.loginTs, String(Date.now())); /* horodatage login (#85) */
+     sessionStorage.setItem(K.auth, '1');
+     entrerDansAdmin();
+   } catch (e) { $('token-err').textContent = 'Token invalide : ' + e.message; token = ''; }
+@@ -1581,7 +1632,11 @@ $('overlay-fiche').querySelector('.fiche-modal').addEventListener('touchend', e
+ // ═══════════════════════════════════════════════
+ // DÉMARRAGE
+ // ═══════════════════════════════════════════════
+-if (sessionStorage.getItem(K.auth) === '1') {
++/* Expiration de session (#85) : purge d'abord une session trop ancienne
++   (token vieux de plus de 7 jours). Si verifierExpirationSession() a purgé,
++   elle a déjà affiché l'écran de connexion avec son message → on n'enchaîne
++   PAS sur reprendreSessionExistante(). Sinon, comportement inchangé. */
++if (!verifierExpirationSession() && sessionStorage.getItem(K.auth) === '1') {
+   reprendreSessionExistante();
+ }
+ // Sinon : ecran-token est déjà affiché par défaut (class="ecran actif")
+diff --git a/assets/js/contact.js b/assets/js/contact.js
+index cc4568c..b0fdbdb 100644
+--- a/assets/js/contact.js
++++ b/assets/js/contact.js
+@@ -5,6 +5,25 @@
+ 
+   var PATH = window.CONTACT_DATA_PATH || 'data/contact.json';
+ 
++  /* ── Échappement HTML pour toute donnée interpolée dans du innerHTML ── */
++  function esc(s) {
++    return String(s == null ? '' : s)
++      .replace(/&/g, '&amp;')
++      .replace(/</g, '&lt;')
++      .replace(/>/g, '&gt;')
++      .replace(/"/g, '&quot;')
++      .replace(/'/g, '&#39;');
++  }
++
++  /* Renvoie l'URL si son schéma est http/https, sinon null (écarte javascript:, data:, …) */
++  function urlSure(url) {
++    try {
++      var u = new URL(url, window.location.href);
++      if (u.protocol === 'http:' || u.protocol === 'https:') return url;
++    } catch (e) {}
++    return null;
++  }
++
+   /* ── Icônes SVG minimalistes ── */
+   var SVG = {
+     instagram: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="5"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>',
+@@ -58,7 +77,7 @@
+         '<div class="contact-item">' +
+           '<span class="contact-label">📧 Courrier électronique</span>' +
+           '<div class="contact-email-wrap">' +
+-            '<a class="lien-email" href="mailto:' + data.email + '">' + data.email + '</a>' +
++            '<a class="lien-email" href="mailto:' + esc(data.email) + '">' + esc(data.email) + '</a>' +
+             '<button class="btn-copier" id="btnCopier" title="Copier">' +
+               '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
+               '<span class="copie-ok">Copié !</span>' +
+@@ -81,7 +100,7 @@
+       bloc.innerHTML +=
+         '<div class="contact-item">' +
+           '<span class="contact-label">📞 Téléphone</span>' +
+-          '<a class="lien-email" href="tel:' + data.telephone.replace(/\s/g,'') + '">' + data.telephone + '</a>' +
++          '<a class="lien-email" href="tel:' + esc(data.telephone.replace(/\s/g,'')) + '">' + esc(data.telephone) + '</a>' +
+         '</div>';
+     }
+ 
+@@ -91,6 +110,9 @@
+       var valeur = data[r.id];
+       if (!valeur) return;
+       var url = valeur.indexOf('http') === 0 ? valeur : 'https://' + r.id + '.com/' + valeur;
++      /* Schéma refusé (javascript:, data:, …) → lien omis, on n'affiche pas ce réseau */
++      var lienSur = urlSure(url);
++      if (!lienSur) return;
+       /* Nom affiché : champ _nom en priorité, sinon extraction auto depuis URL */
+       var nom = data[r.id + '_nom'] || extraireNom(r.id, url);
+       reseauxHTML +=
+@@ -99,7 +121,7 @@
+             '<span class="reseau-icone">' + (SVG[r.id] || '') + '</span>' +
+             r.label +
+           '</span>' +
+-          '<a class="reseau-lien" href="' + url + '" target="_blank" rel="noopener">' + nom + '</a>' +
++          '<a class="reseau-lien" href="' + esc(lienSur) + '" target="_blank" rel="noopener">' + esc(nom) + '</a>' +
+         '</div>';
+     });
+     if (reseauxHTML) {
+diff --git a/assets/js/infos.js b/assets/js/infos.js
+index fd520eb..4aea781 100644
+--- a/assets/js/infos.js
++++ b/assets/js/infos.js
+@@ -4,6 +4,15 @@
+ (function(){
+   var INFOS_PATH = window.INFOS_DATA_PATH || 'data/infos.json';
+ 
++  /* Renvoie l'URL si son schéma est http/https, sinon null (écarte javascript:, data:, …) */
++  function urlSure(url) {
++    try {
++      var u = new URL(url, window.location.href);
++      if (u.protocol === 'http:' || u.protocol === 'https:') return url;
++    } catch (e) {}
++    return null;
++  }
++
+   /* ── Tri des événements par date croissante ── */
+   var MOIS = ['janvier','février','mars','avril','mai','juin',
+               'juillet','août','septembre','octobre','novembre','décembre'];
+@@ -97,10 +106,11 @@
+             desc.textContent = e.description;
+             corps.appendChild(desc);
+           }
+-          if (e.lien) {
++          var lienEvtSur = e.lien ? urlSure(e.lien) : null;
++          if (lienEvtSur) {
+             var lien = document.createElement('a');
+             lien.className = 'evt-lien';
+-            lien.href = e.lien;
++            lien.href = lienEvtSur;
+             lien.target = '_blank';
+             lien.rel = 'noopener';
+             lien.textContent = 'En savoir plus';
+@@ -133,7 +143,7 @@
+         cols.forEach(function(c){
+           var a = document.createElement('a');
+           a.className = 'collegue';
+-          a.href = c.lien || '#';
++          a.href = (c.lien && urlSure(c.lien)) || '#';
+           a.target = '_blank';
+           a.rel = 'noopener';
+           var info = document.createElement('div');
+diff --git a/galerie.html b/galerie.html
+index 0cca090..d3a0c21 100644
+--- a/galerie.html
++++ b/galerie.html
+@@ -136,12 +136,12 @@
+         "url": "https://frederiqueferette.be/galerie.html",
+         "width": {
+           "@type": "QuantitativeValue",
+-          "value": 40,
++          "value": 60,
+           "unitCode": "CMT"
+         },
+         "height": {
+           "@type": "QuantitativeValue",
+-          "value": 50,
++          "value": 80,
+           "unitCode": "CMT"
+         }
+       }
+@@ -841,7 +841,7 @@
+         <li><img src="assets/images/toiles/toile-002.jpg" alt="Black Hole — peinture de Frédérique Ferette" loading="lazy"><h3>Black Hole</h3><p>40 &times; 50 cm</p></li>
+         <li><img src="assets/images/toiles/toile-003.jpg" alt="Lune dans le rouge — peinture de Frédérique Ferette" loading="lazy"><h3>Lune dans le rouge</h3><p>60 &times; 80 cm</p></li>
+         <li><img src="assets/images/toiles/toile-004.jpg" alt="Eruption Solaire — peinture de Frédérique Ferette" loading="lazy"><h3>Eruption Solaire</h3><p>40 &times; 50 cm</p></li>
+-        <li><img src="assets/images/toiles/toile-008.jpg" alt="la Pensée du coeur — peinture de Frédérique Ferette" loading="lazy"><h3>la Pensée du coeur</h3><p>40 &times; 50 cm</p></li>
++        <li><img src="assets/images/toiles/toile-008.jpg" alt="la Pensée du coeur — peinture de Frédérique Ferette" loading="lazy"><h3>la Pensée du coeur</h3><p>60 &times; 80 cm</p></li>
+         <li><img src="assets/images/toiles/toile-009.jpg" alt="Le pêcheur — peinture de Frédérique Ferette" loading="lazy"><h3>Le pêcheur</h3><p>100 &times; 40 cm</p></li>
+         <li><img src="assets/images/toiles/toile-010.jpg" alt="Cascade  dans la mer — peinture de Frédérique Ferette" loading="lazy"><h3>Cascade  dans la mer</h3><p>80 &times; 60 cm</p></li>
+         <li><img src="assets/images/toiles/toile-011.jpg" alt="Explosion des émotions — peinture de Frédérique Ferette" loading="lazy"><h3>Explosion des émotions</h3><p>75 &times; 55 cm</p></li>

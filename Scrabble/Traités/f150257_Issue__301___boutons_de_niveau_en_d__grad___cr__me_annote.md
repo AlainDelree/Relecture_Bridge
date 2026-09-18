@@ -1,0 +1,180 @@
+f150257
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit f150257
+# ── Qui a fait ce commit.
+Author: CCL agent <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Mon Jul 27 10:31:33 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Issue #301 : boutons de niveau en dégradé crème→brun, sous-titre "Type de jeu :" avec espacement large
+    
+    - accueil.css : 5 règles [data-niveau] individuelles (fond+couleur+bordure)
+      remplacent le fond/couleur uniformes des .btn-niveau, progression du plus
+      clair (Débutant) au plus foncé (Expert), texte blanc sur les 2 fonds les
+      plus sombres (Avancé/Expert) pour le contraste WCAG AA. Ajout de
+      border: 2px solid (sans couleur) sur la règle de base pour que les
+      border-color par niveau restent visibles (la bordure était auparavant
+      posée par le raccourci border: 2px solid var(--couleur-ordinateur)
+      supprimé). 5 règles :hover individuelles remplacent le hover générique.
+    - accueil.html + accueil.css : sous-titre "Dictionnaires :" (13 tuiles)
+      remplacé par "Type de jeu :" (9 tuiles), nouvelle classe
+      .fin-mot-sous-titre (margin-right: 1.2rem) sur la dernière lettre de
+      "Type" et "de" pour un espacement inter-mots plus large que .fin-mot
+      (laissé intact, toujours utilisé ailleurs).
+    - Vérifié par capture WebKitGTK (verif_296_webkitgtk.py) : dégradé et
+      lisibilité conformes sur les 6 captures (France/Belgique, vide/rempli,
+      700/1280px).
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/src/scrabble/ui/web/accueil.css b/src/scrabble/ui/web/accueil.css
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index f651800..4314576 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/src/scrabble/ui/web/accueil.css
+# ── Version APRÈS ce commit.
++++ b/src/scrabble/ui/web/accueil.css
+# ── Zone modifiée : ligne 506 (6 ligne(s)) dans l'ancienne version → ligne 506 (14 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -506,6 +506,14 @@ header h1 {
+     margin-right: 0.4rem;
+ }
+ 
++/* `.fin-mot-sous-titre` (issue #301) : variante d'espacement inter-mots
++   propre au sous-titre "Type de jeu :", plus large que `.fin-mot` (qui reste
++   inchangé et utilisé ailleurs) pour bien distinguer "Type" / "de" / "jeu"
++   malgré la taille réduite des tuiles de sous-titre. */
++.fin-mot-sous-titre {
++    margin-right: 1.2rem;
++}
++
+ /* ":" final du sous-titre (issue #298) : `<span>` texte nu, volontairement
+    SANS la classe `.lettre-scrabble` (voir choix expliqué dans accueil.html).
+    `#1a1a1a` directement (pas de variante par mode) : le panneau `.container`
+# ── Zone modifiée : ligne 755 (9 ligne(s)) dans l'ancienne version → ligne 763 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -755,9 +763,7 @@ body.mode-belgicisme .zone-centrale > *:not(.bande-tricolore) {
+     min-width: 0;
+     font-size: 0.85rem;
+     padding: 8px 4px;
+-    background: var(--couleur-ordinateur-fond);
+-    color: var(--couleur-ordinateur);
+-    border: 2px solid var(--couleur-ordinateur);
++    border: 2px solid;
+     border-radius: var(--rayon-bordure);
+     cursor: pointer;
+     transition: background 0.15s, color 0.15s;
+# ── Zone modifiée : ligne 766 (9 ligne(s)) dans l'ancienne version → ligne 772 (49 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -766,9 +772,49 @@ body.mode-belgicisme .zone-centrale > *:not(.bande-tricolore) {
+     text-overflow: ellipsis;
+ }
+ 
+-.zone-boutons .btn-niveau:hover:not(:disabled) {
+-    background: var(--couleur-ordinateur);
+-    color: white;
++/* Dégradé crème → brun du plus clair (Débutant) au plus foncé (Expert),
++   couleur de police basculée vers blanc dès que le fond devient trop
++   sombre pour garantir le contraste WCAG AA (issue #301). */
++.zone-boutons .btn-niveau[data-niveau="Débutant"] {
++    background: #f5e6c8;
++    color: #4a3418;
++    border-color: #caa02c;
++}
++.zone-boutons .btn-niveau[data-niveau="Facile"] {
++    background: #e8c97a;
++    color: #4a3418;
++    border-color: #b8920a;
++}
++.zone-boutons .btn-niveau[data-niveau="Intermédiaire"] {
++    background: #c9963c;
++    color: #4a3418;
++    border-color: #9b6b1e;
++}
++.zone-boutons .btn-niveau[data-niveau="Avancé"] {
++    background: #9b6b1e;
++    color: #ffffff;
++    border-color: #7a5010;
++}
++.zone-boutons .btn-niveau[data-niveau="Expert"] {
++    background: #5c3d0a;
++    color: #ffffff;
++    border-color: #3d2606;
++}
++
++.zone-boutons .btn-niveau[data-niveau="Débutant"]:hover:not(:disabled) {
++    background: #e8c97a;
++}
++.zone-boutons .btn-niveau[data-niveau="Facile"]:hover:not(:disabled) {
++    background: #c9963c; color: #4a3418;
++}
++.zone-boutons .btn-niveau[data-niveau="Intermédiaire"]:hover:not(:disabled) {
++    background: #9b6b1e; color: #ffffff;
++}
++.zone-boutons .btn-niveau[data-niveau="Avancé"]:hover:not(:disabled) {
++    background: #7a5010;
++}
++.zone-boutons .btn-niveau[data-niveau="Expert"]:hover:not(:disabled) {
++    background: #3d2606;
+ }
+ 
+ .zone-boutons .btn-niveau:disabled {
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/web/accueil.html b/src/scrabble/ui/web/accueil.html
+# (index — ignorable)
+index e15dcbc..11e7150 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/web/accueil.html
+# (après — fichier suivant)
++++ b/src/scrabble/ui/web/accueil.html
+# ── Zone modifiée : ligne 25 (29 ligne(s)) dans l'ancienne version → ligne 25 (30 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -25,29 +25,30 @@
+                  dynamique pour 8 lettres. -->
+             <h1><span class="lettre-scrabble">S</span><span class="lettre-scrabble">c</span><span class="lettre-scrabble">r</span><span class="lettre-scrabble">a</span><span class="lettre-scrabble">b</span><span class="lettre-scrabble">b</span><span class="lettre-scrabble">l</span><span class="lettre-scrabble">e</span></h1>
+             <!-- Sous-titre en tuiles (issue #296, remplacé "Configuration de
+-                 la partie" → "Dictionnaires :" en #298), même principe que le
+-                 titre et les titres de section : chaque lettre est une tuile
+-                 individuelle. Le ":" final est un `<span>` à part, SANS la
+-                 classe `.lettre-scrabble` (issue #298) : un signe de
+-                 ponctuation dans une tuile crème/dorée aurait été lu comme une
+-                 lettre à part entière (aspect visuel incohérent) ; en texte
+-                 nu il se lit naturellement comme la marque de fin d'étiquette
+-                 ("Dictionnaires :" introduisant le choix France/Belgique
+-                 juste en dessous), cf. rapport. -->
++                 la partie" → "Dictionnaires :" en #298, puis "Type de jeu :"
++                 en #301 — les 5 boutons de niveau ci-dessous étant désormais
++                 directement visibles sans passer par le choix du
++                 dictionnaire), même principe que le titre et les titres de
++                 section : chaque lettre est une tuile individuelle. Le ":"
++                 final est un `<span>` à part, SANS la classe
++                 `.lettre-scrabble` (issue #298) : un signe de ponctuation
++                 dans une tuile crème/dorée aurait été lu comme une lettre à
++                 part entière (aspect visuel incohérent) ; en texte nu il se
++                 lit naturellement comme la marque de fin d'étiquette. Classe
++                 `.fin-mot-sous-titre` (et non `.fin-mot`) sur la dernière
++                 lettre de chaque mot : espacement inter-mots propre à ce
++                 sous-titre, sans toucher `.fin-mot` utilisé ailleurs
++                 (issue #301). -->
+             <p class="sous-titre-tuiles">
+-              <span class="lettre-scrabble">D</span><span
+-              class="lettre-scrabble">i</span><span
+-              class="lettre-scrabble">c</span><span
+-              class="lettre-scrabble">t</span><span
+-              class="lettre-scrabble">i</span><span
+-              class="lettre-scrabble">o</span><span
+-              class="lettre-scrabble">n</span><span
+-              class="lettre-scrabble">n</span><span
+-              class="lettre-scrabble">a</span><span
+-              class="lettre-scrabble">i</span><span
+-              class="lettre-scrabble">r</span><span
++              <span class="lettre-scrabble">T</span><span
++              class="lettre-scrabble">y</span><span
++              class="lettre-scrabble">p</span><span
++              class="lettre-scrabble fin-mot-sous-titre">e</span><span
++              class="lettre-scrabble">d</span><span
++              class="lettre-scrabble fin-mot-sous-titre">e</span><span
++              class="lettre-scrabble">j</span><span
+               class="lettre-scrabble">e</span><span
+-              class="lettre-scrabble">s</span><span
++              class="lettre-scrabble">u</span><span
+               class="sous-titre-deux-points">:</span>
+             </p>
+         </header>

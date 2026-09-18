@@ -1,0 +1,446 @@
+fca81e1
+
+commit fca81e1
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Wed Jul 29 06:56:51 2026 +0200
+
+    Retire les notes de conversation du dépôt (issue #272, suite)
+
+diff --git a/bridge_agent_issues_qualite.md b/bridge_agent_issues_qualite.md
+deleted file mode 100644
+index 8dc3c95..0000000
+--- a/bridge_agent_issues_qualite.md
++++ /dev/null
+@@ -1,225 +0,0 @@
+-# Issues prêtes à envoyer — amélioration de la qualité des issues
+-
+-*Rédigées le 29 juillet 2026. À envoyer depuis `new_issue.py`, projet
+-`bridge_agent`. Ordre recommandé : A puis B (la seconde renvoie à la première).*
+-
+----
+-
+-## Note de conception — pourquoi pas de label d'échappement
+-
+-Alain a soulevé le risque du blocage circulaire : si un contrôle de
+-pré-traitement déraille et refuse toutes les issues, celle qui le corrigerait
+-serait refusée à son tour.
+-
+-**C'est ce risque qui a déterminé la conception.** Un contrôle *codé en dur*
+-dans `watcher.py` aurait exigé un label d'échappement (`sans-prevalidation`) et
+-une règle de repli stricte — « un validateur qui lève une exception laisse
+-passer, jamais ne bloque ».
+-
+-Le choix retenu est plus léger : la prévalidation est une **consigne** injectée
+-dans le prompt, pas un verrou. Conséquences :
+-
+-- elle ne peut pas bloquer structurellement — c'est un jugement de l'agent, pas
+-  une porte fermée ;
+-- l'échappement est une simple phrase dans le corps de l'issue, sans label ni
+-  mécanisme à maintenir ;
+-- coût nul : l'agent lit déjà l'issue au démarrage, aucune invocation
+-  supplémentaire.
+-
+-Contrepartie assumée : une consigne peut être ignorée (cf. #243/#244, où la
+-contrainte d'exécution synchrone n'a pas été suivie). Le pire cas est alors le
+-comportement actuel — jamais une régression. Durcir seulement si l'expérience
+-montre que c'est insuffisant.
+-
+----
+-
+-## Issue A — checklist de rédaction dans le §3
+-
+-```
+-#Titre: §3 : ajouter une checklist de rédaction d'issue, tirée des échecs réels
+-
+-| PROJET  | bridge_agent |
+-| TIMEOUT | 900s |
+-
+-## Contexte
+-
+-Les échecs coûteux de cette semaine viennent tous de la RÉDACTION des issues,
+-jamais de leur exécution. Le cas le plus net est #269 : trois tentatives à
+-900 s, 5415 secondes consommées, aucun livrable, deux résidus de debug
+-versionnés — pour une issue qui exigeait une mesure de 2 × 5 minutes dans un
+-budget de 900 s, une précondition invérifiable (« interface ouverte dans un
+-navigateur »), et laissait deux décisions de conception ouvertes.
+-
+-Le diagnostic automatique produit à l'échec (`diagnostiquer_echec`) avait
+-identifié ces quatre défauts avec justesse — mais après coup.
+-
+-Le §3 « Créer une issue » décrit aujourd'hui le FORMAT (en-tête, champs,
+-labels, envoi en lot) mais rien sur ce qui rend une issue exécutable. Or ce
+-paragraphe est lu par Claude Chat au début de chaque conversation impliquant
+-Bridge_Agent (règle des préférences utilisateur), contrairement à
+-`consignes/`, qui n'alimente que le prompt de CCL et n'atteint jamais Claude
+-Chat.
+-
+-## Tâche demandée
+-
+-Ajouter au §3 une sous-section « Rédiger une issue exécutable », placée après
+-la description du format et avant l'envoi en lot. Elle doit énoncer les
+-règles suivantes, chacune illustrée par le cas réel qui l'a motivée — les
+-exemples concrets sont ce qui rend une règle mémorable, ne pas les omettre :
+-
+-1. **Le budget doit tenir.** La somme des attentes incompressibles demandées
+-   doit rester nettement sous le TIMEOUT, avant même de compter la lecture de
+-   code, les modifications et la rédaction du rapport. Contre-exemple : #269,
+-   qui exigeait 2 × 300 s de mesure dans 900 s.
+-
+-2. **N'exiger que des préconditions vérifiables par l'agent.** L'agent ne
+-   contrôle ni le navigateur d'Alain, ni la VM CCW, ni l'état du réseau. Une
+-   condition qu'il ne peut ni créer ni constater le fait tourner en rond.
+-   Contre-exemple : « interface ouverte dans un navigateur pendant 5 minutes »
+-   (#269).
+-
+-3. **Trancher, jamais déléguer une décision de conception.** « Décider ce qui
+-   est le moins trompeur entre A et B » n'est pas une tâche exécutable : c'est
+-   une bifurcation sans réponse unique, sur laquelle un agent hésite et revient
+-   en arrière. Décider dans l'issue et justifier. Contre-exemple : le point 3
+-   de #269, tranché explicitement dans #270 — qui a réussi en 243 s.
+-
+-4. **Vérifier les prémisses dans le code avant d'affirmer une cause.** Une
+-   issue qui part d'un diagnostic faux fait chercher un bug inexistant.
+-   Contre-exemple : #259, dont l'hypothèse (`nomsProjetsDisponibles()`
+-   retournant vide) était fausse — l'agent l'a démontré, correctement, mais
+-   après 558 s.
+-
+-5. **Distinguer un bug d'une évolution.** Demander à Alain ce qu'il ATTEND
+-   avant de qualifier un comportement de défaillance. Contre-exemple : #259
+-   traitait comme un bug ce qui était une demande de fonctionnalité (le toggle
+-   du bouton « Tous »), livrée ensuite par #262.
+-
+-6. **Une issue, un périmètre.** Six livrables hétérogènes dans une même issue
+-   (code + test + doc + mesure + rapport) multiplient les points de blocage et
+-   rendent l'échec total plutôt que partiel. Préférer découper.
+-
+-Ajouter également un rappel court : le TIMEOUT déclaré doit refléter la
+-complexité réelle estimée — c'est aussi le seul signal de difficulté dont
+-dispose la calibration automatique (§19).
+-
+-Ne rien changer au format d'en-tête ni aux autres parties du §3.
+-
+-## Résultat attendu
+-
+-Diff committé localement (jamais poussé). Rapport citant le texte complet de
+-la sous-section ajoutée. Entrée `CHANGELOG.md` et pied de page selon la
+-convention (#253).
+-```
+-
+----
+-
+-## Issue B — prévalidation par l'agent, avant de travailler
+-
+-```
+-#Titre: Consignes : faire refuser une issue inexécutable en début de traitement plutôt qu'après trois timeouts
+-
+-| PROJET  | bridge_agent |
+-| TIMEOUT | 900s |
+-
+-## Contexte
+-
+-Quand une issue est mal formée, le système ne s'en aperçoit qu'après avoir
+-épuisé ses trois tentatives. Cas réel #269 : 900 s × 3, soit 5415 secondes
+-consommées, aucun livrable, et deux résidus de debug laissés versionnés dans
+-l'arbre de travail par les tentatives successives.
+-
+-Or `diagnostiquer_echec` (déclenché APRÈS l'échec définitif) avait identifié
+-les quatre défauts de cette issue avec une justesse remarquable : mesure plus
+-longue que le budget, précondition invérifiable par l'agent, décisions de
+-conception laissées ouvertes, tâche à embranchements multiples.
+-
+-Ce même jugement, exercé AVANT la première tentative, ramènerait le coût de
+-45 minutes à quelques dizaines de secondes.
+-
+-**Conception retenue — et pourquoi.** Le contrôle est une CONSIGNE injectée
+-dans le prompt, pas un verrou codé dans `watcher.py`. Raison : un validateur
+-en dur créerait un blocage circulaire — s'il déraillait et refusait tout,
+-l'issue qui le corrigerait serait refusée à son tour, et il faudrait un label
+-d'échappement plus une règle de repli. Une consigne ne peut pas bloquer
+-structurellement, se lève par une simple phrase, et ne coûte aucune
+-invocation supplémentaire (l'agent lit déjà l'issue au démarrage).
+-
+-Contrepartie assumée : une consigne peut être ignorée (cf. #243/#244). Le
+-pire cas est alors le comportement actuel, jamais une régression.
+-
+-## Tâche demandée
+-
+-1. Ajouter à `consignes/globales.md` un rappel de **prévalidation**, placé en
+-   tête des rappels systématiques (avant même la règle du `git push`) — c'est
+-   le premier geste attendu, avant toute lecture de code.
+-
+-   Il doit demander à l'agent, AVANT de commencer le travail, de vérifier
+-   trois points objectifs :
+-
+-   - **Budget** : la tâche demande-t-elle des attentes incompressibles
+-     (mesures, sommeils, exécutions longues) dont la somme dépasse ou approche
+-     le TIMEOUT de l'issue ?
+-   - **Préconditions** : la tâche exige-t-elle un état que l'agent ne peut ni
+-     créer ni constater (navigateur ouvert, VM démarrée, action humaine
+-     concurrente) ?
+-   - **Décisions ouvertes** : la tâche demande-t-elle de choisir entre
+-     plusieurs options de conception sans que l'issue tranche ?
+-
+-2. **Formuler le refus de façon conservatrice.** Ces critères doivent être
+-   objectifs et vérifiables par simple lecture de l'issue — jamais un jugement
+-   de valeur sur la pertinence de la demande. La consigne doit dire
+-   explicitement : **en cas de doute, exécuter la tâche**. Un refus abusif
+-   coûte plus cher qu'une tentative qui échoue, puisqu'il exige une
+-   intervention humaine.
+-
+-3. En cas de refus, l'agent doit : ne modifier AUCUN fichier, ne faire AUCUN
+-   commit (pas même le commit de sauvegarde), et produire un rapport
+-   commençant par `❌` qui nomme précisément lequel des trois critères est en
+-   cause et pourquoi. Un refus doit être aussi informatif que le diagnostic
+-   automatique actuel.
+-
+-4. **Échappement** : documenter dans la même consigne qu'une phrase explicite
+-   dans le corps de l'issue lève la prévalidation, avec un libellé exact et
+-   reconnaissable à retenir — proposition : `PRÉVALIDATION : ignorée`. La
+-   consigne doit préciser que l'agent, voyant cette mention, procède sans
+-   vérifier. C'est ce qui garantit qu'aucune issue ne peut être bloquée
+-   définitivement, y compris celle qui corrigerait ce mécanisme.
+-
+-5. Mettre à jour le **§12.1** (parenthèse résumant les rappels globaux dans le
+-   tableau des trois couches) pour mentionner la prévalidation.
+-
+-6. Documenter le mécanisme et son échappement dans le **§3**, à la suite de la
+-   checklist de rédaction ajoutée par l'issue A — c'est là que Claude Chat le
+-   lira. Si l'issue A n'a pas encore été traitée, placer la mention à
+-   l'endroit le plus cohérent du §3 et le signaler dans le rapport.
+-
+-7. Entrée `CHANGELOG.md` et pied de page selon la convention (#253).
+-
+-## Hors périmètre — ne pas faire
+-
+-Aucune modification de `watcher.py` : pas de validateur codé en dur, pas de
+-label, pas de nouveau champ d'en-tête. Le mécanisme est entièrement porté par
+-la consigne injectée, délibérément.
+-
+-## Résultat attendu
+-
+-Diff committé localement (jamais poussé). Rapport citant le texte complet du
+-rappel ajouté à `consignes/globales.md`, et confirmant que `watcher.py` n'a
+-pas été touché.
+-```
+-
+----
+-
+-## Après application — quoi observer
+-
+-- Le déploiement d'une consigne ne demande **qu'un push** : `_lire_consigne`
+-  relit le fichier sur disque à chaque traitement, aucun redémarrage.
+-- Surveiller les **premiers refus** : s'ils portent sur des issues qui étaient
+-  en réalité exécutables, c'est que la formulation est trop stricte — corriger
+-  vers plus de tolérance, la consigne devant privilégier l'exécution en cas de
+-  doute.
+-- Si à l'inverse des issues manifestement mal formées passent quand même, la
+-  consigne est ignorée : envisager alors le durcissement en code, avec cette
+-  fois le label d'échappement et la règle « échec du validateur = laisser
+-  passer ».
+diff --git a/bridge_agent_reprise_calibration.md b/bridge_agent_reprise_calibration.md
+deleted file mode 100644
+index 902a8c3..0000000
+--- a/bridge_agent_reprise_calibration.md
++++ /dev/null
+@@ -1,201 +0,0 @@
+-# Bridge_Agent — notes de reprise
+-
+-*Rédigé le 29 juillet 2026. À relire au début d'une nouvelle conversation.*
+-
+----
+-
+-## 1. Calibration automatique du TIMEOUT — diagnostic
+-
+-### Ce qui existe (§19 de `BRIDGE_AGENT_DOC.md`)
+-
+-```
+-TIMEOUT_suggéré = max( (duree_typique + k × variabilite) × F × backoff , plancher )
+-```
+-
+-| Terme | Rôle | Valeur actuelle |
+-|---|---|---|
+-| `duree_typique` | EWMA des durées observées, par `projet\|TYPE\|mode` | demi-vie 15 issues |
+-| `variabilite` | EWMA de l'écart à `duree_typique` (« nervosité ») | — |
+-| `k` | Marge de sécurité | 4 |
+-| `F` | Facteur d'ambiance (`F_reseau` ou `F_local`) | **toujours 1.0** |
+-| `backoff` | ×1,5 par timeout, reset après 3 succès rapides | — |
+-| plancher | `TIMEOUT_SUGGERE_PLANCHER` | 30 s |
+-
+-État persisté dans `logs/etat_timeout.json` et `logs/etat_ambiance.json`
+-(demi-vie 4 h pour l'ambiance).
+-
+-**Important** : `TIMEOUT_suggéré` n'est aujourd'hui qu'**indicatif**. Le TIMEOUT
+-réellement appliqué reste celui de l'en-tête de l'issue (`extraire_timeout`).
+-
+-### Les deux défauts identifiés
+-
+-**Défaut 1 — `F` n'est jamais alimenté.** `_detecter_tag_reseau()` retourne
+-toujours `None` (aucun champ d'en-tête ni détection automatique ne le
+-renseigne). `F_reseau` et `F_local` restent donc à leur valeur neutre, et le
+-facteur d'ambiance n'influence rien. Déjà signalé dans les limitations connues
+-du §19.
+-
+-**Défaut 2 — le tag n'est pas lu même s'il existait.**
+-`maj_calibration_timeout` retombe toujours sur `F_local` par défaut, sans
+-consulter `_detecter_tag_reseau(body)`. Ce sont donc **deux bugs distincts** :
+-même en peuplant le tag, le facteur choisi serait faux.
+-
+-**Défaut 3 — les catégories mélangent des populations incompatibles.** La clé
+-`projet|TYPE|mode` range dans la même case une édition de doc de 250 s et une
+-refonte de `watcher.py` avec tests de 1800 s. La médiane qui en sort n'a pas de
+-sens, d'où les `TIMEOUT_suggéré` incohérents observés (2794 s suggérés pour une
+-issue qui en a pris 351).
+-
+-### Direction proposée (à décider à froid)
+-
+-L'idée d'Alain : séparer **le coût de la tâche** et **l'état de la machine**
+-(réseau, RAM, congestion). C'est exactement la structure de la formule
+-existante — `(duree_typique + k × variabilite)` pour la tâche, `F` pour
+-l'environnement.
+-
+-**Composition : produit, pas somme.** Un agent passe son temps en allers-retours
+-réseau ; une tâche qui en fait cent souffre cent fois d'une latence dégradée,
+-une tâche qui en fait dix n'en souffre que dix fois. L'environnement *étire* la
+-durée proportionnellement au travail, il n'ajoute pas un forfait fixe.
+-
+-> Exemple : wifi dégradé à +40 %. Édition de doc 250 s → 350 s. Refonte
+-> 1800 s → 2520 s. Une somme unique (+300 s) surestimerait la première et
+-> sous-estimerait gravement la seconde.
+-
+-**Deux signaux à capter, faciles et probablement les plus discriminants :**
+-
+-1. **Le TIMEOUT déclaré dans l'en-tête** comme proxy de complexité. Claude Chat
+-   estime déjà la difficulté au moment de rédiger (300 s pour une retouche,
+-   1800 s pour du code avec tests). Segmenter la calibration là-dessus
+-   séparerait mécaniquement les deux populations, sans nouvelle donnée à
+-   collecter.
+-2. **Une mesure de latence réseau** au démarrage du traitement, pour alimenter
+-   enfin `tag_reseau` — et corriger au passage le défaut 2.
+-
+----
+-
+-## 2. Archivage de `logs/historique_durees.json`
+-
+-### État au 29/07/2026
+-
+-- **682 entrées, 112 Ko**, accumulées depuis mai — jamais purgé.
+-- Relu et réécrit à chaque clôture d'issue.
+-
+-| Projet | Entrées |
+-|---|---|
+-| scrabble | 284 |
+-| bridge_agent | 237 |
+-| alchess | 58 |
+-| rummikub | 24 |
+-| actualise | 22 |
+-| bloc_score | 21 |
+-| ecole | 18 |
+-| ff_galerie | 13 |
+-| diagnostique_programme | 5 |
+-
+-Les entrées `ff_galerie` datent de mai et ne correspondent pas à un usage réel
+-du bridge (projet piloté par EmailJS). Elles ne polluent aucun calcul — la
+-calibration filtre par combinaison — mais brouillent la lecture manuelle.
+-
+-### Contrainte à respecter
+-
+-**Ne pas archiver naïvement par mois.** L'EWMA a une demi-vie de 15 issues :
+-une bascule mensuelle ferait repartir la calibration de zéro à chaque nouveau
+-mois, précisément pour les projets les plus actifs. Il faut soit archiver les
+-vieilles entrées **sans les rendre invisibles au calcul**, soit assumer
+-explicitement la remise à zéro.
+-
+-Rien d'urgent à 112 Ko. À traiter avant que ça n'atteigne plusieurs Mo.
+-
+----
+-
+-## 3. Contexte utile pour interpréter les durées
+-
+-- **Depuis le 27/07, Alain travaille en wifi d'hôtel.** Facteur plausible
+-  d'allongement des durées — l'agent fait des allers-retours réseau en
+-  permanence pendant son travail. C'est précisément ce que `F` devrait capter.
+-- Les trois durées aberrantes du 29/07 (900 s, 1805 s, 2710 s) sont les trois
+-  tentatives ratées de l'issue #269, mal calibrée (mesure infaisable dans le
+-  TIMEOUT, décisions laissées ouvertes). 5415 s consommées pour aucun livrable.
+-- **Leçon retenue** : une issue nette coûte 250–550 s ; une issue avec une
+-  exigence infaisable coûte 45 min et ne livre rien. Le facteur limitant est la
+-  qualité de la commande, pas l'agent.
+-
+----
+-
+-## 4. Autres sujets en attente
+-
+-### Consommation d'API — état après correctifs
+-
+-Mesuré avec `scripts/mesurer_api.py` (issue #263) :
+-
+-| Moment | Points/heure | Commentaire |
+-|---|---|---|
+-| Avant #270 | ≈ 5070 | quota épuisé en 59 min |
+-| Après #270 | ≈ 1078 | soutenable indéfiniment |
+-
+-Le poste dominant était **l'interface web ouverte** (badges de temps restant,
+-≈ 3840 pts/h), supprimé par #270. Le premier poste restant est le **poller de
+-notifications** (≈ 960 pts/h) — aucune urgence.
+-
+-**À noter** : `core.used` reste à 0. Les **5000 points REST sont intacts et
+-inutilisés** pendant que GraphQL sature. Piste possible : basculer certaines
+-requêtes sur l'API REST, qui a son propre quota.
+-
+-### Levier non traité — ne charger que les projets actifs
+-
+-`chargerListeIssues()` appelle `nomsProjetsDisponibles()`, qui lit le `<select>`
+-global : **tous** les projets configurés, pas ceux qui sont actifs dans le
+-filtre. Avec 8 projets configurés et 2 affichés, on fait donc 8 appels pour en
+-montrer 2.
+-
+-Or #271 a mesuré que le coût GraphQL **ne dépend pas de `--limit`** (1 point par
+-appel, quelle que soit la taille). Ce sont donc les **appels** qui comptent, pas
+-leur volume. Ne charger que les projets actifs diviserait le temps de
+-rafraîchissement et le coût par quatre.
+-
+-*Point délicat à traiter* : que se passe-t-il quand on réactive un projet
+-masqué ? Sa liste serait vide — il faudrait la charger à ce moment-là.
+-
+-### Filet de sécurité sur les rapports d'agent (décidé, non écrit)
+-
+-Valider **positivement** le format du rapport : présence de la ligne
+-`✅`/`❌` et de la ligne `Commits`. Un écart est traité comme un **échec**
+-(issue relancée) plutôt que comme un succès.
+-
+-Les quatre cas connus d'abandon déguisé auraient tous été attrapés : #241,
+-#242, #254 (« j'attends la notification… ») et #260.
+-
+-Une option plus lourde avait été envisagée puis mise en réserve : faire exécuter
+-les commandes longues par le watcher lui-même, en deux invocations de l'agent
+-séparées par l'attente. À considérer comme **filet de sécurité** (garantir
+-l'aboutissement même si l'agent lâche), pas comme optimisation.
+-
+-### Petits points
+-
+-- **`git ls-remote` au lieu de `git fetch`** dans la route pièces jointes
+-  (#248) : le `fetch` écrit `FETCH_HEAD` dans le clone de travail, ce qu'on
+-  voulait justement éviter. `ls-remote` suffit et ne touche aucune référence.
+-- **`DELAI_INACTIVITE_MIN = 0` côté VM** : gain quota **≈ 0** (la mesure #263 l'a
+-  établi — NSSM relance à la même cadence). Reste un problème de bruit dans les
+-  logs, pas de quota. Priorité basse.
+-- **§10, point 3** : le garde-fou ajouté par #268 est rédigé comme une note
+-  d'avertissement dans une liste numérotée d'actions. À reformuler en encart un
+-  jour — sans conséquence pratique.
+-
+----
+-
+-## 5. Déploiement — rappel des gestes qui s'oublient
+-
+-| Fichier modifié | Geste nécessaire |
+-|---|---|
+-| `watcher.py` | push, `git pull` dans la VM, **`nssm restart CCW-Watcher`** |
+-| `nouveau_projet.py`, `app/*.py` | push, **redémarrer `new_issue.py`** |
+-| `static/js/*.js`, `*.css` | push, **`Ctrl+F5`** dans le navigateur |
+-| `consignes/*.md` | push seul — relues sur disque à chaque traitement |
+-| `BRIDGE_AGENT_DOC.md` | push seul |
+-
+-Le clone `C:\CCW\Bridge_Agent` de la VM **n'est jamais mis à jour
+-automatiquement** (le `git pull --ff-only` du watcher porte sur `REP_TRAVAIL`,
+-qui est le partage, pas le clone du code). Documenté au §16 depuis #240 —
+-c'était la cause des 80 commits de retard.

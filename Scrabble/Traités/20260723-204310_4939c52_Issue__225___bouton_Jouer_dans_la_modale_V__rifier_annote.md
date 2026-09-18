@@ -1,0 +1,138 @@
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 4939c5258dc255fe6739eb11665712e9a27aa0f2
+# ── Qui a fait ce commit.
+Author: CCL agent <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Thu Jul 23 20:43:10 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Issue #225 : bouton Jouer dans la modale Vérifier et calculer (fin du double clic)
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/src/scrabble/ui/web/jeu.css b/src/scrabble/ui/web/jeu.css
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index ee6d290..9b8c9ba 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/src/scrabble/ui/web/jeu.css
+# ── Version APRÈS ce commit.
++++ b/src/scrabble/ui/web/jeu.css
+# ── Zone modifiée : ligne 1794 (6 ligne(s)) dans l'ancienne version → ligne 1794 (12 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1794,6 +1794,12 @@ body {
+     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+ }
+ 
++/* Rangée d'actions de la modale de score (issue #225) : « Fermer » et, pour un
++   coup en attente, « Jouer ». Détachée du total par une marge haute. */
++.modale-score-actions {
++    margin-top: 14px;
++}
++
+ /* Avertissement avant un « Retour au menu » avec un coup en attente (issue #74).
+    Réutilise .modale / .modale-contenu ; message explicatif + deux actions en
+    ligne (rester / confirmer). */
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/web/jeu.html b/src/scrabble/ui/web/jeu.html
+# (index — ignorable)
+index 707f900..7d70003 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/web/jeu.html
+# (après — fichier suivant)
++++ b/src/scrabble/ui/web/jeu.html
+# ── Zone modifiée : ligne 332 (7 ligne(s)) dans l'ancienne version → ligne 332 (16 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -332,7 +332,16 @@
+             <h3 id="score-titre">Détail du score</h3>
+             <div id="score-detail" class="score-detail"></div>
+             <div id="score-total" class="score-total"></div>
+-            <button id="score-fermer" class="btn btn-primaire">Fermer</button>
++            <!-- Deux actions (issue #225) : « Fermer » (consultation) et, quand la
++                 modale montre un COUP EN ATTENTE ouvert via « Vérifier et calculer »,
++                 un « Jouer » qui ferme la modale ET pose le coup en un seul clic —
++                 supprime le double clic (fermer la modale puis cliquer Jouer). Le
++                 bouton reste masqué en consultation d'historique (aucun coup à poser),
++                 dévoilé par jeu.js. -->
++            <div class="modale-actions modale-score-actions">
++                <button id="score-fermer" class="btn btn-secondaire">Fermer</button>
++                <button id="score-jouer" class="btn btn-primaire" hidden>✓ Jouer</button>
++            </div>
+         </div>
+     </div>
+ 
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/web/jeu.js b/src/scrabble/ui/web/jeu.js
+# (index — ignorable)
+index c61f909..7ba41be 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/web/jeu.js
+# (après — fichier suivant)
++++ b/src/scrabble/ui/web/jeu.js
+# ── Zone modifiée : ligne 99 (6 ligne(s)) dans l'ancienne version → ligne 99 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -99,6 +99,9 @@ document.addEventListener('DOMContentLoaded', async () => {
+     const zoneActionsDroite = document.getElementById('zone-actions-droite');
+     const btnValider = document.getElementById('btn-valider');
+     const btnVerifierCoup = document.getElementById('btn-verifier-coup');
++    // Bouton « Jouer » embarqué dans la modale « Vérifier et calculer » (issue
++    // #225) : ferme la modale et pose le coup en un seul clic.
++    const btnScoreJouer = document.getElementById('score-jouer');
+     const btnAnnuler = document.getElementById('btn-annuler');
+     const btnPasser = document.getElementById('btn-passer');
+     const btnEchangerTout = document.getElementById('btn-echanger-tout');
+# ── Zone modifiée : ligne 128 (8 ligne(s)) dans l'ancienne version → ligne 131 (14 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -128,8 +131,14 @@ document.addEventListener('DOMContentLoaded', async () => {
+         fermer: document.getElementById('score-fermer'),
+         // À la fermeture (bouton ou clic dehors), on retire la surbrillance du
+         // coup consulté : le plateau revient alors au dernier coup réel (dont la
+-        // surbrillance .derniere-pose n'a jamais été touchée), issue #128.
+-        auFermer: () => retirerSurbrillanceCoupConsulte(),
++        // surbrillance .derniere-pose n'a jamais été touchée), issue #128. On
++        // remasque aussi le « Jouer » embarqué (issue #225) : il n'a de sens que
++        // pour un coup en attente et ne doit pas réapparaître en consultation
++        // d'historique.
++        auFermer: () => {
++            retirerSurbrillanceCoupConsulte();
++            if (btnScoreJouer) btnScoreJouer.hidden = true;
++        },
+     });
+ 
+     // Thèmes reconnus (alignés avec scrabble.config.THEMES_PLATEAU et le CSS).
+# ── Zone modifiée : ligne 1368 (6 ligne(s)) dans l'ancienne version → ligne 1377 (10 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1368,6 +1377,10 @@ document.addEventListener('DOMContentLoaded', async () => {
+                 + `Cliquez « Jouer » pour le poser.`, 'succes');
+             if (res.detail) {
+                 modaleScore.afficher(res.detail, `Coup en attente${mot ? ' — « ' + mot + ' »' : ''}`);
++                // Coup validé et en attente : on propose de le poser directement
++                // depuis la modale (issue #225), sans repasser par le bouton
++                // « Jouer » principal masqué derrière le calque de la modale.
++                if (btnScoreJouer) btnScoreJouer.hidden = false;
+             }
+         } else {
+             afficherMessageCoup((res && res.erreur) ? res.erreur : 'Coup invalide.', 'erreur');
+# ── Zone modifiée : ligne 1376 (7 ligne(s)) dans l'ancienne version → ligne 1389 (13 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1376,7 +1389,13 @@ document.addEventListener('DOMContentLoaded', async () => {
+     });
+ 
+     // Jouer : pose le mot formé par les lettres en attente (lues côté Python).
+-    btnValider.addEventListener('click', async () => {
++    // Factorisé (issue #225) car deux boutons y mènent désormais : le « Jouer »
++    // principal (#btn-valider) et le « Jouer » de la modale « Vérifier et calculer »
++    // (#score-jouer). On ferme d'abord la modale de score si elle est encore
++    // ouverte : un seul clic suffit alors à poser le coup, sans le double clic
++    // (fermer la modale, puis cliquer Jouer) qui déroutait les joueuses.
++    async function jouerCoup() {
++        modaleScore.fermer();
+         btnValider.disabled = true;
+         let res;
+         try {
+# ── Zone modifiée : ligne 1394 (7 ligne(s)) dans l'ancienne version → ligne 1413 (11 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1394,7 +1413,11 @@ document.addEventListener('DOMContentLoaded', async () => {
+             afficherMessageCoup((res && res.erreur) ? res.erreur : 'Coup refusé.', 'erreur');
+             majActionsTour();
+         }
+-    });
++    }
++    btnValider.addEventListener('click', jouerCoup);
++    if (btnScoreJouer) {
++        btnScoreJouer.addEventListener('click', jouerCoup);
++    }
+ 
+     // Passer son tour sans poser ni échanger de lettres (issue #132). Droit
+     // normal du jeu, utilisable à tout moment du tour — et seul recours d'un

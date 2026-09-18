@@ -1,0 +1,123 @@
+b6468d1
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit b6468d1
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Wed Jul 29 06:54:21 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Consigne calibration TIMEOUT et archivage historique_durees.json (issue #272)
+    
+    Ajoute à TACHES.md deux entrées de backlog diagnostiquées en conversation
+    le 29/07/2026 (calibration automatique du TIMEOUT : trois défauts ; archivage
+    de logs/historique_durees.json), en tête du fichier, texte repris tel quel.
+    Entrée CHANGELOG.md associée selon la convention (#252/#253).
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index eac7255..cb0e076 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/CHANGELOG.md
+# ── Version APRÈS ce commit.
++++ b/CHANGELOG.md
+# ── Zone modifiée : ligne 9 (6 ligne(s)) dans l'ancienne version → ligne 9 (10 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -9,6 +9,10 @@ milliers de caractères sur une seule ligne logique, coûteux à relire et
+ 
+ Convention d'ajout : voir §10 de `BRIDGE_AGENT_DOC.md`.
+ 
++## 29 juillet 2026 — issue #272
++
++Consignation dans `TACHES.md` de deux sujets diagnostiqués en conversation le 29/07/2026 (issue #272), qui auraient été perdus à la fermeture du fil sans cette entrée : tous deux relèvent du backlog (pistes à mûrir, aucun développement lancé). Ajoutées en tête du fichier, avant « Concurrence limitée aux issues mode_lecture », les entrées existantes n'ont pas été modifiées. **Entrée 1 — calibration automatique du TIMEOUT (§19), trois défauts** : (1) `_detecter_tag_reseau()` retourne toujours `None`, donc le facteur d'ambiance `F` (F_reseau/F_local) n'influence jamais la suggestion malgré la formule qui le prévoit ; (2) même corrigé, `maj_calibration_timeout` retomberait toujours sur `F_local` par défaut sans lire le tag — bug distinct du premier ; (3) la clé `projet|TYPE|mode` mélange des populations de durée incompatibles (une doc de 250s et une refonte avec tests de 1800s dans la même case), produisant des suggestions sans sens (observé : 2794s suggérés pour une issue ayant pris 351s). Piste retenue : séparer le coût de la TÂCHE (proxy : le TIMEOUT déclaré en en-tête, que Claude Chat estime déjà à la rédaction) de l'état de la MACHINE (latence réseau mesurée au démarrage, pour enfin alimenter `tag_reseau`), en conservant une composition en PRODUIT et non en somme. **Entrée 2 — archivage de `logs/historique_durees.json`** : 682 entrées, 112 Ko au 29/07/2026, jamais purgé depuis mai ; les 13 entrées `ff_galerie` (projet piloté par EmailJS, pas d'usage bridge réel) ne polluent aucun calcul mais brouillent la lecture manuelle. Point de vigilance impératif pour toute implémentation future : ne pas archiver naïvement par mois — l'EWMA de calibration a une demi-vie de 15 issues, une bascule mensuelle repartirait de zéro à chaque mois pour les projets les plus actifs. Aucune urgence à 112 Ko ; à traiter avant plusieurs Mo. `BRIDGE_AGENT_DOC.md` non modifié par cette issue (aucune section ne couvre `TACHES.md`), donc pied de page non glissé (condition de #10 non remplie).
++
+ ## 29 juillet 2026 — issue #271
+ 
+ Résultats : nombre d'issues chargées par projet rendu configurable (issue #271), pour accélérer le bouton rafraîchir et réduire le volume rapatrié — jusqu'ici `issues_liste()` (`app/issues.py`) appelait `gh issue list --limit 30` en dur, **par projet** (jusqu'à 240 issues téléchargées avec 8 projets), alors que l'affichage était déjà plafonné par le quota adaptatif d'`appliquerFiltresListe()` (issue #136). **Backend** : `issues_liste()` accepte désormais un paramètre de requête optionnel `limite` (`_limite_issues_requete()`), entier borné entre 1 et 50 — toute valeur absente, non entière ou hors bornes retombe sur 30 (`LIMITE_ISSUES_DEFAUT`), comportement strictement inchangé pour tout appelant qui ne passe pas le paramètre (vérifié : `?limite=5`→5, `?limite=999`→50, `?limite=0`→1, `?limite=abc`→30, absent→30, via `test_client()` bout-en-bout contre `gh` réel). **Frontend** (`static/js/app.js`, `static/css/style.css`) : champ numérique `#limite-issues-projet` ajouté dans la ligne de filtres, juste avant le bouton rafraîchir, `title` explicite (« Nombre d'issues chargées par projet (pas un total). Ex. 5 → 5 issues par projet affiché. ») pour éviter la confusion nombre-par-projet / total — un total obligerait à diviser par le nombre de projets actifs, qui change à chaque clic sur un filtre. Persisté dans `localStorage` (`bridge_limite_issues_projet`), défaut **5** (besoin réel dans 70% des cas d'après l'issue, et non 30 : l'ancienne valeur reste atteignable en remontant le champ). `chargerListeIssues()` transmet la valeur courante (`limiteIssuesProjet()`) à chaque appel `/issues-liste/<projet>`. Changer la valeur du champ ne déclenche **aucun** rechargement automatique (cohérent avec la décision de #270) : seul le bouton rafraîchir applique la nouvelle limite ; en revanche `changerLimiteIssuesProjet()` invalide immédiatement `CLE_CACHE_ISSUES`, sans quoi un cache constitué à l'ancienne limite continuerait d'afficher une profondeur d'historique incohérente avec le réglage visible. Quota adaptatif de #136 (`appliquerFiltresListe()`) **non touché** : les deux mécanismes sont complémentaires (celui-ci plafonne ce qui est TÉLÉCHARGÉ, celui-là ce qui est MONTRÉ) ; commentaire ajouté pour expliciter que si la limite de téléchargement est plus basse que le quota d'affichage, ce dernier n'a simplement rien de plus à masquer — sans conséquence. **Mesure du coût GraphQL** (méthode #263 : deux `gh api rate_limit` encadrant un appel isolé de `gh issue list --json ...`, 3 répétitions, delta minimal retenu) sur `--limit 30/10/5` : les trois deltas minimaux mesurés valent **1 point** (identique au coût unitaire déjà mesuré par #263 pour cet appel) — résultat inattendu : le coût GraphQL par appel ne varie PAS avec `--limit` dans la plage testée, contrairement à l'intuition de l'issue ; le gain réel n'est donc pas une réduction du quota GraphQL (le nombre d'appels — un par projet — reste le facteur dominant, inchangé par cette issue) mais une réduction du volume de données transférées/parsées (23 113 → 3 445 octets entre `--limit 30` et `--limit 5` sur ce dépôt, soit -85%), donc du temps de traitement `gh`/JS et du risque de timeout sur un historique profond. Détail complet et tableau des mesures dans le rapport de clôture de l'issue #271 (non dupliqué ici). Route `/issues-liste/<projet>` non documentée dans `BRIDGE_AGENT_DOC.md` (aucune section ne la décrit) : aucune mise à jour de ce fichier, pied de page non glissé (condition de #10 non remplie — cette issue ne modifie pas `BRIDGE_AGENT_DOC.md`).
+# (diff du fichier suivant)
+diff --git a/TACHES.md b/TACHES.md
+# (index — ignorable)
+index 8a81a57..1712804 100644
+# (avant — fichier suivant)
+--- a/TACHES.md
+# (après — fichier suivant)
++++ b/TACHES.md
+# ── Zone modifiée : ligne 5 (6 ligne(s)) dans l'ancienne version → ligne 5 (76 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -5,6 +5,76 @@ Alain peut modifier ce fichier directement, sans passer par une issue.
+ 
+ ---
+ 
++## Calibration automatique du TIMEOUT — trois défauts à corriger
++
++**Contexte** : la formule du §19 est
++`TIMEOUT_suggéré = max((duree_typique + k × variabilite) × F × backoff, plancher)`
++— EWMA par `projet|TYPE|mode`, demi-vie 15 issues, k=4, plancher 30 s,
++facteur d'ambiance `F` de demi-vie 4 h. Cette valeur reste purement
++INDICATIVE : le TIMEOUT réellement appliqué est celui de l'en-tête de
++l'issue (`extraire_timeout`).
++
++**Trois défauts identifiés le 29/07/2026** :
++1. `F` n'est jamais alimenté — `_detecter_tag_reseau()` retourne toujours
++   `None`, donc `F_reseau`/`F_local` restent à 1.0 et le facteur
++   d'ambiance n'influence rien (déjà listé dans les limitations du §19).
++2. Même si le tag existait, `maj_calibration_timeout` retombe toujours sur
++   `F_local` par défaut sans le lire — c'est un second bug, distinct du
++   premier.
++3. La clé `projet|TYPE|mode` mélange des populations incompatibles : une
++   édition de doc de 250 s et une refonte de `watcher.py` avec tests de
++   1800 s finissent dans la même case. La médiane qui en sort n'a pas de
++   sens (observé : 2794 s suggérés pour une issue qui en a pris 351).
++
++**Idée** : séparer explicitement le coût de la TÂCHE et l'état de la
++MACHINE (réseau, RAM, congestion) — c'est déjà la structure de la formule,
++mais les deux moitiés sont mal alimentées. La composition doit rester un
++PRODUIT, pas une somme : un agent enchaîne les allers-retours réseau, donc
++une latence dégradée étire la durée proportionnellement au travail au lieu
++d'ajouter un forfait fixe. Exemple : wifi à +40 % → une doc passe de 250 à
++350 s, une refonte de 1800 à 2520 s ; une somme unique surestimerait la
++première et sous-estimerait gravement la seconde.
++
++**Deux signaux à capter, faciles et probablement les plus discriminants** :
++- le TIMEOUT déclaré dans l'en-tête, comme proxy de complexité — Claude
++  Chat estime déjà la difficulté au moment de rédiger ; segmenter la
++  calibration là-dessus séparerait mécaniquement les deux populations,
++  sans nouvelle donnée à collecter ;
++- une mesure de latence réseau au démarrage du traitement, pour alimenter
++  enfin `tag_reseau` et corriger du même coup le défaut 2.
++
++**Statut** : diagnostic établi le 29/07/2026, aucune implémentation
++lancée. À reprendre à froid — le sujet touche des EWMA et des choix de
++modélisation qu'on prendrait mal à la légère.
++
++---
++
++## Archivage de logs/historique_durees.json
++
++**Contexte** : le fichier accumule depuis mai sans jamais être purgé —
++682 entrées, 112 Ko au 29/07/2026 — et il est relu puis réécrit à chaque
++clôture d'issue. Répartition : scrabble 284, bridge_agent 237, alchess 58,
++rummikub 24, actualise 22, bloc_score 21, ecole 18, ff_galerie 13,
++diagnostique_programme 5. Les entrées `ff_galerie` datent de mai et ne
++correspondent pas à un usage réel du bridge (projet piloté par EmailJS) ;
++elles ne polluent aucun calcul — la calibration filtre par combinaison —
++mais brouillent la lecture manuelle.
++
++**Idée** : archiver les vieilles entrées pour contenir la taille du
++fichier et rendre son contenu lisible.
++
++**Point à concevoir avant implémentation, impératif** : ne PAS archiver
++naïvement par mois. L'EWMA de la calibration a une demi-vie de 15 issues ;
++une bascule mensuelle ferait repartir le calcul de zéro à chaque nouveau
++mois, précisément pour les projets les plus actifs. Il faut soit archiver
++sans rendre les entrées invisibles au calcul, soit assumer explicitement
++la remise à zéro.
++
++**Statut** : aucune urgence à 112 Ko. À traiter avant que le fichier
++n'atteigne plusieurs Mo. Lié à l'entrée sur la calibration ci-dessus.
++
++---
++
+ ## Concurrence limitée aux issues mode_lecture
+ 
+ **Contexte** : `watcher.py` est aujourd'hui strictement séquentiel (une issue à

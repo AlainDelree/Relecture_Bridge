@@ -1,0 +1,23 @@
+f8aadc4
+
+commit f8aadc4
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Mon Aug 3 17:35:28 2026 +0200
+
+    Issue #351 : application.py — retirer debug=True de webview.start()
+
+diff --git a/src/scrabble/ui/application.py b/src/scrabble/ui/application.py
+index d8ec791..2d90ae0 100644
+--- a/src/scrabble/ui/application.py
++++ b/src/scrabble/ui/application.py
+@@ -560,9 +560,7 @@ def lancer_application_unifiee(routeur: ApiRouteur | None = None) -> ApiRouteur:
+             "Application unifiée : fenêtre unique ouverte sur l'accueil."
+         )
+         # UNE seule boucle pywebview pour toute l'application (issue #179).
+-        # debug=True (issue #343) : ouvre les DevTools (F12) pour diagnostiquer
+-        # l'animation de pioche sur WebView2 Windows, absente sous WebKitGTK Linux.
+-        webview.start(deployer_fenetre_maximisee, (window, "application"), debug=True)
++        webview.start(deployer_fenetre_maximisee, (window, "application"))
+         return routeur
+     finally:
+         journal.cloturer_session()

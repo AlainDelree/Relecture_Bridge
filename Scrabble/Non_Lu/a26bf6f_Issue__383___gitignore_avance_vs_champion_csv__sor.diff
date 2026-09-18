@@ -1,0 +1,20 @@
+a26bf6f
+
+commit a26bf6f
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Fri Aug 7 21:59:02 2026 +0200
+
+    Issue #383 : gitignore avance_vs_champion.csv (sortie de mesurer_force_niveaux.py)
+
+diff --git a/.gitignore b/.gitignore
+index 9a47c22..3ea5c10 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -48,6 +48,7 @@ installeur/output/
+ malus.csv
+ paliers_bas.csv
+ paliers_bas.log
++avance_vs_champion.csv
+ 
+ # Divers
+ .pytest_cache/

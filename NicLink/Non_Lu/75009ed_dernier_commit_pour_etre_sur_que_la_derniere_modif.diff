@@ -1,0 +1,21 @@
+75009ed
+
+commit 75009ed
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Thu Aug 13 22:06:33 2026 +0200
+
+    dernier commit pour etre sur que la derniere modification ne soit pas ecraser
+
+diff --git a/TACHES.md b/TACHES.md
+index 7d1e51c..aa00e7a 100644
+--- a/TACHES.md
++++ b/TACHES.md
+@@ -42,7 +42,7 @@
+ - **Réduire la taille des ZIP** (~210/215 Mo) — élagage `books/`/`exe/`/`docs/` de Rodent à valider avec Alain.
+ - **i18n — corrections résiduelles au fil des tests DE** (edge cases, `eco_import.py`).
+ - **Améliorer la visibilité moteurs de recherche** `[Les deux]` — image de prévisualisation sociale, communautés (r/chess, forums Chessnut).
+-
++- **Permettre de choisir une couleur par défaut dans partie pédagogique**  Je sais que Jess préfère jouer les noirs mais actuellement les blancs sont sélectionnés par défaut.  On peut changer ca via une checkbox "Faire de ce choix ma couleur par défaut"
+ ---
+ 
+ ## 🧪 Tests automatisés

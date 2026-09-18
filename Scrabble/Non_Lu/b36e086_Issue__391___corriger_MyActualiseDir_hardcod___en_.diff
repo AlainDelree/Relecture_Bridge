@@ -1,0 +1,25 @@
+b36e086
+
+commit b36e086
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Sun Aug 9 09:50:21 2026 +0200
+
+    Issue #391 : corriger MyActualiseDir hardcodé en C:\Actualise (au lieu de {sd}\Actualise non résolu par le préprocesseur InnoSetup)
+
+diff --git a/installeur/scrabble.iss b/installeur/scrabble.iss
+index ea96364..73ce981 100644
+--- a/installeur/scrabble.iss
++++ b/installeur/scrabble.iss
+@@ -42,10 +42,10 @@
+ ; Déposé par build\rebuild_scrabble.bat avant l'appel à ISCC (Actualise.exe +
+ ; son dossier _internal\, runtime Python + DLL, mode PyInstaller --onedir).
+ #define MyActualiseSrcDir "C:\Temp\ScrabbleBuild\Actualise_dist"
+-#define MyActualiseDir "{sd}\Actualise"
++#define MyActualiseDir "C:\Actualise"
+ ; Ancien emplacement (une instance d'Actualise par application) : nettoyé
+ ; avant installation si présent (issue #385, cf. [Code] ci-dessous).
+-#define MyOldActualiseDir "{sd}\Actualise_Scrabble"
++#define MyOldActualiseDir "C:\Actualise_Scrabble"
+ ; Numero de build de Scrabble reellement embarque dans ce setup (lu dans
+ ; version.json a la racine du depot par rebuild_scrabble.bat, injecte via
+ ; /DScrabbleBuildInstalle=<build>) ; "1" n'est qu'un repli de secours pour

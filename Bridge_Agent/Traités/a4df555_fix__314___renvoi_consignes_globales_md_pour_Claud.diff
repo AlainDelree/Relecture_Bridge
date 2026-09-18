@@ -1,0 +1,51 @@
+a4df555
+
+commit a4df555
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Sun Aug 2 10:51:33 2026 +0200
+
+    fix #314 : renvoi consignes/globales.md pour Claude en conversation
+
+diff --git a/BRIDGE_AGENT_DOC.md b/BRIDGE_AGENT_DOC.md
+index fd99322..c786f63 100644
+--- a/BRIDGE_AGENT_DOC.md
++++ b/BRIDGE_AGENT_DOC.md
+@@ -507,6 +507,14 @@ les projets) :
+ | **Type** | `consignes/type_<type>.md` | Issues d'un TYPE donné (ex. `type_chef.md`) | **Oui** — créé à la demande |
+ | **Projet** | `consignes/projet_<projet>.md` | Issues ciblant un projet donné | **Oui** — créé à la demande |
+ 
++⚠️ **Pour un Claude en conversation** (celui qui rédige une issue avant de
++l'envoyer) : ce tableau décrit une injection qui n'a lieu qu'à l'exécution
++(CCL/CCW) — tu ne vois donc pas ce contenu ici. Avant de proposer une issue,
++consulte `consignes/globales.md` (rappels de sécurité, garde-fous) via :
++```bash
++curl -sL "https://raw.githubusercontent.com/AlainDelree/Bridge_Agent/master/consignes/globales.md"
++```
++
+ **Couverture universelle (issue #211).** Une issue peut naître de trois chemins :
+ (1) le formulaire web (`new_issue.py`), (2) un CCL « chef » via `gh issue create`
+ en ligne de commande (§14, pattern Chef → Ouvrier), (3) une création manuelle
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 2a1498b..af87497 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -9,6 +9,19 @@ milliers de caractères sur une seule ligne logique, coûteux à relire et
+ 
+ Convention d'ajout : voir §10 de `BRIDGE_AGENT_DOC.md`.
+ 
++## 2 août 2026 — issue #314
++
++`BRIDGE_AGENT_DOC.md` (§12.1, juste après le tableau des trois couches
++de consignes) : ajout d'un renvoi explicite pour un Claude en
++conversation (celui qui rédige une issue avant envoi, ex.
++ClaudeRummikub) vers `consignes/globales.md` via `curl`, sur le même
++modèle que le renvoi déjà existant vers `BRIDGE_AGENT_DOC.md` lui-même
++(§9). Jusqu'ici le tableau décrivait l'injection automatique par
++`watcher.py` à l'exécution (CCL/CCW) sans jamais pointer un Claude en
++conversation vers le contenu réel de `globales.md` — notamment le
++garde-fou backup/reset ajouté par l'issue #313, invisible avant que
++l'issue parte à l'exécution.
++
+ ## 2 août 2026 — issue #313
+ 
+ `consignes/globales.md` : ajout de deux garde-fous mutualisés à tous les

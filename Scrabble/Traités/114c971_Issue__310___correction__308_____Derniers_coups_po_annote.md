@@ -1,0 +1,252 @@
+114c971
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 114c971
+# ── Qui a fait ce commit.
+Author: CCL agent <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Mon Jul 27 11:39:34 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Issue #310 : correction #308 — Derniers coups popover restauré, style carte
+    
+    Corrige deux erreurs d'interprétation de la spec #308/#309 :
+    
+    - jeu.html : « Derniers coups » retrouve son comportement popover original
+      (clic sur le bouton pour afficher/masquer la liste, aria-haspopup/
+      aria-expanded) dans le bloc .zone-historique-permanente pleine largeur —
+      seule sa largeur avait dû changer. Le bloc Dictionnaire (champ toujours
+      visible, résultat/définition masqués par défaut) était déjà conforme,
+      inchangé.
+    - jeu.js : restauration de la variable btnHistorique et de l'appel
+      C.configurerPopover(btnHistorique, historiqueListe) supprimés à tort par
+      #308/#309. Le champ dictionnaire n'a jamais eu de popover à restaurer
+      (btnOuvrirVerif/verifPopover déjà absents, confirmés supprimés).
+    - jeu.css : .zone-historique-permanente et .zone-dico-permanente reçoivent
+      le style carte des fiches joueurs (fond blanc, coins arrondis, ombre,
+      padding) pour rester lisibles sur le tapis vert. Restauration de
+      .historique-menu/.historique-resume(-inner)/[aria-expanded] pour le bouton
+      popover, avec .historique-resume en pleine largeur dans sa carte.
+      Suppression de .historique-liste-permanente (classe disparue du HTML) ;
+      .zone-titre conservée (toujours utilisée par le titre Dictionnaire).
+    
+    pytest : 778 passed.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/src/scrabble/ui/web/jeu.css b/src/scrabble/ui/web/jeu.css
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 7b8633e..2362d7f 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/src/scrabble/ui/web/jeu.css
+# ── Version APRÈS ce commit.
++++ b/src/scrabble/ui/web/jeu.css
+# ── Zone modifiée : ligne 160 (12 ligne(s)) dans l'ancienne version → ligne 160 (26 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -160,12 +160,26 @@ body {
+ 
+ /* Derniers coups / Dictionnaire : deux blocs permanents pleine largeur
+    (issue #308/#309), entre la zone A (boutons système) et la zone B (joueurs).
+-   Même gabarit que les autres zones (.zone-gauche), empilés en colonne. */
++   Style carte identique aux fiches joueurs (.panneau-joueur) — fond blanc,
++   coins arrondis, ombre, padding — pour rester lisible sur le tapis vert
++   (correction issue #310, les titres étaient illisibles sans ce fond). */
+ .zone-historique-permanente,
+ .zone-dico-permanente {
+     display: flex;
+     flex-direction: column;
+     gap: 6px;
++    background: white;
++    border-radius: var(--rayon-bordure);
++    box-shadow: var(--ombre);
++    padding: 8px 10px;
++}
++
++/* Le bouton « Derniers coups » (comportement popover restauré par la
++   correction #310) doit occuper toute la largeur de la carte pleine largeur,
++   au lieu de sa largeur ``fit-content`` d'origine (issue #144). */
++.zone-historique-permanente .historique-resume {
++    width: 100%;
++    text-align: left;
+ }
+ 
+ .zone-titre {
+# ── Zone modifiée : ligne 178 (20 ligne(s)) dans l'ancienne version → ligne 192 (6 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -178,20 +192,6 @@ body {
+     gap: 6px;
+ }
+ 
+-/* Liste des derniers coups en flux normal (remplace le popover .historique-liste
+-   ci-dessus) : même contenu (.historique-ligne…), plus de position absolue ni
+-   d'ombre, bornée en hauteur et défilante comme avant. */
+-.historique-liste-permanente {
+-    list-style: none;
+-    padding: 0;
+-    margin: 0;
+-    max-height: 180px;
+-    overflow-y: auto;
+-    display: flex;
+-    flex-direction: column;
+-    gap: 2px;
+-}
+-
+ /* Zone B : fiches joueurs empilées. Prend une part de la hauteur libre pour
+    rester lisible ; ``align-items: stretch`` laisse chaque fiche occuper la
+    largeur de la marge. ``justify-content: center`` (issue #190) répartit la
+# ── Zone modifiée : ligne 658 (26 ligne(s)) dans l'ancienne version → ligne 658 (65 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -658,26 +658,65 @@ body {
+ }
+ 
+ /* --------------------------------------------------------------------------- */
+-/* Encart d'historique glissant des derniers coups (issue #37, bloc permanent   */
+-/* pleine largeur depuis #308/#309)                                              */
++/* Encart d'historique glissant des derniers coups (issue #37, bloc plein       */
++/* largeur depuis #308/#309, comportement popover restauré par la correction    */
++/* #310)                                                                        */
+ /* --------------------------------------------------------------------------- */
+ /* Liste les dernières actions, la plus récente en haut. Chaque ligne cliquable
+    rouvre le détail du coup dans la modale existante ; la couleur de bord
+    distingue humain (bleu) et ordinateur (violet), comme partout ailleurs à
+-   l'écran. Le bouton déclencheur + popover (.historique-menu/.historique-resume/
+-   ex-popover .historique-liste) ont été retirés du HTML : voir
+-   .zone-historique-permanente/.historique-liste-permanente plus bas pour le
+-   nouveau bloc permanent. .historique-resume-compte est réutilisée telle quelle
+-   pour le compteur du nouveau titre. */
++   l'écran. Le bouton déclencheur (C.configurerPopover, jeu.js) reste un vrai
++   <button> : on réinitialise donc bordure et police héritées. La mise en page
++   en ligne reste confiée à `.historique-resume-inner`. La largeur pleine
++   largeur de la carte (issue #308/#309) est imposée par
++   `.zone-historique-permanente .historique-resume` plus haut. */
++.historique-menu {
++    position: relative;
++}
++
++.historique-resume {
++    width: fit-content;
++    padding: 6px 12px;
++    border: none;
++    border-radius: 999px;
++    background: white;
++    box-shadow: var(--ombre);
++    font-family: inherit;
++    font-size: 0.85rem;
++    font-weight: 600;
++    color: #555;
++    cursor: pointer;
++    white-space: nowrap;
++}
++
++.historique-resume-inner {
++    display: inline-flex;
++    align-items: center;
++    gap: 6px;
++}
++
++.historique-resume-inner::after {
++    content: '▾';
++    font-size: 0.7rem;
++    color: #999;
++    transition: transform 0.15s;
++}
++
++.historique-resume[aria-expanded="true"] .historique-resume-inner::after {
++    transform: rotate(180deg);
++}
++
+ .historique-resume-compte {
+     color: var(--couleur-primaire);
+     font-variant-numeric: tabular-nums;
+ }
+ 
+-/* .historique-liste (fond blanc, ombre, coins arrondis, popover absolu) n'est
+-   plus utilisée par l'historique permanent (remplacée par
+-   .historique-liste-permanente) mais reste nécessaire : le popover du joker
+-   (.joker-popover plus bas) en hérite toujours le look popover. */
++/* Liste déployée = popover (issue #144) : surimpression sous le bouton, largeur
++   fixe raisonnable, DÉFILEMENT vertical dès que l'historique dépasse la hauteur
++   plafond. Ne consomme aucune hauteur de mise en page (position absolue). Le
++   masquage/affichage est piloté par l'attribut [hidden] (posé/retiré par
++   C.configurerPopover). Également réutilisée par le popover du joker
++   (.joker-popover plus bas). */
+ .historique-liste {
+     position: absolute;
+     top: calc(100% + 6px);
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/web/jeu.html b/src/scrabble/ui/web/jeu.html
+# (index — ignorable)
+index 4e63543..79922a5 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/web/jeu.html
+# (après — fichier suivant)
++++ b/src/scrabble/ui/web/jeu.html
+# ── Zone modifiée : ligne 103 (16 ligne(s)) dans l'ancienne version → ligne 103 (26 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -103,16 +103,26 @@
+                 </div><!-- /zone-systeme-ligne (ligne 2) -->
+             </section>
+ 
+-            <!-- Derniers coups (issue #308) : bloc permanent pleine largeur.
+-                 Remplace l'ancien menu déroulant (#historique-menu) ; même id
+-                 #historique-liste/#historique-compte, rendreHistorique() (jeu.js)
+-                 les peuple sans changement. -->
++            <!-- Derniers coups (issue #310, correction #308/#309) : bloc plein
++                 largeur (seule sa largeur a changé) qui conserve le comportement
++                 popover ORIGINAL — clic sur le bouton pour afficher/masquer la
++                 liste (C.configurerPopover, jeu.js) : ouverture/fermeture au
++                 clic, fermeture au clic extérieur ou à la touche Échap. La plus
++                 RÉCENTE en haut ; chaque ligne rouvre le détail du score de CE
++                 coup. -->
+             <section class="zone-gauche zone-historique-permanente">
+-                <h3 class="zone-titre">🕑 Derniers coups
+-                    <span class="historique-resume-compte" id="historique-compte"></span>
+-                </h3>
+-                <ol id="historique-liste" class="historique-liste-permanente"
+-                    role="log" aria-live="polite"></ol>
++                <div class="historique-menu" id="historique-menu">
++                    <button id="btn-historique" class="historique-resume"
++                            aria-haspopup="dialog" aria-expanded="false">
++                        <span class="historique-resume-inner">
++                            <span class="historique-resume-titre">🕑 Derniers coups</span>
++                            <span class="historique-resume-compte" id="historique-compte"></span>
++                        </span>
++                    </button>
++                    <ol id="historique-liste" class="historique-liste" role="dialog"
++                        aria-label="Historique des coups de la partie"
++                        aria-live="polite" hidden></ol>
++                </div>
+             </section>
+ 
+             <!-- Dictionnaire (issue #308) : champ toujours visible. Remplace
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/web/jeu.js b/src/scrabble/ui/web/jeu.js
+# (index — ignorable)
+index d34a776..3feb0a9 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/web/jeu.js
+# (après — fichier suivant)
++++ b/src/scrabble/ui/web/jeu.js
+# ── Zone modifiée : ligne 1678 (12 ligne(s)) dans l'ancienne version → ligne 1678 (20 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1678,12 +1678,20 @@ document.addEventListener('DOMContentLoaded', async () => {
+     });
+ 
+     // ------------------------------------------------------------------ //
+-    // Encart d'historique glissant : clic sur une ligne
++    // Encart d'historique glissant : ouverture/fermeture + clic sur une ligne
+     // ------------------------------------------------------------------ //
+ 
+-    // Depuis l'issue #308/#309, #historique-liste est un bloc permanent de la
+-    // colonne gauche (plus un popover) : seul le clic sur une ligne (ouverture
+-    // du détail du coup) reste à câbler ici.
++    // Ouverture/fermeture du menu « Derniers coups » (issue #144, comportement
++    // restauré par la correction #310 après la refonte pleine largeur #308/#309
++    // qui l'avait par erreur supprimé) : clic sur le bouton pour basculer,
++    // fermeture au clic EXTÉRIEUR ou à la touche Échap, mise à jour
++    // d'aria-expanded. La liste (``historiqueListe``, id #historique-liste)
++    // sert de popover : les clics à l'intérieur (ouverture du détail d'un coup)
++    // ne la ferment pas, configurerPopover stoppant leur propagation vers
++    // document.
++    const btnHistorique = document.getElementById('btn-historique');
++    C.configurerPopover(btnHistorique, historiqueListe);
++
+     function entreeHistoriqueDe(li) {
+         if (!li || !etat || !Array.isArray(etat.historique)) {
+             return null;

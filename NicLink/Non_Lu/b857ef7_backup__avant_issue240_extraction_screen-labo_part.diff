@@ -1,0 +1,15 @@
+b857ef7
+
+commit b857ef7
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Sun Aug 23 21:21:39 2026 +0200
+
+    backup: avant issue240 extraction screen-labo partie 4/4 (position virtuelle + retour)
+
+diff --git a/.assetsignore b/.assetsignore
+new file mode 100644
+index 0000000..c9a2fd3
+--- /dev/null
++++ b/.assetsignore
+@@ -0,0 +1 @@
++.wrangler/tmp/**

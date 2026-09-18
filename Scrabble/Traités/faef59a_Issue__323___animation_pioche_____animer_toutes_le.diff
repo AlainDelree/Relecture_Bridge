@@ -1,0 +1,22 @@
+faef59a
+
+commit faef59a
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Wed Jul 29 08:52:22 2026 +0200
+
+    Issue #323 : animation pioche — animer toutes les lettres du nouveau chevalet (suite #322)
+
+diff --git a/src/scrabble/ui/web/jeu.js b/src/scrabble/ui/web/jeu.js
+index b076425..19a19ef 100644
+--- a/src/scrabble/ui/web/jeu.js
++++ b/src/scrabble/ui/web/jeu.js
+@@ -1051,8 +1051,7 @@ document.addEventListener('DOMContentLoaded', async () => {
+             // rebâtit directement pour rester synchrone avec Python).
+             const arrivees = (premierAppel || animationPiocheEnCours)
+                 ? []
+-                : nouvellesLettresArrivees(anciennesLettres,
+-                                           etatChevalet.lettres || []);
++                : etatChevalet.lettres || [];
+             if (arrivees.length > 0) {
+                 animerNouvellesLettres(arrivees).then(() => {
+                     reconstruirePanneau();

@@ -1,0 +1,128 @@
+2607abd
+
+commit 2607abd
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Tue Jul 28 03:00:31 2026 +0200
+
+    docs: #85 — documentation Smart App Control Windows 11 (README + INSTALLATION_ALCHESS)
+    
+    Ajoute une note d'avertissement (README FR/EN, section Windows) et une
+    section détaillée (INSTALLATION_ALCHESS.md) expliquant le blocage SAC
+    sur Windows 11, sa cause (absence de certificat de signature de code),
+    la différence avec SmartScreen, et les contournements disponibles.
+
+diff --git a/INSTALLATION_ALCHESS.md b/INSTALLATION_ALCHESS.md
+index 2a2ce16..e09e5dd 100644
+--- a/INSTALLATION_ALCHESS.md
++++ b/INSTALLATION_ALCHESS.md
+@@ -4,6 +4,55 @@ Basé sur l'installation réelle du 13 avril 2026 sur ThinkPad X1 Carbon Gen 13.
+ Mis à jour le 30 avril 2026 — launcher GTK, port automatique.
+ Mis à jour le 1 mai 2026 — quirk usbhid Chessnut, recompilation driver .so.
+ Mis à jour le 3 mai 2026 — GitHub, renommage AlChess.
++Mis à jour le 28 juillet 2026 — limitation Smart App Control Windows 11 (issue #85).
++
++---
++
++## ⚠️ Windows 11 — Smart App Control
++
++> Ce guide porte principalement sur l'installation Ubuntu. Cette section
++> documente une limitation spécifique à **Windows 11**, pour les
++> utilisateurs installant AlChess via `AlChess_Setup.exe` ou
++> `install_alchess.ps1` (voir le README, section Windows).
++
++Sur Windows 11 avec **Smart App Control** (Contrôle intelligent des
++applications, SAC) activé, le double-clic sur `2-Lancer_AlChess.bat` ou sur
++le raccourci bureau est bloqué après l'installation, avec le message :
++
++> « Contrôle intelligent des applications a bloqué un fichier potentiellement
++> dangereux »
++
++**Pourquoi ça bloque** : SAC est un mécanisme de Windows 11 qui n'autorise
++l'exécution que des applications ayant une réputation établie via le cloud
++Microsoft (télémétrie, volume d'installations, signature numérique). AlChess
++est un logiciel open source distribué directement en ZIP/exécutable, sans
++**certificat de signature de code** (~100 €/an) — il n'a donc aucune
++réputation cloud et est traité par défaut comme potentiellement dangereux,
++qu'il le soit ou non.
++
++**Différence avec SmartScreen** : SmartScreen (l'avertissement « Windows a
++protégé votre ordinateur », plus ancien et plus connu) propose un bouton
++« Informations complémentaires » → « Exécuter quand même » qui permet de
++passer outre au cas par cas. **Smart App Control ne propose pas cette
++option** — c'est un blocage sans contournement possible au niveau de
++l'application elle-même. Sans certificat de signature de code, il est
++impossible de faire disparaître ce blocage par une modification du code
++d'AlChess.
++
++**Premier lancement — cas particulier** : le bouton « Lancer AlChess » à la
++fin de l'assistant d'installation NSIS (`AlChess_Setup.exe`) fonctionne
++**même avec SAC activé**, car il s'exécute dans le contexte (et hérite de la
++confiance) du processus installeur déjà lancé par l'utilisateur — SAC ne le
++bloque pas. C'est uniquement le **lancement ultérieur**, depuis le raccourci
++bureau ou `2-Lancer_AlChess.bat`, qui déclenche le blocage.
++
++**Contournements :**
++- **Option A** : lancer AlChess depuis le bouton « Lancer AlChess » à la fin
++  de l'installation (fonctionne toujours, y compris avec SAC activé)
++- **Option B** : désactiver Smart App Control dans Paramètres →
++  Confidentialité et sécurité → Sécurité Windows → Contrôle des applications
++  et du navigateur → Contrôle intelligent des applications → Désactivé
++- **Option C** : utiliser Windows 10, ou Windows 11 avec SAC déjà désactivé
+ 
+ ---
+ 
+diff --git a/README.md b/README.md
+index 628d2f0..45c58fb 100644
+--- a/README.md
++++ b/README.md
+@@ -20,6 +20,18 @@ Pas besoin de connaître Git ou Python. Rendez-vous sur la page **[Releases](htt
+ 
+ **Windows 10 / 11**
+ 
++> ⚠️ **Windows 11 — Contrôle intelligent des applications (Smart App Control)**
++> Si Windows bloque le lancement avec "Contrôle intelligent des applications a
++> bloqué un fichier potentiellement dangereux" :
++> - **Option A** : lancer AlChess depuis le bouton "Lancer AlChess" à la fin
++>   de l'installation (fonctionne toujours)
++> - **Option B** : désactiver Smart App Control dans Paramètres → Confidentialité
++>   et sécurité → Sécurité Windows → Contrôle des applications et du navigateur
++>   → Contrôle intelligent des applications → Désactivé
++> - **Option C** : utiliser Windows 10, ou Windows 11 avec SAC déjà désactivé
++> AlChess n'est pas signé numériquement (certificat de signature de code) —
++> c'est la cause de ce blocage.
++
+ Deux méthodes d'installation sont disponibles :
+ 
+ **Option A — Installeur `.exe` (recommandée, la plus simple)**
+@@ -122,6 +134,16 @@ No need to know Git or Python. Go to the **[Releases](https://github.com/AlainDe
+ 
+ **Windows 10 / 11**
+ 
++> ⚠️ **Windows 11 — Smart App Control**
++> If Windows blocks the launch with "Smart App Control has blocked a potentially
++> dangerous file":
++> - **Option A**: launch AlChess from the "Launch AlChess" button at the end
++>   of the installation (always works)
++> - **Option B**: disable Smart App Control in Settings → Privacy & Security
++>   → Windows Security → App & browser control → Smart App Control → Off
++> - **Option C**: use Windows 10, or Windows 11 with SAC already disabled
++> AlChess is not digitally signed — this is the cause of the block.
++
+ Two installation methods are available:
+ 
+ **Option A — `.exe` installer (recommended, simplest)**
+diff --git a/TACHES.md b/TACHES.md
+index 40a5ece..a14156c 100644
+--- a/TACHES.md
++++ b/TACHES.md
+@@ -47,6 +47,10 @@
+ 
+ ### Session du 28 juillet
+ 
++Documentation Smart App Control Windows 11 ajoutée dans README.md et
++INSTALLATION_ALCHESS.md — limitation structurelle (pas de signature de code),
++contournements documentés. (issue #85)
++
+ **Icône raccourci bureau — icône `.bat` générique persistante malgré le fix #69** `[Windows]` (issue #84, suite de #69/#39) — Bug validé sur machine Windows physique (test v1.3.0, 28 juillet) : le raccourci bureau affiche toujours l'icône rouge générique des `.bat` au lieu de `niclink_icon.ico`. **Investigation** : `installer-exe/alchess_setup.nsi` (`SecShortcut`, l.1638) référence déjà correctement `"$EXEDIR\niclink_icon.ico" 0` depuis #69 — rien à corriger côté NSIS, `makensis` confirme 0 erreur/0 warning après recompilation de contrôle. **Cause racine réelle trouvée ailleurs** : `install_alchess.ps1` (l.437-454, bloc COM `WScript.Shell` ajouté en #39) crée le **même** raccourci `$DESKTOP\AlChess.lnk` mais sans jamais définir `IconLocation` — or ce script (« Option B », toujours documenté et supporté dans le README depuis #75 comme alternative à `AlChess_Setup.exe`) reste un chemin d'installation valide. Un raccourci créé via cette voie n'a donc **aucune** icône spécifiée et hérite de l'icône générique du `.bat` cible — exactement le symptôme rapporté. **Correctif** : ajout de `$shortcut.IconLocation = "$scriptDir\niclink_icon.ico, 0"` juste après `WorkingDirectory`, avant `Description`/`Save()`. `niclink_icon.ico` est déjà dans la liste blanche `make_release.sh` (depuis #69) et co-localisé avec `install_alchess.ps1` dans le paquet livré → `$scriptDir\niclink_icon.ico` existe bien au runtime, aucune modif de packaging nécessaire. Vérifs sous Linux : accolades 85/85, parenthèses 111/111 (inchangé). Non testable sous Linux (pas de `pwsh`) — test réel décisif à faire par Alain : réinstaller via `1-Installer.bat`/`install_alchess.ps1` (pas `AlChess_Setup.exe`) et vérifier que le raccourci bureau affiche l'icône AlChess. Backup pinné avant modif.
+ 
+ Intégration de detect_chessnut.py au premier démarrage : appel dans web/__main__.py si connect() échoue (best-effort, non bloquant) + appel silencieux dans 2-Lancer_AlChess.bat avant le serveur. (issue #83)

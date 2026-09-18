@@ -1,0 +1,103 @@
+1c3b16a
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 1c3b16a
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Sun Aug 23 20:55:01 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Extrait les 15 style inline de #screen-config vers CSS — carte Options (issue #236)
+    
+    - .card style="padding:14px 16px" -> .cfg-options-card
+    - Lignes flex space-between -> .cfg-options-row (+ .cfg-options-row-spaced pour
+      les 2 premières lignes avec margin-bottom)
+    - label style="margin-bottom:0" -> .cfg-label-flush
+    - toggle wrapper (label flex gap cursor) -> .cfg-options-toggle
+    - input checkbox style -> .cfg-options-checkbox
+    - span label dynamique style -> .cfg-options-toggle-label
+    - Les 3 onchange (_refreshDynamicLabels(), maj inline du label bip,
+      virtSaveLegalPref()) laissés tels quels, hors périmètre de la tâche
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/nicsoft/web/static/css/main.css b/nicsoft/web/static/css/main.css
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 68adc0e..ae18b66 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/nicsoft/web/static/css/main.css
+# ── Version APRÈS ce commit.
++++ b/nicsoft/web/static/css/main.css
+# ── Zone modifiée : ligne 639 (6 ligne(s)) dans l'ancienne version → ligne 639 (15 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -639,6 +639,15 @@
+     .cfg-elo-caption { text-align: center; font-size: 0.78rem; color: #3a5a7a; }
+     .cfg-elo-caption-spaced { margin-bottom: 10px; }
+ 
++    /* Carte Options (config péda) */
++    .cfg-options-card { padding: 14px 16px; }
++    .cfg-label-flush { margin-bottom: 0; }
++    .cfg-options-row { display: flex; align-items: center; justify-content: space-between; }
++    .cfg-options-row-spaced { margin-bottom: 10px; }
++    .cfg-options-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; }
++    .cfg-options-checkbox { width: 16px; height: 16px; cursor: pointer; accent-color: #e94560; }
++    .cfg-options-toggle-label { font-size: 0.85rem; color: #445; display: inline-block; width: 52px; }
++
+     /* ── Colonne gauche (Historique) ── */
+     #left-panel {
+       width: 220px;
+# (diff du fichier suivant)
+diff --git a/nicsoft/web/templates/index.html b/nicsoft/web/templates/index.html
+# (index — ignorable)
+index a5dbe06..b868143 100644
+# (avant — fichier suivant)
+--- a/nicsoft/web/templates/index.html
+# (après — fichier suivant)
++++ b/nicsoft/web/templates/index.html
+# ── Zone modifiée : ligne 314 (30 ligne(s)) dans l'ancienne version → ligne 314 (30 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -314,30 +314,30 @@
+ 
+         </div><!-- fin card moteur -->
+ 
+-        <div class="card" style="padding:14px 16px;">
++        <div class="card cfg-options-card">
+           <h2 data-i18n="config.h2.options">Options</h2>
+-          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+-            <label class="cfg-label" style="margin-bottom:0;" data-i18n="config.label.analyse">Analyse des coups</label>
+-            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+-              <input type="checkbox" id="cfg-analyse" checked style="width:16px; height:16px; cursor:pointer; accent-color:#e94560;"
++          <div class="cfg-options-row cfg-options-row-spaced">
++            <label class="cfg-label cfg-label-flush" data-i18n="config.label.analyse">Analyse des coups</label>
++            <label class="cfg-options-toggle">
++              <input type="checkbox" id="cfg-analyse" checked class="cfg-options-checkbox"
+                 onchange="_refreshDynamicLabels()">
+-              <span id="cfg-analyse-label" style="font-size:0.85rem; color:#445; display:inline-block; width:52px;" data-i18n="common.activee">Activée</span>
++              <span id="cfg-analyse-label" class="cfg-options-toggle-label" data-i18n="common.activee">Activée</span>
+             </label>
+           </div>
+-          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+-            <label class="cfg-label" style="margin-bottom:0;" data-i18n="config.label.bip">Bip sonore</label>
+-            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+-              <input type="checkbox" id="cfg-bip" style="width:16px; height:16px; cursor:pointer; accent-color:#e94560;"
++          <div class="cfg-options-row cfg-options-row-spaced">
++            <label class="cfg-label cfg-label-flush" data-i18n="config.label.bip">Bip sonore</label>
++            <label class="cfg-options-toggle">
++              <input type="checkbox" id="cfg-bip" class="cfg-options-checkbox"
+                 onchange="document.getElementById('cfg-bip-label').textContent=t(this.checked?'common.active':'common.desactive')">
+-              <span id="cfg-bip-label" style="font-size:0.85rem; color:#445; display:inline-block; width:52px;" data-i18n="common.desactive">Désactivé</span>
++              <span id="cfg-bip-label" class="cfg-options-toggle-label" data-i18n="common.desactive">Désactivé</span>
+             </label>
+           </div>
+-          <div style="display:flex; align-items:center; justify-content:space-between;">
+-            <label class="cfg-label" style="margin-bottom:0;" data-i18n="config.label.coups_legaux">Afficher les coups légaux</label>
+-            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+-              <input type="checkbox" id="cfg-show-legal" style="width:16px; height:16px; cursor:pointer; accent-color:#e94560;"
++          <div class="cfg-options-row">
++            <label class="cfg-label cfg-label-flush" data-i18n="config.label.coups_legaux">Afficher les coups légaux</label>
++            <label class="cfg-options-toggle">
++              <input type="checkbox" id="cfg-show-legal" class="cfg-options-checkbox"
+                 onchange="virtSaveLegalPref(this.checked)">
+-              <span id="cfg-show-legal-label" style="font-size:0.85rem; color:#445; display:inline-block; width:52px;">Activé</span>
++              <span id="cfg-show-legal-label" class="cfg-options-toggle-label">Activé</span>
+             </label>
+           </div>
+         </div>

@@ -1,0 +1,146 @@
+8f07438
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 8f07438
+# ── Qui a fait ce commit.
+Author: CCL agent <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Sat Aug 8 13:03:25 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Issue #386 : detection flag Actualise au demarrage et a la fermeture
+    
+    - main.py : detecte actualise_update.flag au demarrage et lance
+      ActualiseUI.exe avant l'ouverture de la fenetre pywebview
+    - src/scrabble/ui/application.py : handler sur window.events.closing
+      qui lance le bat de mise a jour et supprime le flag a la fermeture
+    - tests/test_application.py : fenetre factice etendue avec
+      events.closing pour permettre l'attachement du handler
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/main.py b/main.py
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 7a58f6e..09f8b0d 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/main.py
+# ── Version APRÈS ce commit.
++++ b/main.py
+# ── Zone modifiée : ligne 22 (6 ligne(s)) dans l'ancienne version → ligne 22 (8 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -22,6 +22,8 @@ invoqué par défaut — disponible pour un rollback rapide si nécessaire.
+ 
+ from __future__ import annotations
+ 
++import json
++import subprocess
+ import sys
+ from pathlib import Path
+ 
+# ── Zone modifiée : ligne 47 (4 ligne(s)) dans l'ancienne version → ligne 49 (21 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -47,4 +49,21 @@ if __name__ == "__main__":
+         GLib.set_prgname("Scrabble")
+         GLib.set_application_name("Scrabble")
+ 
++    # Détection du flag de mise à jour Actualise (issue #386) : déposé par
++    # Actualise dans le dossier d'installation quand une mise à jour est prête.
++    # Lancé avant l'ouverture de la fenêtre pywebview, sans jamais bloquer le
++    # démarrage de Scrabble en cas de flag absent ou malformé.
++    _flag = Path(sys.executable).parent / "actualise_update.flag"
++    if _flag.exists():
++        try:
++            _data = json.loads(_flag.read_text(encoding="utf-8"))
++            subprocess.Popen([
++                _data["actualise_ui"],
++                "--bat", _data["bat"],
++                "--flag", str(_flag),
++                "--relancer", sys.executable,
++            ])
++        except Exception:
++            pass  # ne jamais bloquer le démarrage de Scrabble
++
+     raise SystemExit(main())
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/application.py b/src/scrabble/ui/application.py
+# (index — ignorable)
+index 2d90ae0..fcec009 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/application.py
+# (après — fichier suivant)
++++ b/src/scrabble/ui/application.py
+# ── Zone modifiée : ligne 34 (6 ligne(s)) dans l'ancienne version → ligne 34 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -34,6 +34,9 @@ scrabble.ui.application``) **sans** modifier le chemin de production par défaut
+ 
+ from __future__ import annotations
+ 
++import json
++import subprocess
++import sys
+ import threading
+ import time
+ from pathlib import Path
+# ── Zone modifiée : ligne 559 (6 ligne(s)) dans l'ancienne version → ligne 562 (22 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -559,6 +562,22 @@ def lancer_application_unifiee(routeur: ApiRouteur | None = None) -> ApiRouteur:
+         journal.info(
+             "Application unifiée : fenêtre unique ouverte sur l'accueil."
+         )
++
++        def _handler_fermeture_actualise() -> None:
++            # Mise à jour Actualise en attente (issue #386) : à la fermeture de
++            # la fenêtre, on lance le bat de mise à jour puis on laisse la
++            # fermeture se poursuivre normalement (le handler ne bloque pas).
++            _flag = Path(sys.executable).parent / "actualise_update.flag"
++            if _flag.exists():
++                try:
++                    _data = json.loads(_flag.read_text(encoding="utf-8"))
++                    _flag.unlink(missing_ok=True)
++                    subprocess.Popen([_data["bat"]], shell=True)
++                except Exception:
++                    pass
++
++        window.events.closing += _handler_fermeture_actualise
++
+         # UNE seule boucle pywebview pour toute l'application (issue #179).
+         webview.start(deployer_fenetre_maximisee, (window, "application"))
+         return routeur
+# (diff du fichier suivant)
+diff --git a/tests/test_application.py b/tests/test_application.py
+# (index — ignorable)
+index 871936c..0c5f251 100644
+# (avant — fichier suivant)
+--- a/tests/test_application.py
+# (après — fichier suivant)
++++ b/tests/test_application.py
+# ── Zone modifiée : ligne 225 (6 ligne(s)) dans l'ancienne version → ligne 225 (24 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -225,6 +225,24 @@ class TestChargerJeu:
+         assert routeur._vue_active == VUE_ACCUEIL
+ 
+ 
++class _EvenementFactice:
++    """Registre d'écouteurs minimal imitant ``webview.util.Event`` (``+=``, issue #386)."""
++
++    def __init__(self) -> None:
++        self.ecouteurs: list = []
++
++    def __iadd__(self, ecouteur):
++        self.ecouteurs.append(ecouteur)
++        return self
++
++
++class _EvenementsFactice:
++    """Espace de noms d'événements factice, seul ``closing`` est utilisé (issue #386)."""
++
++    def __init__(self) -> None:
++        self.closing = _EvenementFactice()
++
++
+ class _FenetreFactice:
+     """Fenêtre pywebview minimale traçant ``load_url``/``hide``/``show`` (issues #180/#181)."""
+ 
+# ── Zone modifiée : ligne 232 (6 ligne(s)) dans l'ancienne version → ligne 250 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -232,6 +250,7 @@ class _FenetreFactice:
+         self.urls: list[str] = []
+         self.masquee = False
+         self.montree = False
++        self.events = _EvenementsFactice()
+ 
+     def load_url(self, url: str) -> None:
+         self.urls.append(url)

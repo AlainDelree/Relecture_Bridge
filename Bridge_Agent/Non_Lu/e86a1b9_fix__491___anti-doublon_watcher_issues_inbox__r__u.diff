@@ -1,0 +1,121 @@
+e86a1b9
+
+commit e86a1b9
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Wed Aug 26 18:51:06 2026 +0200
+
+    fix #491 : anti-doublon watcher_issues_inbox (réutilise #189)
+    
+    scripts/watcher_issues_inbox.py::traiter_fichier appelle désormais
+    app/issues.py::_issue_ouverte_meme_titre(cfg_projet, titre) juste après
+    valider() et avant _creer_issue() — même fonction que l'anti-doublon du
+    formulaire web (issue #189), importée telle quelle, aucune logique
+    dupliquée.
+    
+    Si une issue OUVERTE du même dépôt porte déjà exactement ce titre
+    (comparaison stricte après strip(), comme l'existant) : le fichier est
+    rejeté (déplacé vers rejected/, motif explicite « doublon : une issue
+    #<n> portant ce titre est déjà ouverte »), journalisé REJECTED dans
+    logs/issues_inbox.log — la création via gh issue create n'a jamais lieu.
+    Sinon la création se poursuit normalement.
+    
+    Best-effort comme l'existant : si gh issue list échoue (réseau, timeout),
+    _issue_ouverte_meme_titre retourne None et la création n'est pas bloquée.
+    
+    Comble le trou révélé par les issues jumelles #486/#487 (25 août 2026,
+    titres identiques, dépôt à 2m26s d'intervalle depuis issues_inbox/),
+    créées et traitées en parallèle par CCL faute de cette garde côté flux
+    issues_inbox/ (elle n'existait jusqu'ici que dans app/issues.py::envoyer(),
+    flux formulaire web).
+    
+    Documentation : BRIDGE_AGENT_DOC.md §20.4 (nouveau paragraphe anti-doublon)
+    + changelog de fin de fichier ; docstring de module du script mise à jour.
+    
+    Vérifié par test manuel (mock de _issue_ouverte_meme_titre/valider/
+    _creer_issue) : cas doublon → rejet + log REJECTED + gh non appelé ; cas
+    titre unique → création + log OK, comportement inchangé.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+diff --git a/BRIDGE_AGENT_DOC.md b/BRIDGE_AGENT_DOC.md
+index 9a25778..dea311b 100644
+--- a/BRIDGE_AGENT_DOC.md
++++ b/BRIDGE_AGENT_DOC.md
+@@ -2343,6 +2343,19 @@ mais non numérique. Un échec de `gh issue create` (réseau, dépôt inaccessib
+ timeout de 30s...) provoque le même sort, avec le message d'erreur de `gh`
+ en détail.
+ 
++Anti-doublon (issue #491) : juste après cette validation et avant l'appel à
++`gh issue create`, le watcher réutilise **telle quelle**
++`_issue_ouverte_meme_titre(cfg, titre)` de `app/issues.py` (garde du formulaire
++web, issue #189) pour vérifier qu'aucune issue **OUVERTE** du même dépôt ne
++porte déjà exactement ce titre (comparaison stricte après `strip()`). Si oui →
++rejet (motif : `doublon : une issue #<n> portant ce titre est déjà ouverte`),
++même sort que les autres validations ci-dessus. Comme pour le formulaire,
++c'est du best-effort : un échec de l'appel `gh issue list` sous-jacent
++(réseau, timeout) fait retourner `None` à la fonction, et la création se
++poursuit normalement plutôt que d'être bloquée par une panne de vérification.
++Aucune logique dupliquée entre les deux flux (formulaire web et
++`issues_inbox/`) : une seule fonction, importée par les deux.
++
+ ### 20.5 Journalisation (rotation par nombre de lignes)
+ 
+ Chaque traitement (réussi ou rejeté) ajoute une ligne à
+@@ -2495,7 +2508,14 @@ que le reste du panneau (30 s, `rafraichirPanneauLateralResultats`).
+ 
+ ---
+ 
+-*Dernière mise à jour : 25 août 2026 — §20.10 « Pilotage du watcher depuis
++*Dernière mise à jour : 26 août 2026 — §20.4 « Anti-doublon » (issue #491) :
++`scripts/watcher_issues_inbox.py::traiter_fichier` réutilise telle quelle
++`_issue_ouverte_meme_titre()` de `app/issues.py` (garde du formulaire web,
++issue #189) pour rejeter un fichier `issues_inbox/` dont le titre correspond
++exactement à une issue déjà ouverte du même dépôt — comble le trou révélé par
++les issues jumelles #486/#487 (25 août 2026), créées et traitées en parallèle
++faute de cette garde côté flux `issues_inbox/`.
++Précédemment — 25 août 2026 — §20.10 « Pilotage du watcher depuis
+ le panneau Infrastructure » (issue #485) : le watcher spool `issues_inbox`
+ devient pilotable (démarrer avec durée, relancer, arrêter) depuis
+ `#pl-zone-extras` (zone réservée depuis l'issue #380), au lieu d'un
+diff --git a/scripts/watcher_issues_inbox.py b/scripts/watcher_issues_inbox.py
+index 53bed68..a99d5ab 100644
+--- a/scripts/watcher_issues_inbox.py
++++ b/scripts/watcher_issues_inbox.py
+@@ -11,7 +11,10 @@ de labels que app/issues.py (construire_body/construire_labels), pour rester
+ cohérent avec le flux du formulaire web. Le fichier traité est supprimé
+ après création réussie ; un fichier invalide (PROJET inconnu, titre vide,
+ extension différente de .txt, etc.) est déplacé vers issues_inbox/rejected/
+-avec le détail de l'erreur en suffixe de nom.
++avec le détail de l'erreur en suffixe de nom. Anti-doublon (issue #491) :
++avant création, réutilise app/issues.py::_issue_ouverte_meme_titre() (garde
++du formulaire web, issue #189) pour rejeter un titre déjà porté par une
++issue ouverte du même dépôt.
+ 
+ Après création réussie de l'issue, le watcher CCL du projet concerné
+ (`watcher.py --config configs/<projet>.conf`) est démarré automatiquement
+@@ -51,6 +54,7 @@ sys.path.insert(0, str(DOSSIER_SCRIPT))
+ from watcher import (charger_config, lire_conf, est_titre_chef,  # noqa: E402
+                      LABEL_NOTIF_PC, LABEL_NOTIF_GSM, LABEL_NOTIF_TOUS)
+ from app.watchers import demarrer_watcher  # noqa: E402 (issue #486)
++from app.issues import _issue_ouverte_meme_titre  # noqa: E402 (issue #491)
+ 
+ log = logging.getLogger("watcher_issues_inbox")
+ 
+@@ -406,6 +410,17 @@ def traiter_fichier(cfg: ConfigInbox, chemin: Path) -> None:
+         _rejeter(cfg, chemin, champs["titre"], champs["projet"], detail)
+         return
+ 
++    # Anti-doublon (issue #491) : réutilise telle quelle la garde du formulaire
++    # web (_issue_ouverte_meme_titre, app/issues.py — issue #189) pour refuser
++    # une issue dont le titre correspond exactement à une issue déjà OUVERTE du
++    # même dépôt. Best-effort par construction (cf. docstring de la fonction) :
++    # si `gh issue list` échoue, elle retourne None et la création se poursuit.
++    doublon = _issue_ouverte_meme_titre(cfg_projet, champs["titre"])
++    if doublon is not None:
++        _rejeter(cfg, chemin, champs["titre"], champs["projet"],
++                  f"doublon : une issue #{doublon} portant ce titre est déjà ouverte")
++        return
++
+     labels = construire_labels(champs)
+     body = construire_body(champs, cfg_projet)
+     succes, resultat = _creer_issue(cfg, cfg_projet, champs["titre"], labels, body)

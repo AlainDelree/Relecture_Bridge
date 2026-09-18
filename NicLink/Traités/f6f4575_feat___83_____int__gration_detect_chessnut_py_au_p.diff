@@ -1,0 +1,100 @@
+f6f4575
+
+commit f6f4575
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Tue Jul 28 01:30:20 2026 +0200
+
+    feat: #83 — intégration detect_chessnut.py au premier démarrage
+    
+    Appel best-effort de detect_chessnut.py dans _check_board_at_startup()
+    (alchess.py) si la connexion à l'échiquier échoue, et appel silencieux
+    dans 2-Lancer_AlChess.bat avant le lancement du serveur (Windows).
+
+diff --git a/2-Lancer_AlChess.bat b/2-Lancer_AlChess.bat
+index c5fdee1..0054735 100644
+--- a/2-Lancer_AlChess.bat
++++ b/2-Lancer_AlChess.bat
+@@ -60,7 +60,10 @@ echo   (fermer cette fenetre arrete le serveur)
+ echo   Journal : "%~dp0alchess_log.txt"
+ echo(
+ 
+-"%~dp0venv\Scripts\python.exe" -m nicsoft.web > "%~dp0alchess_log.txt" 2>&1
++rem Detection automatique du modele Chessnut (silencieux si echiquier absent, issue #83)
++"%~dp0venv\Scripts\python.exe" "%~dp0scripts\detect_chessnut.py" > "%~dp0alchess_log.txt" 2>&1
++
++"%~dp0venv\Scripts\python.exe" -m nicsoft.web >> "%~dp0alchess_log.txt" 2>&1
+ 
+ echo(
+ echo   AlChess s'est arrete. En cas de probleme, consultez le journal :
+diff --git a/TACHES.md b/TACHES.md
+index a80718e..d7f624f 100644
+--- a/TACHES.md
++++ b/TACHES.md
+@@ -47,6 +47,8 @@
+ 
+ ### Session du 28 juillet
+ 
++Intégration de detect_chessnut.py au premier démarrage : appel dans web/__main__.py si connect() échoue (best-effort, non bloquant) + appel silencieux dans 2-Lancer_AlChess.bat avant le serveur. (issue #83)
++
+ Intégration de detect_chessnut.py dans l'installeur NSIS : section SecChessnut ajoutée après SecVenv, appel avec le Python du venv, message utilisateur selon le code de sortie. makensis : 0 erreur, 0 warning. (issue #82)
+ 
+ - **Support Chessnut Go (idProduct `8501`) — non détecté par l'app** `[Linux]` (issue #78) — Alain utilise un Chessnut Go (modèle de voyage, ref CG100) : `lsusb` a révélé `2d80:8501`, même `idVendor` que tous les modèles Chessnut, `idProduct` inédit. Correctif identique à l'issue #77 (Air Plus) : `0x8501` ajouté à `PRODUCT_IDS` dans `hid_backend.py` (L.12), règle udev ajoutée dans `99-chessnutair.rules.example`, notes ajoutées dans `INSTALLATION_ALCHESS.md` aux côtés du Air (8003) et Air Plus (8202). `py_compile` OK sur `hid_backend.py`. **Test réel décisif à faire** avec l'échiquier branché. Backup pinné avant modif.
+diff --git a/nicsoft/web/alchess.py b/nicsoft/web/alchess.py
+index 6180b45..b4ff4e0 100644
+--- a/nicsoft/web/alchess.py
++++ b/nicsoft/web/alchess.py
+@@ -4,11 +4,12 @@ nicsoft/web/__main__.py — Point d'entrée principal NicLink.
+ import os
+ import time
+ import sys
++import subprocess
+ import threading
+ import webbrowser
+ import socket
+ import logging
+-from nicsoft.config import DATA_DIR, LOGS_DIR
++from nicsoft.config import APP_DIR, DATA_DIR, LOGS_DIR
+ from nicsoft.platform_utils import stop_modem_manager, start_modem_manager
+ from nicsoft.web.server import start_server, set_app_state, get_menu_action, send_event, set_virtual_board
+ from nicsoft.web import server as web_server
+@@ -93,6 +94,26 @@ def _find_free_port(start=5000):
+     return start  # fallback
+ 
+ 
++def _run_detect_chessnut():
++    """Best-effort, non bloquant : toute erreur est journalisée et ignorée."""
++    logger = logging.getLogger("niclink")
++    detect_script = APP_DIR / "scripts" / "detect_chessnut.py"
++    if not detect_script.exists():
++        return
++    try:
++        result = subprocess.run(
++            [sys.executable, str(detect_script)], capture_output=True, text=True, timeout=15
++        )
++        if result.returncode == 1:
++            logger.info("Nouveau modèle Chessnut enregistré. Relancez l'application.")
++        elif result.returncode == 0:
++            logger.info("Aucun échiquier Chessnut reconnu branché au démarrage.")
++        else:
++            logger.info(f"detect_chessnut.py — code retour {result.returncode} : {result.stderr.strip()}")
++    except Exception as e:
++        logger.info(f"detect_chessnut.py — appel best-effort échoué : {e}")
++
++
+ def _check_board_at_startup():
+     if not _board_check_lock.acquire(blocking=False):
+         return  # une vérification est déjà en cours
+@@ -117,11 +138,13 @@ def _check_board_at_startup():
+                 return  # succès
+             except SystemExit as e:
+                 if "board connection error" not in str(e):
++                    _run_detect_chessnut()
+                     send_event("board_error", {"message": "Échiquier non détecté — vérifiez l'USB et allumez le plateau."})
+                     return
+                 # board pas encore prêt — réessayer
+             except Exception:
+                 pass  # réessayer
++        _run_detect_chessnut()
+         send_event("board_error", {"message": "Échiquier non détecté — vérifiez l'USB et allumez le plateau."})
+     finally:
+         _board_check_lock.release()

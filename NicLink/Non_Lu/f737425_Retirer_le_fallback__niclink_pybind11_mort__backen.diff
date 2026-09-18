@@ -1,0 +1,56 @@
+f737425
+
+commit f737425
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Sat Aug 22 08:48:40 2026 +0200
+
+    Retirer le fallback _niclink/pybind11 mort, backend hidapi seul (issue #203)
+    
+    - driver.py : suppression du try/except de repli vers l'extension C++
+      _niclink.so (pybind11), remplacé par un ImportError explicite si
+      hidapi/hid_backend.py ne peut pas être chargé.
+    - pyproject.toml : retrait de pybind11>=2.10.0 du build-system, plus
+      nécessaire (les sources C++/CMake ont déjà été supprimées du dépôt
+      par le commit 26c8205 'chore: nettoyage dossiers et fichiers obsolètes').
+    - __init__.py : commentaire mis à jour (plus de fallback .so).
+
+diff --git a/nicsoft/niclink/__init__.py b/nicsoft/niclink/__init__.py
+index 9fbf5f8..96a20cf 100755
+--- a/nicsoft/niclink/__init__.py
++++ b/nicsoft/niclink/__init__.py
+@@ -1,2 +1,2 @@
+ from . import driver
+-from .driver import NicLinkManager, _niclink  # _niclink = hid_backend ou .so selon disponibilité
++from .driver import NicLinkManager, _niclink  # _niclink = hid_backend (backend hidapi)
+diff --git a/nicsoft/niclink/driver.py b/nicsoft/niclink/driver.py
+index 4208bda..5a953f0 100755
+--- a/nicsoft/niclink/driver.py
++++ b/nicsoft/niclink/driver.py
+@@ -28,9 +28,12 @@ import numpy as np
+ import numpy.typing as npt
+ 
+ try:
+-    from . import hid_backend as _niclink  # backend Python pur, multiplateforme
+-except ImportError:
+-    from . import _niclink  # fallback : extension C++ compilée (.so)
++    from . import hid_backend as _niclink  # backend Python pur (hidapi), multiplateforme
++except ImportError as exc:
++    raise ImportError(
++        "Impossible de charger le backend hidapi (nicsoft/niclink/hid_backend.py). "
++        "Vérifiez que le paquet 'hidapi' est installé (pip install hidapi)."
++    ) from exc
+ 
+ # mine
+ from .nl_exceptions import ExitNicLink, IllegalMove, NoMove, NoNicLinkFen
+diff --git a/nicsoft/pyproject.toml b/nicsoft/pyproject.toml
+index 4f71d17..0ec8865 100755
+--- a/nicsoft/pyproject.toml
++++ b/nicsoft/pyproject.toml
+@@ -6,7 +6,6 @@
+ [build-system]
+ requires = [
+     "setuptools>=42",
+-    "pybind11>=2.10.0",
+ ]
+ build-backend = "setuptools.build_meta"
+ 

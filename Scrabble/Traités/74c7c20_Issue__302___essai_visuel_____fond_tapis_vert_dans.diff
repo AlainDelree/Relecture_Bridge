@@ -1,0 +1,57 @@
+74c7c20
+
+commit 74c7c20
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Mon Jul 27 10:37:57 2026 +0200
+
+    Issue #302 : essai visuel — fond tapis vert dans .zone-centrale en mode France (miroir bande tricolore Belgicisme)
+
+diff --git a/scripts/_harness_jeu/i296_belgique_rempli_1280x800.png b/scripts/_harness_jeu/i296_belgique_rempli_1280x800.png
+new file mode 100644
+index 0000000..bbd72e4
+Binary files /dev/null and b/scripts/_harness_jeu/i296_belgique_rempli_1280x800.png differ
+diff --git a/scripts/_harness_jeu/i296_belgique_rempli_700x800.png b/scripts/_harness_jeu/i296_belgique_rempli_700x800.png
+new file mode 100644
+index 0000000..e253198
+Binary files /dev/null and b/scripts/_harness_jeu/i296_belgique_rempli_700x800.png differ
+diff --git a/scripts/_harness_jeu/i296_belgique_vide_700x800.png b/scripts/_harness_jeu/i296_belgique_vide_700x800.png
+new file mode 100644
+index 0000000..bd7edbb
+Binary files /dev/null and b/scripts/_harness_jeu/i296_belgique_vide_700x800.png differ
+diff --git a/scripts/_harness_jeu/i296_france_rempli_1280x800.png b/scripts/_harness_jeu/i296_france_rempli_1280x800.png
+new file mode 100644
+index 0000000..8ba2cfd
+Binary files /dev/null and b/scripts/_harness_jeu/i296_france_rempli_1280x800.png differ
+diff --git a/scripts/_harness_jeu/i296_france_rempli_700x800.png b/scripts/_harness_jeu/i296_france_rempli_700x800.png
+new file mode 100644
+index 0000000..2502186
+Binary files /dev/null and b/scripts/_harness_jeu/i296_france_rempli_700x800.png differ
+diff --git a/scripts/_harness_jeu/i296_france_vide_700x800.png b/scripts/_harness_jeu/i296_france_vide_700x800.png
+new file mode 100644
+index 0000000..de8d193
+Binary files /dev/null and b/scripts/_harness_jeu/i296_france_vide_700x800.png differ
+diff --git a/src/scrabble/ui/web/accueil.css b/src/scrabble/ui/web/accueil.css
+index 4314576..34588d3 100644
+--- a/src/scrabble/ui/web/accueil.css
++++ b/src/scrabble/ui/web/accueil.css
+@@ -689,6 +689,20 @@ body:not(.mode-belgicisme) .titre-section-tuiles .lettre-scrabble {
+     background: #ffffff;
+ }
+ 
++/* Essai visuel (issue #302) : en mode France, surclasse le blanc uni
++   ci-dessus par le même tapis vert que le fond de `body` (dégradé radial
++   défini tout en haut de ce fichier), en miroir de la bande tricolore
++   ajoutée plus bas pour le mode Belgicisme — objectif de cohérence
++   visuelle symétrique entre les deux modes. Les cartes Joueurs/Parties en
++   cours gardent leur propre fond blanc opaque (`.liste-joueurs`,
++   `.parties-en-cours` ci-dessous) : seuls les espaces entre elles et les
++   titres en tuiles se retrouvent sur ce vert plutôt que sur du blanc. */
++body:not(.mode-belgicisme) .zone-centrale {
++    background: var(--tapis-vert);
++    background-image:
++        radial-gradient(120% 90% at 50% 30%, var(--tapis-vert-clair) 0%, var(--tapis-vert) 55%, var(--tapis-vert-fonce) 100%);
++}
++
+ /* Les sections Joueurs/Continuer perdent leur marge de section générique
+    (24px) une fois réunies dans `.zone-centrale` : sans ce nettoyage (issue
+    #295, point 2g), la marge du bas de `.table-joueurs` créait un vide blanc

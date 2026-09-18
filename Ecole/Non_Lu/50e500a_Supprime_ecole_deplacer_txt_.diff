@@ -1,0 +1,15 @@
+50e500a
+
+commit 50e500a
+Author: Alain Delree <alain.delree@gmail.com>
+Date:   Tue Aug 25 12:36:18 2026 +0200
+
+    Supprime ecole_deplacer.txt
+
+diff --git a/ecole_deplacer.txt b/ecole_deplacer.txt
+deleted file mode 100644
+index 35e667c..0000000
+--- a/ecole_deplacer.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-comptes_test.md

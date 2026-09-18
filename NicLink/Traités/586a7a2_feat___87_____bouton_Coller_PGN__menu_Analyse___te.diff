@@ -1,0 +1,129 @@
+586a7a2
+
+commit 586a7a2
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Wed Jul 29 09:33:25 2026 +0200
+
+    feat: #87 — bouton Coller PGN (menu Analyse), textarea + parsePgn()
+
+diff --git a/TACHES.md b/TACHES.md
+index a14156c..537988f 100644
+--- a/TACHES.md
++++ b/TACHES.md
+@@ -45,6 +45,11 @@
+ 
+ ## ✅ Bugs résolus récemment
+ 
++### Session du 29 juillet
++
++Menu Analyse — bouton 📋 Coller PGN : zone textarea pour coller un PGN
++directement sans fichier intermédiaire, appelle parsePgn() existant. (issue #86)
++
+ ### Session du 28 juillet
+ 
+ Documentation Smart App Control Windows 11 ajoutée dans README.md et
+diff --git a/nicsoft/web/static/app.js b/nicsoft/web/static/app.js
+index 62804e7..56ff37f 100644
+--- a/nicsoft/web/static/app.js
++++ b/nicsoft/web/static/app.js
+@@ -2213,6 +2213,20 @@ function loadPgnFile(event) {
+   reader.readAsText(file);
+ }
+ 
++function toggleCollerPgn() {
++  const zone = document.getElementById('coller-pgn-zone');
++  zone.style.display = zone.style.display === 'none' ? 'block' : 'none';
++}
++
++function chargerPgnColle() {
++  const pgn = document.getElementById('coller-pgn-input').value.trim();
++  if (!pgn) { alert(t('error.pgn_vide') || 'Zone PGN vide.'); return; }
++  // Masquer la zone après chargement
++  document.getElementById('coller-pgn-zone').style.display = 'none';
++  document.getElementById('coller-pgn-input').value = '';
++  parsePgn(pgn);
++}
++
+ function parsePgn(pgn) {
+   try {
+     const chess = new Chess();
+diff --git a/nicsoft/web/static/i18n/de.json b/nicsoft/web/static/i18n/de.json
+index 8d81bd7..af20a5d 100644
+--- a/nicsoft/web/static/i18n/de.json
++++ b/nicsoft/web/static/i18n/de.json
+@@ -401,6 +401,8 @@
+ 
+   "analyse.titre":             "Partieanalyse",
+   "analyse.importer_pgn":      "Eine PGN-Datei importieren",
++  "analyse.btn.coller_pgn":    "📋 PGN einfügen",
++  "analyse.btn.charger_pgn_colle": "✅ Laden",
+ 
+   "config.joueur1":            "Spieler 1",
+   "config.joueur2":            "Spieler 2",
+@@ -420,6 +422,7 @@
+   "exercices.cliquer_jouer_virtuel": "Auf Ihre Figuren klicken zum Spielen.",
+ 
+   "error.pgn_non_reconnu":     "Ungültiges oder nicht erkanntes PGN.",
++  "error.pgn_vide":            "Der PGN-Bereich ist leer.",
+   "error.board.deconnecte":    "Brett getrennt oder ausgeschaltet. Programm neu starten.",
+ 
+   "game.pause_info":           "{player} spielt {color}",
+diff --git a/nicsoft/web/static/i18n/en.json b/nicsoft/web/static/i18n/en.json
+index 76abd55..888aaeb 100644
+--- a/nicsoft/web/static/i18n/en.json
++++ b/nicsoft/web/static/i18n/en.json
+@@ -401,6 +401,8 @@
+ 
+   "analyse.titre":             "Game analysis",
+   "analyse.importer_pgn":      "Import a PGN file",
++  "analyse.btn.coller_pgn":    "📋 Paste PGN",
++  "analyse.btn.charger_pgn_colle": "✅ Load",
+ 
+   "config.joueur1":            "Player 1",
+   "config.joueur2":            "Player 2",
+@@ -420,6 +422,7 @@
+   "exercices.cliquer_jouer_virtuel": "Click on your pieces to play.",
+ 
+   "error.pgn_non_reconnu":     "Invalid or unrecognised PGN.",
++  "error.pgn_vide":            "PGN area is empty.",
+   "error.board.deconnecte":    "Board disconnected or off. Restart the program.",
+ 
+   "game.pause_info":           "{player} plays {color}",
+diff --git a/nicsoft/web/static/i18n/fr.json b/nicsoft/web/static/i18n/fr.json
+index 626e7a7..5f2154f 100644
+--- a/nicsoft/web/static/i18n/fr.json
++++ b/nicsoft/web/static/i18n/fr.json
+@@ -401,6 +401,8 @@
+ 
+   "analyse.titre":             "Analyse de partie",
+   "analyse.importer_pgn":      "Importez un fichier PGN",
++  "analyse.btn.coller_pgn":    "📋 Coller PGN",
++  "analyse.btn.charger_pgn_colle": "✅ Charger",
+ 
+   "config.joueur1":            "Joueur 1",
+   "config.joueur2":            "Joueur 2",
+@@ -420,6 +422,7 @@
+   "exercices.cliquer_jouer_virtuel": "Cliquez sur vos pièces pour jouer.",
+ 
+   "error.pgn_non_reconnu":     "PGN invalide ou non reconnu.",
++  "error.pgn_vide":            "La zone PGN est vide.",
+   "error.board.deconnecte":    "Échiquier déconnecté ou éteint. Relancez le programme.",
+ 
+   "game.pause_info":           "{player} joue les {color}",
+diff --git a/nicsoft/web/templates/index.html b/nicsoft/web/templates/index.html
+index e4c3039..b70dcdc 100644
+--- a/nicsoft/web/templates/index.html
++++ b/nicsoft/web/templates/index.html
+@@ -671,6 +671,12 @@
+       <div class="card" style="padding:14px 18px; display:flex; flex-direction:column; gap:8px;">
+         <input type="file" id="pgn-file-input" accept=".pgn" style="display:none" onchange="loadPgnFile(event)">
+         <button class="btn btn-best"      style="margin-bottom:0;" onclick="document.getElementById('pgn-file-input').click()" data-i18n="labo.btn.importer_pgn">📂 Importer PGN</button>
++        <!-- Coller PGN directement -->
++        <button class="btn btn-best" style="margin-bottom:0;" onclick="toggleCollerPgn()" data-i18n="analyse.btn.coller_pgn">📋 Coller PGN</button>
++        <div id="coller-pgn-zone" style="display:none; margin-top:8px;">
++          <textarea id="coller-pgn-input" rows="8" style="width:100%; font-family:monospace; font-size:12px; resize:vertical;" placeholder="Collez ici le contenu PGN..."></textarea>
++          <button class="btn btn-reprendre" style="margin-top:4px; margin-bottom:0; width:100%;" onclick="chargerPgnColle()" data-i18n="analyse.btn.charger_pgn_colle">✅ Charger</button>
++        </div>
+         <!-- Classeur de session -->
+         <div id="basket-row-analyse" style="display:flex; gap:6px; align-items:stretch;">
+           <span class="aide-panier-icone" onclick="ouvrirAidePanier()" data-i18n-title="aide.panier.icone_title" title="Aide sur le classeur">?</span>

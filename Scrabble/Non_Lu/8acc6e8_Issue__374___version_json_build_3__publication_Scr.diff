@@ -1,0 +1,15 @@
+8acc6e8
+
+commit 8acc6e8
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Thu Aug 6 10:38:51 2026 +0200
+
+    Issue #374 : version.json build 3 (publication Scrabble)
+
+diff --git a/version.json b/version.json
+index 01a28f2..d5874c9 100644
+--- a/version.json
++++ b/version.json
+@@ -1 +1 @@
+-{"build": 2, "sha256": "7f37c52e63d028f02c92aecb1501652c5100c1278142897e6b84a03cc47b0efb"}
++{"build": 3, "sha256": "b71cfc49871a6a7326d7c24f8235d84b6c0bac928974b8b0cd22e129085ea41a"}

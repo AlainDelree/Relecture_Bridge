@@ -1,0 +1,90 @@
+5c1e234
+
+commit 5c1e234
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Thu Aug 20 14:33:27 2026 +0200
+
+    UX: carte Rodent téléchargeable = style orange + pulsation + tagline Installer (issue #191)
+
+diff --git a/nicsoft/web/static/app.js b/nicsoft/web/static/app.js
+index ea802d8..f72d5c9 100644
+--- a/nicsoft/web/static/app.js
++++ b/nicsoft/web/static/app.js
+@@ -541,6 +541,7 @@ function _applyRodentAvailability() {
+   const msg = t("engine.rodent.unavailable");
+   const downloadHint = t("engine.rodent.download");
+   const downloadState = _rodentDownloadable && !_rodentAvailable;
++  const tagline = downloadState ? t("engine.rodent.install") : t("config.tagline.rodent");
+   [["cfg-engine-rodent", "cfg-rodent-unavailable", "cfg-rodent-icon"],
+    ["labo-eng-rodent",   "labo-rodent-unavailable", "labo-rodent-icon"]].forEach(([btnId, msgId, iconId]) => {
+     const btn = document.getElementById(btnId);
+@@ -552,6 +553,8 @@ function _applyRodentAvailability() {
+       if (_rodentAvailable)   btn.removeAttribute("title");
+       else if (downloadState) btn.setAttribute("title", downloadHint);
+       else                    btn.setAttribute("title", msg);
++      const taglineEl = btn.querySelector(".engine-tagline");
++      if (taglineEl) taglineEl.textContent = tagline;
+     }
+     if (icon) icon.textContent = downloadState ? "⬇" : "🐭";
+     if (box) box.style.display = (!_rodentAvailable && !downloadState) ? "" : "none";
+diff --git a/nicsoft/web/static/css/main.css b/nicsoft/web/static/css/main.css
+index 965ffe8..d04156c 100644
+--- a/nicsoft/web/static/css/main.css
++++ b/nicsoft/web/static/css/main.css
+@@ -412,11 +412,16 @@
+     }
+     /* Rodent absent mais téléchargeable (Windows) : carte cliquable = bouton de téléchargement */
+     .color-btn.engine-downloadable {
+-      border-color: #3a5a7a;
+-      background: #dce8f5;
+-      color: #1a2a3a;
++      border-color: #e67e22;
++      background: #fff3e0;
++      color: #7d3c00;
++      animation: rodent-downloadable-pulse 2s ease-in-out infinite;
++    }
++    .color-btn.engine-downloadable:hover { background: #ffe0b2; }
++    @keyframes rodent-downloadable-pulse {
++      0%, 100% { box-shadow: 0 0 0 0 rgba(230, 126, 34, 0.35); }
++      50%      { box-shadow: 0 0 6px 3px rgba(230, 126, 34, 0.35); }
+     }
+-    .color-btn.engine-downloadable:hover { background: #c2d9ee; }
+     .color-btn.engine-downloading {
+       opacity: 0.6;
+       cursor: wait;
+diff --git a/nicsoft/web/static/i18n/de.json b/nicsoft/web/static/i18n/de.json
+index 07de1ac..33fa3f5 100644
+--- a/nicsoft/web/static/i18n/de.json
++++ b/nicsoft/web/static/i18n/de.json
+@@ -90,6 +90,7 @@
+   "engine.maia.unavailable": "Maia (lc0 + Gewichte) ist auf diesem System nicht installiert",
+   "engine.rodent.unavailable": "Rodent-Engine auf diesem System nicht verfügbar",
+   "engine.rodent.download": "Rodent IV herunterladen",
++  "engine.rodent.install": "Installieren",
+   "engine.rodent.downloading": "Wird heruntergeladen…",
+   "engine.rodent.download_ok": "Rodent IV heruntergeladen — einsatzbereit",
+   "engine.rodent.download_error": "Download fehlgeschlagen — Internetverbindung prüfen",
+diff --git a/nicsoft/web/static/i18n/en.json b/nicsoft/web/static/i18n/en.json
+index 1dfbe45..7f3de64 100644
+--- a/nicsoft/web/static/i18n/en.json
++++ b/nicsoft/web/static/i18n/en.json
+@@ -90,6 +90,7 @@
+   "engine.maia.unavailable": "Maia (lc0 + weights) not installed on this system",
+   "engine.rodent.unavailable": "Rodent engine unavailable on this system",
+   "engine.rodent.download": "Download Rodent IV",
++  "engine.rodent.install": "Install",
+   "engine.rodent.downloading": "Downloading…",
+   "engine.rodent.download_ok": "Rodent IV downloaded — ready to use",
+   "engine.rodent.download_error": "Download failed — check your internet connection",
+diff --git a/nicsoft/web/static/i18n/fr.json b/nicsoft/web/static/i18n/fr.json
+index f50c848..6ae4b26 100644
+--- a/nicsoft/web/static/i18n/fr.json
++++ b/nicsoft/web/static/i18n/fr.json
+@@ -90,6 +90,7 @@
+   "engine.maia.unavailable": "Maia (lc0 + poids) non installé sur ce système",
+   "engine.rodent.unavailable": "Moteur Rodent indisponible sur ce système",
+   "engine.rodent.download": "Télécharger Rodent IV",
++  "engine.rodent.install": "Installer",
+   "engine.rodent.downloading": "Téléchargement…",
+   "engine.rodent.download_ok": "Rodent IV téléchargé — prêt à l'emploi",
+   "engine.rodent.download_error": "Échec du téléchargement — vérifiez votre connexion internet",

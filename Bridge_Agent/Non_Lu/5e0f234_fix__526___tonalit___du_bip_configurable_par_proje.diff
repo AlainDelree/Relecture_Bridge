@@ -1,0 +1,618 @@
+5e0f234
+
+commit 5e0f234
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Thu Sep 10 18:59:20 2026 +0200
+
+    fix #526 : tonalité du bip configurable par projet (TONALITE_BIP)
+
+diff --git a/BRIDGE_AGENT_DOC.md b/BRIDGE_AGENT_DOC.md
+index 6bf183d..22f2904 100644
+--- a/BRIDGE_AGENT_DOC.md
++++ b/BRIDGE_AGENT_DOC.md
+@@ -2180,6 +2180,36 @@ new_issue.py (ThinkPad) → polling gh → détecte la transition → bip/bulle/
+   reconnue → défaut inchangé (`plat`), pour ne rien casser silencieusement.
+   Ce fichier n'est **pas** un `configs/*.conf` : le garde-fou §11 ne s'y
+   applique pas.
++- **Tonalité du bip par projet (issue #526), clé `.conf` `TONALITE_BIP`.**
++  `son_actif.txt` (ci-dessus) choisit le son pour **tous** les projets à la
++  fois ; `TONALITE_BIP` (optionnelle, entier en **demi-tons**, défaut `0` =
++  tonalité normale) permet en plus de distinguer **à l'oreille** quel projet
++  vient de terminer une issue, sans gérer de bibliothèque de fichiers son.
++  `notifications.py::bip()`/`notifier()` acceptent désormais un paramètre
++  `tonalite`, transmis en CLI (`--tonalite <demi-tons>`) au script bip
++  configuré — `watcher.py` (enveloppes `bip()`/`notifier()`) et
++  `app/notifications_poller.py` le lisent depuis `CFG.tonalite_bip` /
++  `cfg.tonalite_bip` (`Config.tonalite_bip`, `charger_config`). Deux
++  implémentations :
++  - **`scripts/traitement_fin.py`** (script partagé par défaut, voir plus
++    haut) : le son est synthétisé en Python, donc la tonalité se traduit
++    simplement en décalant la fréquence de synthèse
++    (`f_effective = f_base × 2^(demi-tons/12)`), sans dépendance externe —
++    orthogonal au choix `plat`/`cloche` de `son_actif.txt`.
++  - **`scripts/bip_Cloche.py`** (legacy, conservé pour compatibilité —
++    ex. `chesscoach.conf` y pointe encore explicitement) : le son est un
++    fichier système fixe (`SONS_CANDIDATS`), donc la tonalité est appliquée
++    en pitch-shiftant ce fichier via l'effet `pitch` de **`sox`** (en
++    centièmes de demi-ton). `sox` absent, `TONALITE_BIP = 0`, ou tout échec
++    de la transformation → repli silencieux sur le son d'origine, inchangé
++    (même philosophie que le reste du script : un bip qui échoue ne casse
++    jamais l'appelant).
++  - **Onglet Configuration de `new_issue.py`** : curseur `-12`…`+12`
++    demi-tons (`conf-TONALITE_BIP`) à côté du champ « Script bip », avec un
++    bouton **« Tester le son »** qui POSTe sur `/tester-bip/<projet>`
++    (`app/projets.py::tester_bip`) — joue le bip avec la tonalité
++    actuellement réglée dans le curseur, **sans** l'enregistrer dans le
++    `.conf`, pour ajuster à l'oreille avant de cliquer sur Enregistrer.
+ 
+ **Éviter le spam de vieilles issues au démarrage.** Deux garde-fous combinés :
+ - **filtre de récence** : seules les transitions horodatées dans les
+@@ -2836,7 +2866,23 @@ de création d'issue, seul valable pour du contenu qu'il produit.
+ 
+ ---
+ 
+-*Dernière mise à jour : 7 septembre 2026 — §3/§11/§20 « Retrait des
++*Dernière mise à jour : 10 septembre 2026 — §17 « Tonalité du bip par
++projet » (issue #526) : nouvelle clé `.conf` optionnelle `TONALITE_BIP`
++(entier en demi-tons, défaut 0), pour distinguer à l'oreille quel projet
++vient de terminer une issue sans gérer de bibliothèque de sons.
++`notifications.py::bip()`/`notifier()` acceptent un paramètre `tonalite`,
++transmis en CLI (`--tonalite <demi-tons>`) au script bip configuré.
++`scripts/traitement_fin.py` (script partagé par défaut) décale directement
++sa fréquence de synthèse (`f_effective = f_base × 2^(demi-tons/12)`), sans
++dépendance externe ; `scripts/bip_Cloche.py` (legacy, encore utilisé par
++`chesscoach.conf`) pitch-shifte le fichier son via l'effet `pitch` de
++`sox`, avec repli silencieux sur le son d'origine si `sox` est absent ou
++échoue. Nouveau curseur `-12`…`+12` demi-tons dans l'onglet Configuration
++de `new_issue.py`, avec un bouton « Tester le son » (`POST
++/tester-bip/<projet>`, `app/projets.py::tester_bip`) qui joue le bip avec
++la tonalité du curseur avant tout enregistrement.
++
++Précédemment — 7 septembre 2026 — §3/§11/§20 « Retrait des
+ mentions du copier-coller pour la création d'issues » (issue #518) : le
+ copier-coller dans le formulaire web `new_issue.py` n'est plus présenté
+ comme une méthode normale de création d'issue à partir de contenu produit
+diff --git a/app/__init__.py b/app/__init__.py
+index ab31263..bef6de0 100644
+--- a/app/__init__.py
++++ b/app/__init__.py
+@@ -60,7 +60,7 @@ def _enregistrer_routes(app: Flask) -> None:
+     ce qui ne fonctionne qu'une fois le package app initialisé.
+     """
+     from app.auth import login_requis, login, login_post, logout
+-    from app.projets import get_config, post_config
++    from app.projets import get_config, post_config, tester_bip
+     from app.nouveau_projet import verifier_nouveau_projet, creer_nouveau_projet
+     from app.watchers import (watchers, lancer_watcher,
+                               arreter_watcher_route, statut)
+@@ -105,6 +105,8 @@ def _enregistrer_routes(app: Flask) -> None:
+     app.add_url_rule("/modifier-label-notif", "modifier_label_notif", login_requis(modifier_label_notif), methods=["POST"])
+     app.add_url_rule("/config/<nom_projet>", "get_config", login_requis(get_config), methods=["GET"])
+     app.add_url_rule("/config/<nom_projet>", "post_config", login_requis(post_config), methods=["POST"])
++    # Tonalité du bip par projet (issue #526) : test immédiat, avant enregistrement.
++    app.add_url_rule("/tester-bip/<nom_projet>", "tester_bip", login_requis(tester_bip), methods=["POST"])
+     app.add_url_rule("/nouveau-projet/verifier", "verifier_nouveau_projet", login_requis(verifier_nouveau_projet), methods=["GET"])
+     app.add_url_rule("/nouveau-projet", "creer_nouveau_projet", login_requis(creer_nouveau_projet), methods=["POST"])
+     app.add_url_rule("/watchers", "watchers", login_requis(watchers))
+diff --git a/app/notifications_poller.py b/app/notifications_poller.py
+index 5b349a4..668ff40 100644
+--- a/app/notifications_poller.py
++++ b/app/notifications_poller.py
+@@ -220,7 +220,7 @@ def _notifier_transition(cfg, tr: dict):
+             titre=f"✅ {cfg.nom} #{numero} — traitée",
+             message=f"'{titre}' traitée avec succès.",
+             urgence_bureau="normal", priorite_ntfy="default",
+-            numero=numero,
++            numero=numero, tonalite=cfg.tonalite_bip,
+         )
+     else:  # needs-human
+         notifications.notifier(
+@@ -228,7 +228,7 @@ def _notifier_transition(cfg, tr: dict):
+             titre=f"❌ {cfg.nom} #{numero} — échec définitif",
+             message=f"'{titre}' — intervention humaine requise.",
+             urgence_bureau="critical", priorite_ntfy="high",
+-            numero=numero,
++            numero=numero, tonalite=cfg.tonalite_bip,
+         )
+ 
+ 
+diff --git a/app/projets.py b/app/projets.py
+index 61528ae..b9265b4 100644
+--- a/app/projets.py
++++ b/app/projets.py
+@@ -18,13 +18,14 @@ DOSSIER_SCRIPT = Path(__file__).resolve().parent.parent
+ sys.path.insert(0, str(DOSSIER_SCRIPT))
+ 
+ from watcher import Config, charger_config  # noqa: E402
++import notifications  # noqa: E402
+ 
+ 
+ # Clés modifiables via l'interface (les autres : NOM, DEPOT, REP_TRAVAIL,
+ # PERIMETRE, CMD_BACKUP se changent à la main dans le .conf).
+ CLES_EDITABLES = {
+     "TOPIC_NTFY", "LABEL", "INTERVALLE", "MAX_ESSAIS",
+-    "TIMEOUT_CLAUDE", "SCRIPT_BIP", "LOG_TAILLE_MAX_MO", "LOG_ARCHIVES",
++    "TIMEOUT_CLAUDE", "SCRIPT_BIP", "TONALITE_BIP", "LOG_TAILLE_MAX_MO", "LOG_ARCHIVES",
+     "MODELE_CCL", "MOT_DE_PASSE", "FICHIER_CONTEXTE", "COULEUR",
+     "DELAI_INACTIVITE_MIN",
+ }
+@@ -137,6 +138,7 @@ def get_config(nom_projet):
+         max_essais     = cfg.max_essais,
+         timeout_claude = cfg.timeout_claude,
+         script_bip     = str(cfg.script_bip),
++        tonalite_bip   = cfg.tonalite_bip,
+         fichier_contexte = cfg.fichier_contexte,
+         log_taille_max_mo = cfg.log_taille_max_mo,
+         log_archives   = cfg.log_archives,
+@@ -151,3 +153,22 @@ def post_config(nom_projet):
+     data = request.json or {}
+     ok, msg = sauvegarder_conf(nom_projet, data)
+     return jsonify(succes=ok, message=msg)
++
++
++def tester_bip(nom_projet):
++    """POST /tester-bip/<nom_projet> — joue le bip avec la tonalité fournie
++    dans le corps JSON ({"tonalite": <demi-tons>}), SANS toucher au .conf
++    (issue #526) : permet à Alain d'ajuster à l'oreille avant d'enregistrer.
++    Utilise le SCRIPT_BIP actuellement configuré pour ce projet ; best-effort,
++    comme le reste de la chaîne de notification (aucune erreur ne remonte au
++    navigateur si le bip échoue)."""
++    cfg = projet_par_nom(nom_projet)
++    if cfg is None:
++        return jsonify(erreur="Projet introuvable."), 404
++    data = request.json or {}
++    try:
++        tonalite = int(data.get("tonalite", 0))
++    except (TypeError, ValueError):
++        tonalite = 0
++    notifications.bip(cfg.script_bip, 1, tonalite=tonalite)
++    return jsonify(succes=True)
+diff --git a/notifications.py b/notifications.py
+index b5585d0..5d77cad 100644
+--- a/notifications.py
++++ b/notifications.py
+@@ -45,19 +45,24 @@ def a_un_label_notif(labels: list[str]) -> bool:
+             or LABEL_NOTIF_TOUS in labels)
+ 
+ 
+-def bip(script_bip: Path, fois: int = 1, projet: str | None = None, numero=None):
++def bip(script_bip: Path, fois: int = 1, projet: str | None = None, numero=None,
++        tonalite: int = 0):
+     """Bip sonore via le script partagé (Bridge_Agent/scripts/traitement_fin.py,
+     anciennement bip.py). `script_bip` : chemin du script. Silencieux si absent.
+     `projet`/`numero`, si tous deux fournis, sont transmis en CLI au script pour
+     qu'il notifie new_issue.py en plus du bip (SSE de rafraîchissement de
+     l'onglet Résultats, issue #350) — best-effort côté script, sans incidence
+-    ici en cas d'échec."""
++    ici en cas d'échec. `tonalite` (issue #526) : décalage de tonalité en
++    demi-tons, propre au projet (lu depuis son .conf par l'appelant) — transmis
++    en CLI si non nul, ignoré par les scripts qui ne le supportent pas."""
+     script_bip = Path(script_bip)
+     if not script_bip.exists():
+         return
+     argv_supplementaires = []
+     if projet and numero is not None:
+-        argv_supplementaires = ["--projet", str(projet), "--numero", str(numero)]
++        argv_supplementaires += ["--projet", str(projet), "--numero", str(numero)]
++    if tonalite:
++        argv_supplementaires += ["--tonalite", str(tonalite)]
+     for _ in range(fois):
+         try:
+             subprocess.run(["python3", str(script_bip), *argv_supplementaires],
+@@ -106,15 +111,18 @@ def notifier_ntfy(url_ntfy: str, titre: str, message: str,
+ def notifier(labels: list[str], nom_projet: str, url_ntfy: str, script_bip: Path,
+              titre: str, message: str,
+              urgence_bureau: str = "normal", priorite_ntfy: str = "default",
+-             fois_bip: int = 1, numero=None, log: logging.Logger = _log_defaut):
++             fois_bip: int = 1, numero=None, tonalite: int = 0,
++             log: logging.Logger = _log_defaut):
+     """Dispatch de notification selon les labels de l'issue.
+     Le bip et les canaux additionnels (notify-send, ntfy) sont opt-in via les
+     labels notif_pc / notif_gsm / notif_tous : sans aucun de ces labels, aucun
+     signal n'est émis. fois_bip renforce le signal (ex. 3 pour une alerte
+     critique). `numero`, si fourni, permet au bip de notifier new_issue.py de
+-    la fin de CETTE issue précise (SSE, issue #350)."""
++    la fin de CETTE issue précise (SSE, issue #350). `tonalite` (issue #526) :
++    décalage de tonalité en demi-tons propre au projet, transmis tel quel à
++    bip()."""
+     if a_un_label_notif(labels):
+-        bip(script_bip, fois_bip, projet=nom_projet, numero=numero)
++        bip(script_bip, fois_bip, projet=nom_projet, numero=numero, tonalite=tonalite)
+     if LABEL_NOTIF_PC in labels or LABEL_NOTIF_TOUS in labels:
+         notifier_bureau(nom_projet, titre, message, urgence_bureau, log=log)
+     if LABEL_NOTIF_GSM in labels or LABEL_NOTIF_TOUS in labels:
+diff --git a/nouveau_projet.py b/nouveau_projet.py
+index e3bc97e..257234f 100755
+--- a/nouveau_projet.py
++++ b/nouveau_projet.py
+@@ -910,6 +910,9 @@ INTERVALLE        = 10
+ MAX_ESSAIS        = 3
+ TIMEOUT_CLAUDE    = 300
+ SCRIPT_BIP        = {script_bip}
++# Décalage de tonalité du bip en demi-tons, propre à ce projet (issue #526).
++# 0 = tonalité normale ; réglable aussi depuis l'onglet Configuration.
++# TONALITE_BIP    = 0
+ 
+ # ─── Journaux (rotation par taille, archives datées) ──────────────────────────
+ LOG_TAILLE_MAX_MO = 1
+diff --git a/scripts/bip_Cloche.py b/scripts/bip_Cloche.py
+index b8e8667..c90cd7f 100644
+--- a/scripts/bip_Cloche.py
++++ b/scripts/bip_Cloche.py
+@@ -16,8 +16,9 @@ Bridge_Agent, à côté du reste du bridge.
+ > (`python3 bip.py`, aucun argument requis).
+ 
+ Usage :
+-    python3 bip.py           # un bip
+-    python3 bip.py 3         # trois bips (argument optionnel : nombre de bips)
++    python3 bip.py                          # un bip
++    python3 bip.py 3                        # trois bips (argument positionnel optionnel)
++    python3 bip.py --tonalite -3             # bip décalé de -3 demi-tons (issue #526)
+ 
+ Le script tente plusieurs backends dans l'ordre et s'arrête au premier qui
+ fonctionne :
+@@ -25,15 +26,29 @@ fonctionne :
+   2. aplay sur un son système (ALSA) ;
+   3. caractère BEL (\\a) sur le terminal (repli minimal, dépend de la config).
+ 
++Tonalité par projet (issue #526) : `--tonalite <demi-tons>` décale la hauteur
++du son joué via l'effet `pitch` de `sox` (en centièmes de demi-ton : 100 cents
++= 1 demi-ton), pour distinguer à l'oreille quel projet vient de terminer une
++issue sans gérer une bibliothèque de sons. `sox` absent, `--tonalite 0`
++(défaut) ou toute erreur de transformation → repli silencieux sur le son
++d'origine, inchangé (jamais d'échec total, même philosophie que le reste du
++script). Le backend canberra (1bis, pas de fichier à transformer) ignore la
++tonalité.
++
+ Aucune dépendance Python externe : uniquement la bibliothèque standard et des
+-binaires système optionnels. Chaque tentative est silencieuse en cas d'échec —
+-un bip qui échoue ne doit jamais faire planter l'appelant.
++binaires système optionnels (dont `sox`, optionnel, pour la tonalité). Chaque
++tentative est silencieuse en cas d'échec — un bip qui échoue ne doit jamais
++faire planter l'appelant.
+ """
+ 
++import argparse
++import os
+ import shutil
+ import subprocess
+ import sys
++import tempfile
+ import time
++from pathlib import Path
+ 
+ # Sons système courants (freedesktop / Ubuntu). Le premier existant est utilisé.
+ SONS_CANDIDATS = [
+@@ -45,61 +60,101 @@ SONS_CANDIDATS = [
+ 
+ 
+ def _premier_son_existant() -> str | None:
+-    from pathlib import Path
+     for chemin in SONS_CANDIDATS:
+         if Path(chemin).exists():
+             return chemin
+     return None
+ 
+ 
+-def un_bip() -> bool:
+-    """Émet un bip. Retourne True si un backend a été lancé sans erreur."""
+-    son = _premier_son_existant()
++def _son_transforme(son: str, demitons: int) -> tuple[str, bool]:
++    """Décale la tonalité de `son` de `demitons` demi-tons via `sox pitch`
++    (issue #526). Retourne (chemin_a_jouer, est_temporaire) : le fichier
++    d'origine, inchangé, si `demitons` vaut 0, si `sox` est absent du système,
++    ou si la transformation échoue pour toute raison — jamais d'exception
++    propagée."""
++    if not demitons or not shutil.which("sox"):
++        return son, False
++    tmp = tempfile.mktemp(suffix=".wav")
++    try:
++        resultat = subprocess.run(
++            ["sox", son, tmp, "pitch", str(demitons * 100)],
++            capture_output=True, timeout=5,
++        )
++        if resultat.returncode == 0 and Path(tmp).exists() and Path(tmp).stat().st_size > 0:
++            return tmp, True
++    except Exception:
++        pass
++    try:
++        os.remove(tmp)
++    except OSError:
++        pass
++    return son, False
+ 
+-    # 1. PulseAudio / PipeWire.
+-    if son and shutil.which("paplay"):
+-        try:
+-            subprocess.run(["paplay", son], capture_output=True, timeout=5)
+-            return True
+-        except Exception:
+-            pass
+ 
+-    # 1bis. canberra (thème de sons du bureau) — n'a pas besoin de fichier.
+-    if shutil.which("canberra-gtk-play"):
+-        try:
+-            subprocess.run(["canberra-gtk-play", "-i", "bell"],
+-                           capture_output=True, timeout=5)
+-            return True
+-        except Exception:
+-            pass
++def un_bip(demitons: int = 0) -> bool:
++    """Émet un bip, éventuellement décalé en tonalité de `demitons` demi-tons
++    (issue #526). Retourne True si un backend a été lancé sans erreur."""
++    son = _premier_son_existant()
++    son_joue, temporaire = _son_transforme(son, demitons) if son else (None, False)
+ 
+-    # 2. ALSA.
+-    if son and shutil.which("aplay"):
++    try:
++        # 1. PulseAudio / PipeWire.
++        if son_joue and shutil.which("paplay"):
++            try:
++                subprocess.run(["paplay", son_joue], capture_output=True, timeout=5)
++                return True
++            except Exception:
++                pass
++
++        # 1bis. canberra (thème de sons du bureau) — n'a pas besoin de fichier,
++        # la tonalité ne s'y applique donc pas.
++        if shutil.which("canberra-gtk-play"):
++            try:
++                subprocess.run(["canberra-gtk-play", "-i", "bell"],
++                               capture_output=True, timeout=5)
++                return True
++            except Exception:
++                pass
++
++        # 2. ALSA.
++        if son_joue and shutil.which("aplay"):
++            try:
++                subprocess.run(["aplay", "-q", son_joue], capture_output=True, timeout=5)
++                return True
++            except Exception:
++                pass
++
++        # 3. Repli minimal : caractère BEL. Dépend de la config du terminal
++        #    (peut être muet), mais ne coûte rien et ne peut pas échouer.
+         try:
+-            subprocess.run(["aplay", "-q", son], capture_output=True, timeout=5)
++            sys.stdout.write("\a")
++            sys.stdout.flush()
+             return True
+         except Exception:
+-            pass
+-
+-    # 3. Repli minimal : caractère BEL. Dépend de la config du terminal
+-    #    (peut être muet), mais ne coûte rien et ne peut pas échouer.
+-    try:
+-        sys.stdout.write("\a")
+-        sys.stdout.flush()
+-        return True
+-    except Exception:
+-        return False
++            return False
++    finally:
++        if temporaire:
++            try:
++                os.remove(son_joue)
++            except OSError:
++                pass
+ 
+ 
+ def main():
+-    fois = 1
+-    if len(sys.argv) > 1:
+-        try:
+-            fois = max(1, int(sys.argv[1]))
+-        except ValueError:
+-            fois = 1
++    parser = argparse.ArgumentParser()
++    parser.add_argument("fois", nargs="?", type=int, default=1,
++                        help="Nombre de bips (défaut 1)")
++    parser.add_argument("--projet", default=None,
++                        help="Non utilisé par ce script (accepté pour compatibilité avec notifications.py::bip())")
++    parser.add_argument("--numero", default=None,
++                        help="Non utilisé par ce script (idem --projet)")
++    parser.add_argument("--tonalite", type=int, default=0,
++                        help="Décalage de tonalité en demi-tons (issue #526), 0 = neutre")
++    args = parser.parse_args()
++
++    fois = max(1, args.fois or 1)
+     for i in range(fois):
+-        un_bip()
++        un_bip(args.tonalite)
+         if i < fois - 1:
+             time.sleep(0.3)
+ 
+diff --git a/scripts/traitement_fin.py b/scripts/traitement_fin.py
+index 84ddb6b..fd5da38 100644
+--- a/scripts/traitement_fin.py
++++ b/scripts/traitement_fin.py
+@@ -24,9 +24,20 @@ pilote le son pour TOUS les projets utilisant ce script partagé (via
+ absent, illisible, ou contenant une valeur non reconnue → défaut inchangé
+ (`plat`), pour ne rien casser silencieusement.
+ 
++Tonalité par projet (issue #526) : `--tonalite <demi-tons>` décale la
++fréquence de synthèse (`f_effective = f_base × 2^(demi-tons/12)`), appliqué
++aux DEUX sons (`bip_plat()` et `bip()`) quel que soit le choix ci-dessus —
++la tonalité (par projet, via `TONALITE_BIP` dans le `.conf`) et le son actif
++(global, `son_actif.txt`) sont deux réglages orthogonaux. Comme le son est
++synthétisé en Python (pas de fichier à transformer), aucun outil externe
++supplémentaire n'est requis ici — contrairement à `scripts/bip_Cloche.py`
++qui, lui, pitch-shifte un fichier son existant via `sox`. `--tonalite`
++absent ou `0` → fréquence de base inchangée (comportement historique).
++
+ Usage :
+     python3 traitement_fin.py                                   # un bip seul
+     python3 traitement_fin.py --projet bridge_agent --numero 350 # bip + POST
++    python3 traitement_fin.py --tonalite -4                      # bip décalé de -4 demi-tons
+ """
+ 
+ import argparse
+@@ -50,10 +61,18 @@ TIMEOUT_NOTIFIER_FIN_ISSUE = 1   # s — new_issue.py non lancé ne doit jamais
+ FICHIER_SON_ACTIF = os.path.join(os.path.dirname(os.path.abspath(__file__)), "son_actif.txt")
+ 
+ 
+-def bip_plat():
++def _frequence_decalee(f_base: float, demitons: int) -> float:
++    """Fréquence décalée de `demitons` demi-tons (issue #526). Échelle
++    logarithmique standard (12 demi-tons = une octave = ×2), 0 → f_base
++    inchangée."""
++    return f_base * (2 ** (demitons / 12)) if demitons else f_base
++
++
++def bip_plat(demitons: int = 0):
+     """Bip sonore court (440 Hz, 0.4 s), sinusoïde plate — son par défaut
+-    (voir issue #437 et #498, `son_actif()` ci-dessous pour le choix du son)."""
+-    f_plat, dur_plat = 440, 0.4
++    (voir issue #437 et #498, `son_actif()` ci-dessous pour le choix du son).
++    `demitons` (issue #526) : décalage de tonalité par projet."""
++    f_plat, dur_plat = _frequence_decalee(440, demitons), 0.4
+     samples = [int(32767 * math.sin(2 * math.pi * f_plat * t / SR)) for t in range(int(SR * dur_plat))]
+     data = struct.pack('<' + 'h' * len(samples), *samples)
+ 
+@@ -69,10 +88,12 @@ def bip_plat():
+     os.remove(tmp)
+ 
+ 
+-def bip():
+-    """Son de cloche douce (880 Hz, enveloppe exponentielle décroissante) via aplay."""
++def bip(demitons: int = 0):
++    """Son de cloche douce (880 Hz, enveloppe exponentielle décroissante) via
++    aplay. `demitons` (issue #526) : décalage de tonalité par projet."""
++    f = _frequence_decalee(F, demitons)
+     samples = [
+-        int(32767 * math.sin(2 * math.pi * F * t / SR) * math.exp(-t * DECAY / SR))
++        int(32767 * math.sin(2 * math.pi * f * t / SR) * math.exp(-t * DECAY / SR))
+         for t in range(int(SR * DUR))
+     ]
+     data = struct.pack('<' + 'h' * len(samples), *samples)
+@@ -138,12 +159,14 @@ def main():
+                         help="Nom du projet (déclenche le POST /notifier-fin-issue avec --numero)")
+     parser.add_argument("--numero", default=None,
+                         help="Numéro de l'issue (déclenche le POST /notifier-fin-issue avec --projet)")
++    parser.add_argument("--tonalite", type=int, default=0,
++                        help="Décalage de tonalité en demi-tons (issue #526), 0 = neutre")
+     args = parser.parse_args()
+ 
+     if son_actif() == "cloche":
+-        bip()
++        bip(args.tonalite)
+     else:
+-        bip_plat()
++        bip_plat(args.tonalite)
+ 
+     if args.projet and args.numero:
+         notifier_fin_issue(args.projet, args.numero)
+diff --git a/static/js/app.js b/static/js/app.js
+index c8e54a6..ef2fda5 100644
+--- a/static/js/app.js
++++ b/static/js/app.js
+@@ -173,6 +173,9 @@ async function chargerConfig() {
+     document.getElementById('conf-MAX_ESSAIS').value        = cfg.max_essais        || 3;
+     document.getElementById('conf-TIMEOUT_CLAUDE').value    = cfg.timeout_claude    || 300;
+     document.getElementById('conf-SCRIPT_BIP').value        = cfg.script_bip        || '';
++    // ?? et non || : 0 est une valeur valide (tonalité normale).
++    document.getElementById('conf-TONALITE_BIP').value      = cfg.tonalite_bip      ?? 0;
++    document.getElementById('tonalite-bip-valeur').textContent = cfg.tonalite_bip   ?? 0;
+     document.getElementById('conf-FICHIER_CONTEXTE').value  = cfg.fichier_contexte  || '';
+     document.getElementById('conf-MODELE_CCL').value        = cfg.modele_ccl        || '';
+     document.getElementById('conf-LOG_TAILLE_MAX_MO').value = cfg.log_taille_max_mo || 1;
+@@ -196,6 +199,7 @@ async function sauvegarderConfig(relancer) {
+     MAX_ESSAIS:        document.getElementById('conf-MAX_ESSAIS').value,
+     TIMEOUT_CLAUDE:    document.getElementById('conf-TIMEOUT_CLAUDE').value,
+     SCRIPT_BIP:        document.getElementById('conf-SCRIPT_BIP').value,
++    TONALITE_BIP:      document.getElementById('conf-TONALITE_BIP').value,
+     FICHIER_CONTEXTE:  document.getElementById('conf-FICHIER_CONTEXTE').value,
+     MODELE_CCL:        document.getElementById('conf-MODELE_CCL').value,
+     LOG_TAILLE_MAX_MO: document.getElementById('conf-LOG_TAILLE_MAX_MO').value,
+@@ -222,6 +226,25 @@ async function sauvegarderConfig(relancer) {
+   }
+ }
+ 
++// Tonalité du bip (issue #526) : joue le bip avec la tonalité actuellement
++// réglée dans le curseur, SANS l'enregistrer — permet d'ajuster à l'oreille
++// avant de cliquer sur « Enregistrer ».
++async function testerBip() {
++  const nom = document.getElementById('projet').value;
++  const tonalite = document.getElementById('conf-TONALITE_BIP').value;
++  const msg = document.getElementById('msg-config');
++  try {
++    await fetch('/tester-bip/' + encodeURIComponent(nom), {
++      method: 'POST',
++      headers: {'Content-Type': 'application/json'},
++      body: JSON.stringify({tonalite: tonalite})
++    });
++  } catch(e) {
++    msg.textContent = 'Erreur test du bip : ' + e.message;
++    msg.className = 'message erreur'; msg.style.display = 'block';
++  }
++}
++
+ // ─── Onglet CCW (issue #174, SSH depuis #447) ──────────────────────────────
+ // Pilotage du PC fixe Windows CCW et de ses projets depuis Linux, via les
+ // routes /ccw/* (qui exécutent des commandes SSH/SCP côté serveur). Aucune
+diff --git a/templates/index.html b/templates/index.html
+index 9fc5ddc..0337733 100644
+--- a/templates/index.html
++++ b/templates/index.html
+@@ -390,6 +390,17 @@
+       <input type="text" id="conf-SCRIPT_BIP">
+     </div>
+ 
++    <div class="champ" style="margin-bottom:14px">
++      <label title="Décalage de la hauteur du bip pour ce projet, en demi-tons. 0 = tonalité normale.">Tonalité du bip (demi-tons, 0 = normale)</label>
++      <div style="display:flex;align-items:center;gap:10px">
++        <input type="range" id="conf-TONALITE_BIP" min="-12" max="12" step="1" value="0"
++               oninput="document.getElementById('tonalite-bip-valeur').textContent = this.value"
++               style="flex:1">
++        <span id="tonalite-bip-valeur" style="min-width:2.5em;text-align:right">0</span>
++        <button type="button" onclick="testerBip()">Tester le son</button>
++      </div>
++    </div>
++
+     <div class="champ" style="margin-bottom:14px">
+       <label>Fichier de contexte projet (relatif au rep. de travail)</label>
+       <input type="text" id="conf-FICHIER_CONTEXTE"
+diff --git a/watcher.py b/watcher.py
+index 9a92371..d21f6be 100644
+--- a/watcher.py
++++ b/watcher.py
+@@ -250,6 +250,7 @@ class Config:
+     timeout_chef: int     = 1200   # défaut plus généreux pour les issues « Chef : » sans TIMEOUT explicite (issue #106)
+     timeout_diagnostic: int = 90   # timeout court et fixe de la passe diagnostique avant abandon non-critique (issue #124)
+     script_bip: Path      = field(default_factory=lambda: DOSSIER_SCRIPT / "scripts" / "traitement_fin.py")
++    tonalite_bip: int      = 0     # décalage de tonalité du bip en demi-tons, propre au projet (issue #526) ; 0 = tonalité normale
+     log_taille_max_mo: int = 1     # rotation quand le journal dépasse cette taille (Mo)
+     log_archives: int      = 5     # nombre d'archives datées conservées
+     cmd_backup: str        = ""    # commande de sauvegarde avant modif (mode écriture)
+@@ -344,6 +345,7 @@ def charger_config(chemin: Path) -> Config:
+         timeout_diagnostic = entier("TIMEOUT_DIAGNOSTIC", 90),
+         script_bip  = Path(brut["SCRIPT_BIP"]).expanduser() if brut.get("SCRIPT_BIP")
+                       else DOSSIER_SCRIPT / "scripts" / "traitement_fin.py",
++        tonalite_bip = entier("TONALITE_BIP", 0),
+         log_taille_max_mo = entier("LOG_TAILLE_MAX_MO", 1),
+         log_archives      = entier("LOG_ARCHIVES", 5),
+         cmd_backup        = brut.get("CMD_BACKUP", ""),
+@@ -462,8 +464,10 @@ def configurer_logs(cfg: Config):
+ 
+ def bip(fois=1, numero=None):
+     """Bip sonore via le script partagé (Bridge_Agent/scripts/traitement_fin.py,
+-    anciennement bip.py)."""
+-    notifications.bip(CFG.script_bip, fois, projet=CFG.nom, numero=numero)
++    anciennement bip.py). Tonalité du projet (issue #526) transmise depuis
++    CFG.tonalite_bip."""
++    notifications.bip(CFG.script_bip, fois, projet=CFG.nom, numero=numero,
++                       tonalite=CFG.tonalite_bip)
+ 
+ def notifier_fin_sse(numero):
+     """POST direct vers /notifier-fin-issue (issue #352), appelé à CHAQUE fin
+@@ -513,7 +517,7 @@ def notifier(labels: list[str], titre: str, message: str,
+         labels, CFG.nom, CFG.url_ntfy, CFG.script_bip,
+         titre, message,
+         urgence_bureau=urgence_bureau, priorite_ntfy=priorite_ntfy,
+-        fois_bip=fois_bip, numero=numero, log=log,
++        fois_bip=fois_bip, numero=numero, tonalite=CFG.tonalite_bip, log=log,
+     )
+ 
+ def alerte_critique(numero, titre, tentative, labels: list[str]):

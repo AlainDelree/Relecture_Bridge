@@ -1,0 +1,921 @@
+8773970
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 8773970
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Sun Aug 2 15:34:18 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    fix #323 (suite #320) : bouton Interrompre par issue dans l'onglet Résultats — CCL et CCW
+    
+    Nouvelle route POST /interrompre (app/interruption.py) : interrompt UNE issue
+    sans sacrifier les autres en file pour le même watcher. Résolution stricte
+    par le champ DEPOT du .conf (jamais déduite du nom projet ni du basename de
+    REP_TRAVAIL). Statut à trois valeurs par étape (succes/rien_a_faire/echec),
+    statut global ok/succes_partiel/echec_critique. Côté CCL : arbre de process
+    tué par remontée /proc PPID (jamais par nom), attente bornée de mort
+    effective, verrou supprimé par nom exact SEULEMENT après confirmation (sinon
+    volontairement laissé en place). Côté CCW : nouveau script PowerShell
+    interrompre_projet_ccw.ps1 via guestcontrol (nssm stop + kill ciblé de
+    l'arbre + suppression des .lock du projet). Label needs-human + commentaire
+    posés dans tous les cas ; watcher jamais relancé automatiquement des deux
+    côtés. Bouton + modal détaillée par étape dans l'onglet Résultats.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 0260429..4154dfb 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/CHANGELOG.md
+# ── Version APRÈS ce commit.
++++ b/CHANGELOG.md
+# ── Zone modifiée : ligne 9 (6 ligne(s)) dans l'ancienne version → ligne 9 (72 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -9,6 +9,72 @@ milliers de caractères sur une seule ligne logique, coûteux à relire et
+ 
+ Convention d'ajout : voir §10 de `BRIDGE_AGENT_DOC.md`.
+ 
++## 2 août 2026 — issue #323 (suite #320)
++
++Bouton **« ⛔ Interrompre cette issue »** dans l'onglet Résultats, sur toute
++issue ouverte ni `done` ni `needs-human` — remplace l'intervention manuelle
++hors interface (kill + nettoyage de verrou à la main) qu'exigeait jusqu'ici
++un watcher bloqué (verrou orphelin, process pendu). Reprise de #320,
++abandonnée 3 fois faute de `TIMEOUT` suffisant (600s ne couvrait pas
++`watcher.py` + route Flask + logique CCW + modal front) ; `TIMEOUT` porté à
++1800s pour cette reprise. **Contrainte centrale** : interrompre UNE issue ne
++sacrifie jamais les autres issues en file pour le même watcher — elles
++restent ouvertes sur GitHub, simplement en attente d'une relance MANUELLE
++(bouton « Lancer watcher » côté CCL, onglet CCW côté CCW-Watcher ; aucun
++rallumage automatique ici, à la différence de #202).
++
++- Nouvelle route **`POST /interrompre`** (`app/interruption.py`) : reçoit
++  `{depot, numero, labels}`, résout le projet via `projet_par_depot` (nouveau
++  dans `app/projets.py`) — **toujours par le champ DEPOT du `.conf`**, jamais
++  déduit du nom projet ni du basename de `REP_TRAVAIL` (trois clés distinctes
++  qui peuvent diverger, ex. projet « echecs » / dépôt `AlChess` / répertoire
++  `~/NicLink`). Chaque étape renvoie un statut à **trois valeurs**
++  (`succes`/`rien_a_faire`/`echec`) + message ; une étape en échec n'arrête
++  pas les suivantes, sauf la suppression du verrou, volontairement **sautée**
++  si l'arbre de process n'est pas confirmé mort. Statut global dérivé : `ok`
++  / `succes_partiel` / `echec_critique` (arbre non tué → lock **non**
++  nettoyé, pour ne jamais risquer un double traitement). Label `needs-human`
++  + commentaire `⛔ Interrompu via new_issue.py` posés dans TOUS les cas
++  (sortie du circuit + trace), avant même le résultat des étapes techniques.
++  - **for-linux** : arbre de process du watcher (`logs/watcher-<nom>.pid` +
++    toute sa descendance, dont l'éventuel claude en session séparée,
++    §13/#247) énuméré par **remontée `/proc` via PPID** — jamais par nom
++    d'exécutable — puis `SIGKILL`, attente bornée (~5s) de disparition
++    effective avant de supprimer le verrou par **nom exact**
++    (`watcher._chemin_verrou` réutilisée telle quelle, jamais redupliquée),
++    puis re-vérification (verrou frais réapparu → signalé comme course #202
++    probable, jamais resupprimé en boucle). Piège découvert en testant :
++    le process watcher est un enfant DIRECT du process Flask
++    (`app/watchers.py:demarrer_watcher`) jamais attendu (`wait()`) — après
++    `SIGKILL` il reste **zombie** et `os.kill(pid, 0)` le signale encore
++    vivant indéfiniment ; `_reaper_best_effort` (`os.waitpid(..., WNOHANG)`)
++    corrige ce faux positif. `FileNotFoundError` sur le verrou = `rien_a_faire`
++    (libéré normalement), pas un échec.
++  - **for-windows** : nouveau script `provisioning/windows/
++    interrompre_projet_ccw.ps1` (poussé + exécuté via guestcontrol, pattern
++    `app/ccw.py` — service et répertoire du projet résolus dynamiquement via
++    `_lister_projets_vm`, jamais codés en dur malgré l'exemple `CCW-Watcher`
++    / `C:\CCW\Bridge_Agent` de l'issue) : arrêt du service NSSM, vérification
++    + kill ciblé de l'arbre resté vivant (remontée par `ParentProcessId`,
++    même logique PPID que côté Linux), suppression des `.lock` du dossier
++    `logs\verrous` du projet **seulement** si l'arbre est confirmé mort.
++    Non exécuté contre une VM réelle (pas d'environnement CCW disponible ici
++    — comme `finaliser_projet_ccw.ps1` en son temps).
++- `templates/index.html` / `static/js/app.js` : bouton `interrompreIssue()`
++  dans `construireHtmlIssue` (dépôt lu depuis le `<select id="projet">`
++  peuplé côté serveur « nom — depot », jamais déduit du nom ; labels lus
++  depuis le cache localStorage du détail déjà affiché). Modal dédiée
++  (`#modal-interrompre`) détaillant **chaque étape** (statut + message), pas
++  seulement le résultat global, avec rappel de la relance manuelle adapté à
++  l'agent (CCL vs CCW) et alerte explicite en cas de `succes_partiel` /
++  `echec_critique` (« vérifier avec ps/Gestionnaire des tâches avant de
++  relancer »). Avertissement discret si la VM CCW n'est pas démarrée
++  (`vm_running` dans la réponse).
++- Testé (hors modal/CCW, sans VM disponible) : arbre de process réel
++  (`sh` + enfant `sleep`) tué + confirmé mort + verrou nommé supprimé +
++  re-vérifié ; cas `rien_a_faire` (aucun watcher, aucun verrou) ;
++  `projet_par_depot` contre les `.conf` réels du dépôt.
++
+ ## 2 août 2026 — issue #322
+ 
+ Dernier trou résiduel du cycle de vie verrou/claude comblé : si le watcher
+# (diff du fichier suivant)
+diff --git a/app/__init__.py b/app/__init__.py
+# (index — ignorable)
+index 9aebd05..a6cb9df 100644
+# (avant — fichier suivant)
+--- a/app/__init__.py
+# (après — fichier suivant)
++++ b/app/__init__.py
+# ── Zone modifiée : ligne 73 (6 ligne(s)) dans l'ancienne version → ligne 73 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -73,6 +73,7 @@ def _enregistrer_routes(app: Flask) -> None:
+                          ccw_ajouter_projet, ccw_finaliser_projet,
+                          ccw_redemarrer_projet, ccw_demarrer_projet,
+                          ccw_arreter_projet)
++    from app.interruption import route_interrompre
+     from app.cycle_vie import heartbeat, events, quitter
+     from app.diag_heartbeat import visibilite as diag_visibilite   # DIAGNOSTIC TEMPORAIRE — issue #157, à retirer
+     from app.vues import index
+# ── Zone modifiée : ligne 113 (6 ligne(s)) dans l'ancienne version → ligne 114 (8 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -113,6 +114,8 @@ def _enregistrer_routes(app: Flask) -> None:
+     app.add_url_rule("/ccw/redemarrer-projet", "ccw_redemarrer_projet", login_requis(ccw_redemarrer_projet), methods=["POST"])
+     app.add_url_rule("/ccw/demarrer-projet", "ccw_demarrer_projet", login_requis(ccw_demarrer_projet), methods=["POST"])
+     app.add_url_rule("/ccw/arreter-projet", "ccw_arreter_projet", login_requis(ccw_arreter_projet), methods=["POST"])
++    # ─── Interruption ciblée d'une issue en cours (issue #323, suite #320) ────
++    app.add_url_rule("/interrompre", "route_interrompre", login_requis(route_interrompre), methods=["POST"])
+     app.add_url_rule("/heartbeat", "heartbeat", heartbeat, methods=["POST"])
+     app.add_url_rule("/events", "events", login_requis(events))
+     app.add_url_rule("/quitter", "quitter", login_requis(quitter), methods=["POST"])
+# (diff du fichier suivant)
+diff --git a/app/interruption.py b/app/interruption.py
+# ── Ce fichier n'existait pas avant ce commit : il vient d'être créé.
+new file mode 100644
+# (index — ignorable)
+index 0000000..a284561
+# (avant — fichier suivant)
+--- /dev/null
+# (après — fichier suivant)
++++ b/app/interruption.py
+# ── Zone modifiée : ligne 0 (0 ligne(s)) dans l'ancienne version → ligne 1 (383 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -0,0 +1,383 @@
++"""Interruption ciblée d'une issue en cours, par bouton dans l'onglet
++Résultats (issue #323, suite #320 — abandonnée 3 fois faute de TIMEOUT
++suffisant, cf. contexte de l'issue).
++
++Contrainte centrale : interrompre UNE issue ne doit pas sacrifier les autres
++issues en file pour le même watcher (elles restent ouvertes sur GitHub,
++simplement en plan tant que le watcher n'est pas relancé MANUELLEMENT — pas
++de rallumage automatique ici, à la différence de #202).
++
++Chaque étape technique renvoie un statut à trois valeurs (succes /
++rien_a_faire / echec) + message, jamais un simple booléen — une étape en
++échec n'interrompt pas les suivantes, sauf la suppression du verrou qui est
++volontairement SAUTÉE si l'arbre de process n'est pas confirmé mort (pour ne
++jamais risquer un double traitement, cf. §"points de course" de l'issue).
++
++Résolution du projet : TOUJOURS via le champ DEPOT du .conf
++(app.projets.projet_par_depot), jamais déduite du nom du projet ni du
++basename de REP_TRAVAIL — ces trois chaînes peuvent diverger (voir
++§"résolution des identités" de l'issue #323).
++"""
++
++import ntpath
++import os
++import signal
++import subprocess
++import sys
++import time
++from pathlib import Path
++
++from flask import jsonify, request
++
++from app.projets import projet_par_depot
++from app.ccw import (
++    _preparer, _base_guest, _fichier_mot_de_passe, _copier, _executer_ps,
++    _lister_projets_vm, _extraire_projets, _etat_vm, _message_echec,
++    DOSSIER_WINDOWS, TIMEOUT_COURT, TIMEOUT_LONG,
++)
++
++# app.projets ajoute déjà la racine du projet au sys.path (pour
++# « from watcher import »), mais on s'assure ici aussi de l'ordre d'import.
++DOSSIER_SCRIPT = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(DOSSIER_SCRIPT))
++from watcher import _chemin_verrou, DOSSIER_LOGS  # noqa: E402
++
++LABEL_NEEDS_HUMAN         = "needs-human"
++COMMENTAIRE_INTERRUPTION  = "⛔ Interrompu via new_issue.py"
++
++# Étapes dont un échec rend le statut global 'echec_critique' (arbre de
++# process non confirmé mort → lock volontairement non nettoyé, risque de
++# double traitement si on avait poursuivi).
++ETAPES_CRITIQUES = {"attente_fin_process", "verification_orphelin_claude"}
++
++
++# ─── gh CLI : label + commentaire (indépendants du projet, juste le dépôt) ──
++
++def _ajouter_label_gh(depot: str, numero: int, label: str) -> tuple[str, str]:
++    try:
++        res = subprocess.run(
++            ["gh", "issue", "edit", str(numero), "--repo", depot, "--add-label", label],
++            capture_output=True, text=True, timeout=30,
++        )
++        if res.returncode == 0:
++            return "succes", f"Label « {label} » posé."
++        return "echec", (res.stderr or res.stdout or "erreur gh inconnue").strip()
++    except subprocess.TimeoutExpired:
++        return "echec", "Timeout (gh n'a pas répondu en 30s)."
++    except FileNotFoundError:
++        return "echec", "gh introuvable dans le PATH."
++    except Exception as e:
++        return "echec", str(e)
++
++
++def _commenter_gh(depot: str, numero: int, message: str) -> tuple[str, str]:
++    try:
++        res = subprocess.run(
++            ["gh", "issue", "comment", str(numero), "--repo", depot, "--body", message],
++            capture_output=True, text=True, timeout=30,
++        )
++        if res.returncode == 0:
++            return "succes", "Commentaire posté."
++        return "echec", (res.stderr or res.stdout or "erreur gh inconnue").strip()
++    except subprocess.TimeoutExpired:
++        return "echec", "Timeout (gh n'a pas répondu en 30s)."
++    except FileNotFoundError:
++        return "echec", "gh introuvable dans le PATH."
++    except Exception as e:
++        return "echec", str(e)
++
++
++# ─── for-linux : arbre de process par remontée /proc (PPID) ────────────────
++# Volontairement PAS basé sur le pgid consigné dans le verrou (#322) : ce
++# champ peut être absent (claude pas encore lancé) et surtout ne couvre que
++# le claude, pas le process watcher.py lui-même — ici on veut l'arbre ENTIER
++# (watcher + descendance), identifié par PPID, jamais par nom d'exécutable.
++
++def _snapshot_ppid() -> dict:
++    """pid -> ppid pour tous les process actuellement vivants (lecture directe
++    de /proc, sans dépendance externe). Un process qui disparaît pendant
++    l'énumération est simplement absent du résultat (race normale)."""
++    mapping = {}
++    proc_dir = Path("/proc")
++    if not proc_dir.is_dir():
++        return mapping
++    for entree in proc_dir.iterdir():
++        if not entree.name.isdigit():
++            continue
++        pid = int(entree.name)
++        try:
++            for ligne in entree.joinpath("status").read_text(encoding="utf-8", errors="replace").splitlines():
++                if ligne.startswith("PPid:"):
++                    mapping[pid] = int(ligne.split(":", 1)[1].strip())
++                    break
++        except (OSError, ValueError):
++            continue
++    return mapping
++
++
++def _cmdline(pid: int) -> str:
++    try:
++        return Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", "replace").strip()
++    except OSError:
++        return "(cmdline indisponible)"
++
++
++def _lister_arbre(pid_racine: int) -> list:
++    """(pid, cmdline) de pid_racine et de TOUS ses descendants, par remontée
++    /proc/PPid — cible uniquement l'arbre de CE watcher, jamais par nom
++    d'exécutable (même esprit que #247 point 4 / #322)."""
++    mapping = _snapshot_ppid()
++    if pid_racine not in mapping:
++        return []   # mort entre la vérification de l'appelant et cet instant (race normale)
++    enfants: dict = {}
++    for pid, ppid in mapping.items():
++        enfants.setdefault(ppid, []).append(pid)
++    vus = set()
++    a_visiter = [pid_racine]
++    resultat = []
++    while a_visiter:
++        pid = a_visiter.pop()
++        if pid in vus:
++            continue
++        vus.add(pid)
++        resultat.append((pid, _cmdline(pid)))
++        a_visiter.extend(enfants.get(pid, []))
++    return resultat
++
++
++def _pid_vivant(pid: int) -> bool:
++    try:
++        os.kill(pid, 0)
++        return True
++    except OSError:
++        return False
++
++
++def _reaper_best_effort(pid: int) -> None:
++    """Tente de récupérer (waitpid non bloquant) un pid qui serait un enfant
++    DIRECT du process Flask courant — cas du process watcher, lancé par
++    demarrer_watcher() (app/watchers.py) via subprocess.Popen SANS jamais
++    être attendu ensuite. Sans ce reap, un watcher tué reste ZOMBIE et
++    os.kill(pid, 0) continue de le signaler comme vivant indéfiniment,
++    faussant la vérification de disparition ci-dessous. Les descendants
++    (claude et sa propre descendance) ne sont PAS des enfants directs de ce
++    process : ils sont reparentés au sous-reaper (init) dès la mort du
++    watcher et réapés par lui, hors de notre contrôle — inutile d'y tenter
++    un waitpid (ChildProcessError, ignorée)."""
++    try:
++        os.waitpid(pid, os.WNOHANG)
++    except (ChildProcessError, OSError):
++        pass
++
++
++def interrompre_linux(cfg) -> list:
++    etapes = []
++
++    pid_file = DOSSIER_LOGS / f"watcher-{cfg.nom}.pid"
++    pid_watcher = None
++    if pid_file.exists():
++        try:
++            candidat = int(pid_file.read_text().strip())
++            os.kill(candidat, 0)
++            pid_watcher = candidat
++        except (OSError, ValueError):
++            pid_watcher = None
++
++    arbre = _lister_arbre(pid_watcher) if pid_watcher else []
++
++    if not arbre:
++        etapes.append({"etape": "arreter_arbre_watcher", "statut": "rien_a_faire",
++                        "message": "Aucun process watcher vivant (PID absent ou mort)."})
++        etapes.append({"etape": "attente_fin_process", "statut": "rien_a_faire",
++                        "message": "Rien à attendre."})
++        arbre_mort = True
++    else:
++        for pid, _cmd in arbre:
++            try:
++                os.kill(pid, signal.SIGKILL)
++            except OSError:
++                pass
++        details = ", ".join(f"{pid} ({cmd})" for pid, cmd in arbre)
++        etapes.append({"etape": "arreter_arbre_watcher", "statut": "succes",
++                        "message": f"Arbre tué (SIGKILL) : {details}"})
++
++        limite = time.monotonic() + 5
++        survivants = list(arbre)
++        while True:
++            if pid_watcher is not None:
++                _reaper_best_effort(pid_watcher)   # évite un faux "vivant" (zombie non réapé)
++            survivants = [(pid, cmd) for pid, cmd in survivants if _pid_vivant(pid)]
++            if not survivants or time.monotonic() >= limite:
++                break
++            time.sleep(0.05)
++
++        if survivants:
++            noms = ", ".join(f"{pid} ({cmd})" for pid, cmd in survivants)
++            etapes.append({"etape": "attente_fin_process", "statut": "echec",
++                            "message": f"Process encore vivant(s) après 5s : {noms} — lock NON nettoyé."})
++            arbre_mort = False
++        else:
++            etapes.append({"etape": "attente_fin_process", "statut": "succes",
++                            "message": "Arbre confirmé mort."})
++            arbre_mort = True
++
++    if not arbre_mort:
++        etapes.append({"etape": "suppression_verrou", "statut": "echec",
++                        "message": "Sautée : arbre de process non confirmé mort (voir étape précédente)."})
++        etapes.append({"etape": "reverification_verrou", "statut": "echec",
++                        "message": "Sautée : suppression non tentée."})
++        return etapes
++
++    verrou = _chemin_verrou(cfg.rep_travail)
++    try:
++        verrou.unlink()
++        statut_suppr = "succes"
++        etapes.append({"etape": "suppression_verrou", "statut": "succes",
++                        "message": f"Verrou supprimé : {verrou.name}"})
++    except FileNotFoundError:
++        statut_suppr = "rien_a_faire"
++        etapes.append({"etape": "suppression_verrou", "statut": "rien_a_faire",
++                        "message": f"Aucun verrou présent ({verrou.name}) — libéré normalement ou jamais posé."})
++    except OSError as e:
++        statut_suppr = "echec"
++        etapes.append({"etape": "suppression_verrou", "statut": "echec", "message": str(e)})
++
++    if statut_suppr == "echec":
++        etapes.append({"etape": "reverification_verrou", "statut": "echec",
++                        "message": "Sautée : échec de suppression déjà signalé ci-dessus."})
++    elif verrou.exists():
++        etapes.append({"etape": "reverification_verrou", "statut": "echec",
++                        "message": f"Un verrou frais est réapparu ({verrou.name}) — course #202 probable "
++                                   f"(nouvelle issue for-linux relancée entre-temps ?). Non resupprimé."})
++    else:
++        etapes.append({"etape": "reverification_verrou", "statut": "succes",
++                        "message": "Absence du verrou confirmée."})
++
++    return etapes
++
++
++# ─── for-windows : via guestcontrol (pattern app/ccw.py) ───────────────────
++
++ETAPES_WINDOWS_TECHNIQUES = ("arret_service_ccw", "verification_orphelin_claude", "suppression_verrou_ccw")
++
++
++def _etapes_windows_echec(message: str) -> list:
++    return [{"etape": nom, "statut": "echec", "message": message} for nom in ETAPES_WINDOWS_TECHNIQUES]
++
++
++def _erreur_de(reponse_json) -> str:
++    """Extrait le champ erreur d'une réponse jsonify(...) d'échec d'app.ccw."""
++    try:
++        return reponse_json.get_json().get("erreur") or "Erreur inconnue."
++    except Exception:
++        return "Erreur inconnue."
++
++
++def interrompre_windows(cfg) -> list:
++    ctx, err = _preparer()
++    if err:
++        return _etapes_windows_echec(_erreur_de(err))
++    vbox, mot_de_passe = ctx
++
++    projets, err = _lister_projets_vm(vbox, mot_de_passe)
++    if err:
++        return _etapes_windows_echec(_erreur_de(err))
++
++    service = config_path = None
++    for p in projets:
++        if isinstance(p, dict) and str(p.get("projet", "")).strip().lower() == cfg.nom.lower():
++            service     = (p.get("service") or "").strip()
++            config_path = (p.get("config") or "").strip()
++            break
++    if not service:
++        return _etapes_windows_echec(
++            f"Projet « {cfg.nom} » introuvable parmi les services CCW-Watcher de la VM.")
++
++    # RepDepot dérivé du champ « config » (…\<NomProjet>\configs\*.conf) —
++    # jamais reconstruit depuis cfg.nom (Linux) ou le nom du service.
++    rep_depot = (ntpath.dirname(ntpath.dirname(config_path)) if config_path
++                 else ntpath.join("C:\\CCW", cfg.nom))
++
++    script = DOSSIER_WINDOWS / "interrompre_projet_ccw.ps1"
++    if not script.exists():
++        return _etapes_windows_echec(f"Script introuvable : {script.name}")
++
++    try:
++        with _fichier_mot_de_passe(mot_de_passe) as pf:
++            base = _base_guest(vbox, pf)
++            r = _copier(base, script, TIMEOUT_COURT)
++            if r.returncode != 0:
++                return _etapes_windows_echec(_message_echec("copie du script vers la VM", r))
++            r = _executer_ps(base, script.name, ["-Service", service, "-RepDepot", rep_depot], TIMEOUT_LONG)
++    except subprocess.TimeoutExpired:
++        return _etapes_windows_echec("Délai dépassé pendant l'interruption (guestcontrol).")
++    except subprocess.SubprocessError as e:
++        return _etapes_windows_echec(f"Erreur guestcontrol : {e}")
++
++    resultats = _extraire_projets(r.stdout)
++    if resultats is None:
++        return _etapes_windows_echec(_message_echec("interruption du projet CCW", r))
++
++    etapes = []
++    for item in resultats:
++        if not isinstance(item, dict):
++            continue
++        etapes.append({
++            "etape":   item.get("etape", "?"),
++            "statut":  item.get("statut", "echec"),
++            "message": item.get("message", ""),
++        })
++    if not etapes:
++        return _etapes_windows_echec("Réponse de la VM vide ou illisible.")
++    return etapes
++
++
++# ─── Route Flask ─────────────────────────────────────────────────────────────
++
++def route_interrompre():
++    """POST /interrompre — interrompt le traitement en cours d'UNE issue,
++    sans toucher aux autres issues en file pour le même watcher.
++
++    Toujours, quel que soit le résultat des étapes techniques : label
++    needs-human posé + commentaire d'interruption posté (sortie du circuit +
++    trace GitHub). Le watcher n'est JAMAIS relancé automatiquement — relance
++    manuelle des deux côtés (bouton « Lancer watcher » côté CCL, onglet CCW
++    côté CCW-Watcher)."""
++    data   = request.json or {}
++    depot  = (data.get("depot") or "").strip()
++    numero = data.get("numero")
++    labels = [str(l).strip().lower() for l in (data.get("labels") or [])]
++
++    if not depot:
++        return jsonify(succes=False, erreur="Dépôt GitHub manquant."), 400
++    if not str(numero).isdigit():
++        return jsonify(succes=False, erreur="Numéro d'issue invalide."), 400
++    numero = int(numero)
++
++    cfg = projet_par_depot(depot)
++    if not cfg:
++        return jsonify(succes=False, erreur=f"Aucun projet configuré pour le dépôt « {depot} »."), 404
++
++    agent = "windows" if "for-windows" in labels else "linux"
++
++    # Étape impérative en premier : sortie du circuit + trace, quel que soit
++    # le résultat des étapes techniques qui suivent (posée dans TOUS les cas).
++    statut_label, msg_label = _ajouter_label_gh(depot, numero, LABEL_NEEDS_HUMAN)
++    etapes = [{"etape": "label_needs_human", "statut": statut_label, "message": msg_label}]
++
++    etapes += interrompre_windows(cfg) if agent == "windows" else interrompre_linux(cfg)
++
++    statut_comment, msg_comment = _commenter_gh(depot, numero, COMMENTAIRE_INTERRUPTION)
++    etapes.append({"etape": "commentaire", "statut": statut_comment, "message": msg_comment})
++
++    if any(e["etape"] in ETAPES_CRITIQUES and e["statut"] == "echec" for e in etapes):
++        statut_global = "echec_critique"
++    elif any(e["statut"] == "echec" for e in etapes):
++        statut_global = "succes_partiel"
++    else:
++        statut_global = "ok"
++
++    reponse = dict(succes=True, agent=agent, statut_global=statut_global, etapes=etapes)
++    if agent == "windows":
++        reponse["vm_running"] = (_etat_vm() == "running")
++    return jsonify(**reponse)
+# (diff du fichier suivant)
+diff --git a/app/projets.py b/app/projets.py
+# (index — ignorable)
+index 6007927..61528ae 100644
+# (avant — fichier suivant)
+--- a/app/projets.py
+# (après — fichier suivant)
++++ b/app/projets.py
+# ── Zone modifiée : ligne 99 (6 ligne(s)) dans l'ancienne version → ligne 99 (15 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -99,6 +99,15 @@ def projet_par_nom(nom: str) -> Config | None:
+     return next((p for p in lister_projets() if p.nom == nom), None)
+ 
+ 
++def projet_par_depot(depot: str) -> Config | None:
++    """Retrouve le projet dont le champ DEPOT du .conf correspond EXACTEMENT
++    (issue #323) — jamais déduit du nom projet ni du basename de REP_TRAVAIL,
++    qui peuvent diverger du dépôt GitHub (ex. projet « echecs », dépôt
++    AlainDelree/AlChess, REP_TRAVAIL ~/NicLink : trois chaînes distinctes)."""
++    depot = (depot or "").strip()
++    return next((p for p in lister_projets() if p.depot == depot), None)
++
++
+ # ─── Routes Flask : consultation/écriture du .conf d'un projet ─────────────────
+ 
+ def get_config(nom_projet):
+# (diff du fichier suivant)
+diff --git a/provisioning/windows/interrompre_projet_ccw.ps1 b/provisioning/windows/interrompre_projet_ccw.ps1
+# ── Ce fichier n'existait pas avant ce commit : il vient d'être créé.
+new file mode 100644
+# (index — ignorable)
+index 0000000..3560623
+# (avant — fichier suivant)
+--- /dev/null
+# (après — fichier suivant)
++++ b/provisioning/windows/interrompre_projet_ccw.ps1
+# ── Zone modifiée : ligne 0 (0 ligne(s)) dans l'ancienne version → ligne 1 (141 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -0,0 +1,141 @@
++﻿<#
++  interrompre_projet_ccw.ps1 — Interruption d'urgence d'un projet CCW pour une
++  issue précise (issue #323, suite #320 — bouton « Interrompre » de l'onglet
++  Résultats côté for-windows).
++
++  Exécuté À DISTANCE depuis app/interruption.py (Linux) via « VBoxManage
++  guestcontrol run », après copie du script — jamais interactif. Regroupe en
++  UNE seule exécution, pour limiter le nombre d'allers-retours guestcontrol
++  (chacun coûte plusieurs secondes de latence) :
++
++    1. Arrêt du service NSSM ($Service).
++    2. Vérification qu'aucun process de son arbre (watcher + éventuel claude
++       orphelin dans son propre objet Job, §13/#247) ne survit — attente
++       bornée (~5 s), puis kill ciblé de l'arbre SEULEMENT s'il survit encore,
++       jamais par nom d'exécutable.
++    3. Suppression des .lock de CE projet (dossier $RepDepot\logs\verrous),
++       UNIQUEMENT si l'arbre est confirmé mort (sinon lock volontairement
++       laissé en place — voir §"points de course" de l'issue).
++
++  Chaque étape produit un statut à trois valeurs (succes / rien_a_faire /
++  echec) + message, sur le même modèle que la route Flask /interrompre côté
++  Linux (app/interruption.py, cas for-linux). Émis en JSON encadré par les
++  mêmes marqueurs que lister_projets_ccw.ps1 (<<<CCW_JSON>>> / <<<CCW_END>>>)
++  pour que l'appelant Linux réutilise le même extracteur (_extraire_projets).
++
++  $RepDepot est dérivé côté Linux du champ « config » retourné par
++  lister_projets_ccw.ps1 (parent du parent de <RepDepot>\configs\*.conf) —
++  jamais reconstruit depuis $Service ni depuis le nom du projet Linux, qui
++  peuvent diverger (cf. §"résolution des identités" de l'issue #323).
++
++  Exécution en administrateur, DANS la VM CCW-Build.
++#>
++
++[CmdletBinding()]
++param(
++    [Parameter(Mandatory=$true)][string]$Service,
++    [Parameter(Mandatory=$true)][string]$RepDepot
++)
++
++$ErrorActionPreference = 'Stop'
++Set-StrictMode -Version Latest
++
++$script:etapes = @()
++
++function AjouterEtape([string]$Nom, [string]$Statut, [string]$Message) {
++    $script:etapes += [PSCustomObject]@{ etape = $Nom; statut = $Statut; message = $Message }
++}
++
++# ─── Étape 1 : arrêt du service ─────────────────────────────────────────────
++$svcInfo  = Get-CimInstance Win32_Service -Filter "Name='$Service'" -ErrorAction SilentlyContinue
++$pidAvant = 0
++if ($svcInfo -and $svcInfo.ProcessId) { $pidAvant = [int]$svcInfo.ProcessId }
++
++if (-not $svcInfo) {
++    AjouterEtape 'arret_service_ccw' 'rien_a_faire' "Service « $Service » introuvable — déjà désinstallé ?"
++} elseif ($svcInfo.State -ne 'Running') {
++    AjouterEtape 'arret_service_ccw' 'rien_a_faire' "Service « $Service » déjà arrêté (état : $($svcInfo.State))."
++} else {
++    try {
++        $sortie = & nssm stop $Service 2>&1 | Out-String
++        AjouterEtape 'arret_service_ccw' 'succes' "nssm stop $Service : $($sortie.Trim())"
++    } catch {
++        AjouterEtape 'arret_service_ccw' 'echec' "nssm stop a échoué : $_"
++    }
++}
++
++# ─── Étape 2 : arbre de process confirmé mort (watcher + éventuel claude) ───
++# Remontée par PPID depuis le PID du service AVANT arrêt — ne cible QUE cet
++# arbre précis, jamais par nom d'exécutable (même esprit que #247 point 4).
++function ArbreVivant([int]$Racine) {
++    if ($Racine -eq 0) { return @() }
++    $tousProcess = Get-CimInstance Win32_Process
++    $vus         = New-Object System.Collections.Generic.HashSet[int]
++    $frontiere   = ,$Racine
++    $vivants     = @()
++    while ($frontiere.Count -gt 0) {
++        $suivante = @()
++        foreach ($p in $frontiere) {
++            if (-not $vus.Add($p)) { continue }
++            $proc = $tousProcess | Where-Object { $_.ProcessId -eq $p }
++            if ($proc) {
++                $vivants += $proc
++                $enfants = ($tousProcess | Where-Object { $_.ParentProcessId -eq $p }).ProcessId
++                if ($enfants) { $suivante += $enfants }
++            }
++        }
++        $frontiere = $suivante
++    }
++    return $vivants
++}
++
++$arbre  = ArbreVivant $pidAvant
++$limite = (Get-Date).AddSeconds(5)
++while ($arbre.Count -gt 0 -and (Get-Date) -lt $limite) {
++    Start-Sleep -Milliseconds 250
++    $arbre = ArbreVivant $pidAvant
++}
++
++if ($arbre.Count -gt 0) {
++    # Toujours vivant après l'attente bornée : kill ciblé de CET arbre précis,
++    # puis re-vérification courte avant de conclure.
++    foreach ($p in $arbre) {
++        try { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
++    }
++    Start-Sleep -Milliseconds 500
++    $arbre = ArbreVivant $pidAvant
++}
++
++if ($pidAvant -eq 0) {
++    AjouterEtape 'verification_orphelin_claude' 'rien_a_faire' 'Aucun PID de service connu avant arrêt (rien à vérifier).'
++} elseif ($arbre.Count -eq 0) {
++    AjouterEtape 'verification_orphelin_claude' 'succes' "Arbre de process du service (PID $pidAvant) confirmé mort."
++} else {
++    $liste = ($arbre | ForEach-Object { "$($_.ProcessId):$($_.Name)" }) -join ', '
++    AjouterEtape 'verification_orphelin_claude' 'echec' "Process encore vivant(s) après arrêt + kill ciblé : $liste — lock NON supprimé (risque de double traitement)."
++}
++
++# ─── Étape 3 : suppression du/des .lock — SEULEMENT si l'arbre est mort ────
++$dossierVerrous = Join-Path $RepDepot 'logs\verrous'
++if ($arbre.Count -gt 0) {
++    AjouterEtape 'suppression_verrou_ccw' 'echec' 'Sautée : arbre de process non confirmé mort (voir étape précédente).'
++} elseif (-not (Test-Path $dossierVerrous)) {
++    AjouterEtape 'suppression_verrou_ccw' 'rien_a_faire' "Dossier de verrous introuvable ($dossierVerrous) — rien à supprimer."
++} else {
++    $locks = @(Get-ChildItem -Path $dossierVerrous -Filter '*.lock' -ErrorAction SilentlyContinue)
++    if ($locks.Count -eq 0) {
++        AjouterEtape 'suppression_verrou_ccw' 'rien_a_faire' 'Aucun fichier .lock présent.'
++    } else {
++        $noms = ($locks | ForEach-Object { $_.Name }) -join ', '
++        try {
++            $locks | Remove-Item -Force -ErrorAction Stop
++            AjouterEtape 'suppression_verrou_ccw' 'succes' "Verrou(s) supprimé(s) : $noms"
++        } catch {
++            AjouterEtape 'suppression_verrou_ccw' 'echec' "Échec de suppression : $_"
++        }
++    }
++}
++
++Write-Output '<<<CCW_JSON>>>'
++Write-Output (ConvertTo-Json -Depth 4 -Compress @($script:etapes))
++Write-Output '<<<CCW_END>>>'
+# (diff du fichier suivant)
+diff --git a/static/css/style.css b/static/css/style.css
+# (index — ignorable)
+index 5591c23..1734938 100644
+# (avant — fichier suivant)
+--- a/static/css/style.css
+# (après — fichier suivant)
++++ b/static/css/style.css
+# ── Zone modifiée : ligne 363 (3 ligne(s)) dans l'ancienne version → ligne 363 (11 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -363,3 +363,11 @@ button.danger-plein:hover{background:#8f2626}
+   text-align:left}
+ .modal-recherche-titre .liste-issues{max-height:280px;margin-bottom:14px}
+ .modal-recherche-titre .zone-issue{max-height:360px;overflow-y:auto}
++/* Interruption d'une issue (issue #323, suite #320) : une ligne par étape,
++   couleur selon son statut à trois valeurs (succes/rien_a_faire/echec). */
++.etape-interrompre{padding:4px 2px;border-bottom:1px solid #eee}
++.etape-interrompre:last-child{border-bottom:none}
++.etape-badge{display:inline-block;width:16px;text-align:center}
++.etape-interrompre.etape-echec{color:#a32d2d}
++.etape-interrompre.etape-rien_a_faire{color:#888}
++.etape-interrompre.etape-succes{color:#22803a}
+# (diff du fichier suivant)
+diff --git a/static/js/app.js b/static/js/app.js
+# (index — ignorable)
+index 6e4482a..a4f1fa2 100644
+# (avant — fichier suivant)
+--- a/static/js/app.js
+# (après — fichier suivant)
++++ b/static/js/app.js
+# ── Zone modifiée : ligne 1718 (6 ligne(s)) dans l'ancienne version → ligne 1718 (19 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1718,6 +1718,19 @@ function construireHtmlIssue(it, nom) {
+           + 'Fermer définitivement</button></div>';
+   }
+ 
++  // Bouton « Interrompre » (issue #323, suite #320) : sur TOUTE issue ouverte
++  // ni done ni needs-human — remplace au niveau de l'issue elle-même l'action
++  // corrective qui se faisait jusqu'ici hors interface (kill manuel, verrou à
++  // la main). Contrairement à « Interrompre et fermer » (#144, ci-dessus) :
++  // ne FERME PAS l'issue (needs-human seulement, trace via commentaire), et
++  // fonctionne aussi côté for-windows (CCW), pas seulement for-linux.
++  if (!ferme && !nomsLabels.includes('done') && !nomsLabels.includes('needs-human')) {
++    html += '<div class="bloc-annuler">'
++          + '<button class="danger" onclick="interrompreIssue(\'' + nom + '\', '
++          + Number(it.number) + ')">'
++          + '⛔ Interrompre cette issue</button></div>';
++  }
++
+   html += '<div class="issue-body">' + escapeHtml(it.body || '(pas de description)') + '</div>';
+ 
+   const comms = it.comments || [];
+# ── Zone modifiée : ligne 2690 (6 ligne(s)) dans l'ancienne version → ligne 2703 (128 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -2690,6 +2703,128 @@ async function fermerEtInterrompre(nom, numero) {
+   }
+ }
+ 
++// ─── Interruption ciblée d'une issue en cours (issue #323, suite #320) ──────
++// Contrairement à fermerEtInterrompre() (#144, ci-dessus) : ne ferme PAS
++// l'issue (needs-human + commentaire seulement, trace conservée), et gère
++// aussi bien for-linux (CCL) que for-windows (CCW via guestcontrol/nssm).
++// Le dépôt GitHub est lu depuis le <select id="projet"> peuplé côté serveur
++// (« nom — depot », cf. templates/index.html et ajouterProjetAuSelecteur) —
++// JAMAIS déduit du nom du projet (les deux peuvent diverger, voir la route
++// Flask /interrompre, app/interruption.py). Les labels viennent du cache
++// localStorage du détail déjà affiché (CLE_CACHE_DETAIL), forcément à jour
++// puisque c'est ce détail qui vient de faire apparaître le bouton.
++function depotDuProjet(nom) {
++  const select = document.getElementById('projet');
++  if (!select) return null;
++  const opt = [...select.options].find(o => o.value === nom);
++  if (!opt) return null;
++  const idx = (opt.textContent || '').indexOf(' — ');
++  return idx >= 0 ? opt.textContent.slice(idx + 3).trim() : null;
++}
++
++function labelsIssueDepuisCache(nom, numero) {
++  try {
++    const obj = JSON.parse(localStorage.getItem(CLE_CACHE_DETAIL + nom + '_' + numero) || 'null');
++    if (obj && obj.it && Array.isArray(obj.it.labels)) {
++      return obj.it.labels.map(l => (l && l.name) || l || '').filter(Boolean);
++    }
++  } catch(e) {}
++  return [];
++}
++
++async function interrompreIssue(nom, numero) {
++  const depot = depotDuProjet(nom);
++  if (!depot) {
++    alert('Dépôt GitHub introuvable pour le projet « ' + nom + ' » — impossible d\'interrompre.');
++    return;
++  }
++  const labels  = labelsIssueDepuisCache(nom, numero);
++  const windows = labels.map(l => l.toLowerCase()).includes('for-windows');
++  if (!confirm("Interrompre le traitement de l'issue #" + numero
++             + (windows ? ' (CCW / Windows)' : ' (CCL / Linux)') + " ?\n\n"
++             + 'Le watcher ' + (windows ? 'CCW-Watcher' : 'du projet')
++             + ' sera ARRÊTÉ (les autres issues en file restent ouvertes sur GitHub, '
++             + 'mais en attente tant que le watcher n\'est pas relancé MANUELLEMENT). '
++             + "L'issue sera marquée needs-human — elle ne sera PAS fermée. Continuer ?")) return;
++
++  let resultat;
++  try {
++    const rep = await fetch('/interrompre', {
++      method: 'POST',
++      headers: {'Content-Type': 'application/json'},
++      body: JSON.stringify({depot: depot, numero: Number(numero), labels: labels})
++    });
++    resultat = await rep.json();
++  } catch(e) {
++    alert('Erreur réseau : ' + e.message);
++    return;
++  }
++  if (!resultat.succes) {
++    alert('Erreur : ' + (resultat.erreur || "échec de l'interruption."));
++    return;
++  }
++  ouvrirModalInterrompre(resultat);
++
++  // Recharge la liste (l'issue porte désormais needs-human) puis réaffiche.
++  const numStr = String(numero);
++  await chargerListeIssues();
++  const ligne = [...document.querySelectorAll('#liste-issues .ligne-issue')]
++    .find(l => l.dataset.projet === nom && l.dataset.numero === numStr);
++  if (ligne && ligne.style.display !== 'none') {
++    await afficherIssue(nom, numStr);
++  }
++  const panneauWatchers = document.getElementById('panneau-watchers');
++  if (panneauWatchers && panneauWatchers.classList.contains('actif')) {
++    await chargerWatchers();
++  }
++}
++
++const LIBELLES_STATUT_INTERROMPRE = {
++  ok:              {icone: '✅', texte: 'Interruption effectuée'},
++  succes_partiel:  {icone: '⚠️', texte: 'Interruption partielle — certaines étapes ont échoué'},
++  echec_critique:  {icone: '⛔', texte: "Interruption incomplète — action manuelle requise"},
++};
++const BADGES_ETAPE_INTERROMPRE = {succes: '✅', rien_a_faire: '➖', echec: '❌'};
++
++function ouvrirModalInterrompre(resultat) {
++  const overlay = document.getElementById('modal-interrompre');
++  const titre   = document.getElementById('modal-interrompre-titre');
++  const liste   = document.getElementById('modal-interrompre-liste');
++  const rappel  = document.getElementById('modal-interrompre-rappel');
++
++  const lib = LIBELLES_STATUT_INTERROMPRE[resultat.statut_global]
++           || {icone: '', texte: resultat.statut_global || '?'};
++  titre.textContent = lib.icone + ' ' + lib.texte;
++
++  liste.innerHTML = (resultat.etapes || []).map(e =>
++    '<div class="etape-interrompre etape-' + escapeHtml(e.statut) + '">'
++    + '<span class="etape-badge">' + (BADGES_ETAPE_INTERROMPRE[e.statut] || '?') + '</span> '
++    + '<b>' + escapeHtml(e.etape) + '</b> — ' + escapeHtml(e.message || '')
++    + '</div>'
++  ).join('') || '<div class="issue-vide">Aucune étape.</div>';
++
++  let rappelTexte = resultat.agent === 'windows'
++    ? 'Service CCW-Watcher arrêté — relance via l\'onglet CCW (pas de rallumage automatique).'
++    : 'Relance manuelle du watcher obligatoire (onglet Watchers) — pas de rallumage automatique.';
++  if (resultat.agent === 'windows' && resultat.vm_running === false) {
++    rappelTexte += ' ⚠ La VM CCW-Build ne semble pas démarrée actuellement.';
++  }
++  if (resultat.statut_global === 'echec_critique') {
++    rappelTexte += " ⛔ Un process n'a pas pu être confirmé mort — vérifiez avec ps / le "
++                 + 'Gestionnaire des tâches AVANT de relancer le watcher (le verrou a été '
++                 + 'volontairement laissé en place pour éviter un double traitement).';
++  } else if (resultat.statut_global === 'succes_partiel') {
++    rappelTexte += ' ⚠ Certaines étapes ont échoué (détail ci-dessus) — vérifiez avant de relancer.';
++  }
++  rappel.textContent = rappelTexte;
++
++  overlay.classList.add('actif');
++}
++
++function fermerModalInterrompre() {
++  document.getElementById('modal-interrompre').classList.remove('actif');
++}
++
+ function collecterFormulaire() {
+   const notifs = [...document.querySelectorAll('input[name=notifs]:checked')].map(c => c.value);
+   return {
+# (diff du fichier suivant)
+diff --git a/templates/index.html b/templates/index.html
+# (index — ignorable)
+index 59dcef9..8517de2 100644
+# (avant — fichier suivant)
+--- a/templates/index.html
+# (après — fichier suivant)
++++ b/templates/index.html
+# ── Zone modifiée : ligne 560 (6 ligne(s)) dans l'ancienne version → ligne 560 (22 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -560,6 +560,22 @@
+   </div>
+ </div>
+ 
++<!-- ─── Modal « Résultat de l'interruption » (issue #323, suite #320) ────────
++     Affichée après l'appel à POST /interrompre : statut global + détail de
++     CHAQUE étape (pas seulement le résultat global), puis rappel de la
++     relance manuelle obligatoire du watcher (les deux côtés : CCL comme
++     CCW-Watcher ne sont JAMAIS relancés automatiquement par cette action). -->
++<div id="modal-interrompre" class="modal-overlay">
++  <div class="modal-carte" style="max-width:560px">
++    <div class="modal-titre" id="modal-interrompre-titre"></div>
++    <div id="modal-interrompre-liste" class="modal-liste" style="font-family:inherit"></div>
++    <div id="modal-interrompre-rappel" class="message avertissement" style="margin-bottom:14px"></div>
++    <div class="modal-boutons">
++      <button id="btn-fermer-interrompre" onclick="fermerModalInterrompre()">OK</button>
++    </div>
++  </div>
++</div>
++
+ <!-- ─── Overlay « serveur arrêté » ────────────────────────────────────────── -->
+ <div id="overlay-arret" class="overlay-arret">
+   <div class="msg">🔴 Serveur arrêté — relancez new_issue.py puis rechargez</div>

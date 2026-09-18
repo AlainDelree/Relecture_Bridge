@@ -1,0 +1,15 @@
+7c893b0
+
+commit 7c893b0
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Mon Aug 3 01:51:53 2026 +0200
+
+    version.json : sha256 réel du scrabble.zip build 1
+
+diff --git a/version.json b/version.json
+index bcb38fa..1b2053f 100644
+--- a/version.json
++++ b/version.json
+@@ -1 +1 @@
+-{"build": 1, "sha256": "SHA256_A_REMPLIR"}
++{"build": 1, "sha256": "089246317bd6ab5fb3a82cb584d5aa24ebd535339360bf98f19cb1f1872a386e"}

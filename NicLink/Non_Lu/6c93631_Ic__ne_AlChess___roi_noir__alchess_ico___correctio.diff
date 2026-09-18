@@ -1,0 +1,50 @@
+6c93631
+
+commit 6c93631
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Wed Aug 12 20:28:12 2026 +0200
+
+    Icône AlChess : roi noir (alchess.ico), correction raccourci NSIS
+
+diff --git a/TACHES.md b/TACHES.md
+index 5ff4cf6..7c9bd95 100644
+--- a/TACHES.md
++++ b/TACHES.md
+@@ -5,7 +5,7 @@
+ ## ⚡ Prioritaire
+ 
+ - **Release v1.3.1 à packager** `[Linux/Windows]` — regrouper les correctifs depuis v1.3.0 (dont issue #96) : `./make_release.sh 1.3.1` + tag + `gh release create`.
+-- **ACTION ALAIN — Validation VM NSIS** `[Windows]` — relancer `AlChess_Setup.exe` sur VM Windows et confirmer l'installation/lancement de bout en bout (issues #64–#67, #58).
++- **ACTION ALAIN — Valider nouveau raccourci Windows** `[Windows]` — relancer `AlChess_Setup.exe` sur VM Windows et vérifier que le raccourci bureau affiche bien l'icône roi noir.
+ - **Tester une partie réelle Rodent sur Windows** `[Windows]` — sur portable physique (jeu + changement d'Elo + redémarrage).
+ - **Tester vc_redist sur un Windows sans le runtime VC++** `[Windows]` — la VM actuelle a déjà le runtime, il faut un Windows propre.
+ 
+diff --git a/alchess.ico b/alchess.ico
+new file mode 100644
+index 0000000..de934b8
+Binary files /dev/null and b/alchess.ico differ
+diff --git a/installer-exe/alchess_setup.nsi b/installer-exe/alchess_setup.nsi
+index a20a1aa..9fe0c3a 100644
+--- a/installer-exe/alchess_setup.nsi
++++ b/installer-exe/alchess_setup.nsi
+@@ -1914,7 +1914,7 @@ Section "Raccourci bureau" SecShortcut
+     ; ne remonte pas une erreur laissee par une instruction anterieure.
+     ClearErrors
+     CreateShortcut "$DESKTOP\AlChess.lnk" "$EXEDIR\2-Lancer_AlChess.bat" \
+-        "" "$EXEDIR\niclink_icon.ico" 0 SW_SHOWNORMAL "" "Launch AlChess"
++        "" "$EXEDIR\alchess.ico" 0 SW_SHOWNORMAL "" "Launch AlChess"
+     IfErrors shortcut_failed shortcut_ok
+ 
+     shortcut_failed:
+diff --git a/make_release.sh b/make_release.sh
+index 4bdd074..262dd30 100755
+--- a/make_release.sh
++++ b/make_release.sh
+@@ -60,6 +60,7 @@ INCLUDE=(
+   start_alchess.ps1
+   99-chessnutair.rules.example
+   niclink_icon.ico
++  alchess.ico
+ )
+ 
+ for item in "${INCLUDE[@]}"; do

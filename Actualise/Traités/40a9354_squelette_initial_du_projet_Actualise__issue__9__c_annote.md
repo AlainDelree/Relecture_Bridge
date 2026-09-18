@@ -1,0 +1,376 @@
+40a9354
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 40a9354
+# ── Qui a fait ce commit.
+Author: Alain Delree <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Sat Jul 25 22:40:01 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    squelette initial du projet Actualise (issue #9, chef #207, suite #4)
+    
+    Structure de fichiers minimale avec fonctions stub (docstrings renvoyant
+    vers CONCEPTION.md), prête à être implémentée dans des issues suivantes :
+    actualise.py, config.py, version_check.py, mise_a_jour.py,
+    notifications.py, requirements.txt, README.md.
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/.gitignore b/.gitignore
+# ── Ce fichier n'existait pas avant ce commit : il vient d'être créé.
+new file mode 100644
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 0000000..7a60b85
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- /dev/null
+# ── Version APRÈS ce commit.
++++ b/.gitignore
+# ── Zone modifiée : ligne 0 (0 ligne(s)) dans l'ancienne version → ligne 1 (2 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -0,0 +1,2 @@
++__pycache__/
++*.pyc
+# (diff du fichier suivant)
+diff --git a/README.md b/README.md
+# ── Ce fichier n'existait pas avant ce commit : il vient d'être créé.
+new file mode 100644
+# (index — ignorable)
+index 0000000..a3de83c
+# (avant — fichier suivant)
+--- /dev/null
+# (après — fichier suivant)
++++ b/README.md
+# ── Zone modifiée : ligne 0 (0 ligne(s)) dans l'ancienne version → ligne 1 (35 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -0,0 +1,35 @@
++# Actualise
++
++Système de mise à jour automatique générique pour applications Windows
++packagées en `.exe` (ex. PyInstaller), pensé initialement pour Scrabble
++mais réutilisable pour d'autres projets.
++
++## Principe général
++
++Actualise est un exécutable séparé de l'application cible : le
++raccourci Bureau/menu Démarrer de l'utilisateur final pointe vers
++Actualise, jamais directement vers l'application cible. Au lancement,
++Actualise démarre immédiatement l'application cible dans sa version
++installée (aucun délai perceptible), puis vérifie et télécharge les
++mises à jour disponibles en arrière-plan ; toute mise à jour trouvée
++est appliquée au lancement suivant.
++
++Voir [CONCEPTION.md](CONCEPTION.md) pour le rapport de conception
++complet (architecture détaillée, format de version, distribution des
++binaires, manifeste de mise à jour, séquence de démarrage, garde-fou
++anti-boucle infinie, et l'ensemble des décisions actées).
++
++## Structure du projet
++
++- `actualise.py` — point d'entrée principal
++- `config.py` — lecture/écriture de `config.json`, chemins portables
++- `version_check.py` — vérification de `version.json` (Actualise et
++  application cible)
++- `mise_a_jour.py` — téléchargement, vérification SHA-256, extraction
++  du zip, application du manifeste
++- `notifications.py` — envoi de notifications ntfy
++
++## État actuel
++
++Squelette initial : structure de fichiers et signatures de fonctions en
++place, implémentation à venir dans des issues suivantes.
+# (diff du fichier suivant)
+diff --git a/actualise.py b/actualise.py
+# ── Ce fichier n'existait pas avant ce commit : il vient d'être créé.
+new file mode 100644
+# (index — ignorable)
+index 0000000..6cacfbe
+# (avant — fichier suivant)
+--- /dev/null
+# (après — fichier suivant)
++++ b/actualise.py
+# ── Zone modifiée : ligne 0 (0 ligne(s)) dans l'ancienne version → ligne 1 (87 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -0,0 +1,87 @@
++#!/usr/bin/env python3
++"""Point d'entrée principal d'Actualise.
++
++Voir CONCEPTION.md, section « Séquence de démarrage — vérification non
++bloquante » pour le déroulé complet, et « Garde-fou anti-boucle
++infinie » pour le rôle de l'argument ``--child``.
++"""
++
++import argparse
++import threading
++
++
++def analyser_arguments(argv: list[str] | None = None) -> argparse.Namespace:
++    """Définit et analyse les arguments de la ligne de commande.
++
++    ``--child`` est le marqueur explicite parent → enfant du garde-fou
++    anti-boucle infinie (voir CONCEPTION.md, « Garde-fou anti-boucle
++    infinie ») : si présent, l'instance saute inconditionnellement toute
++    bascule d'auto-mise-à-jour supplémentaire.
++    """
++    analyseur = argparse.ArgumentParser(description="Actualise — mise à jour automatique")
++    analyseur.add_argument(
++        "--child",
++        action="store_true",
++        help="Marqueur interne : instance relancée après bascule d'auto-mise-à-jour (voir CONCEPTION.md)",
++    )
++    return analyseur.parse_args(argv)
++
++
++def appliquer_mises_a_jour_en_attente(est_enfant: bool) -> None:
++    """Applique, au lancement, les mises à jour mises en attente au
++    cycle précédent (étape 4 de la séquence de démarrage).
++
++    Si ``est_enfant`` est vrai (marqueur ``--child`` présent), cette
++    étape est sautée inconditionnellement pour Actualise lui-même — voir
++    CONCEPTION.md, « Garde-fou anti-boucle infinie ».
++    """
++    raise NotImplementedError
++
++
++def lancer_application_cible() -> None:
++    """Lance immédiatement l'application cible dans sa version
++    actuellement installée, sans attendre aucune vérification réseau.
++
++    Voir CONCEPTION.md, « Séquence de démarrage », étape 2.
++    """
++    raise NotImplementedError
++
++
++def tache_verification_arriere_plan() -> None:
++    """Tâche de fond : vérifie et télécharge les mises à jour
++    (Actualise et application cible), notifie via ntfy si une mise à
++    jour est prête.
++
++    Voir CONCEPTION.md, « Séquence de démarrage », étape 3.
++    """
++    raise NotImplementedError
++
++
++def main(argv: list[str] | None = None) -> int:
++    """Orchestre la séquence de démarrage non bloquante d'Actualise.
++
++    Voir CONCEPTION.md, « Séquence de démarrage — vérification non
++    bloquante » pour le déroulé complet des étapes ci-dessous.
++    """
++    arguments = analyser_arguments(argv)
++
++    # Étape 4 : bascule des mises à jour déjà téléchargées et validées
++    # au cycle précédent (sautée pour Actualise si --child est présent).
++    appliquer_mises_a_jour_en_attente(est_enfant=arguments.child)
++
++    # Étape 2 : lancement immédiat de l'application cible, sans attendre
++    # le réseau.
++    lancer_application_cible()
++
++    # Étape 3 : vérification et téléchargement en arrière-plan, sans
++    # bloquer l'utilisateur.
++    thread_verification = threading.Thread(
++        target=tache_verification_arriere_plan, daemon=True
++    )
++    thread_verification.start()
++
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+# (diff du fichier suivant)
+diff --git a/config.py b/config.py
+# ── Ce fichier n'existait pas avant ce commit : il vient d'être créé.
+new file mode 100644
+# (index — ignorable)
+index 0000000..23c4fc2
+# (avant — fichier suivant)
+--- /dev/null
+# (après — fichier suivant)
++++ b/config.py
+# ── Zone modifiée : ligne 0 (0 ligne(s)) dans l'ancienne version → ligne 1 (38 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -0,0 +1,38 @@
++"""Lecture/écriture de config.json et résolution du chemin de
++configuration portable (Windows/Linux).
++
++Voir CONCEPTION.md, sections « Contenu de config.json » et
++« Configuration portable ».
++"""
++
++from pathlib import Path
++from typing import Any
++
++
++def chemin_config_portable() -> Path:
++    """Retourne le chemin du dossier de configuration selon l'OS.
++
++    Windows : ``C:\\Actualise\\``.
++    Linux : ``~/.config/actualise/``, ou variable d'environnement dédiée
++    si définie (voir CONCEPTION.md, « Configuration portable » et
++    décision actée correspondante dans le tableau « Décisions actées »).
++    """
++    raise NotImplementedError
++
++
++def charger_config() -> dict[str, Any]:
++    """Charge et retourne le contenu de config.json.
++
++    Voir CONCEPTION.md, section « Contenu de config.json », pour le
++    format attendu (blocs ``actualise`` / ``application_cible``,
++    ``zone_attente``, ``topic_ntfy``).
++    """
++    raise NotImplementedError
++
++
++def sauvegarder_config(config: dict[str, Any]) -> None:
++    """Écrit le contenu de ``config`` dans config.json.
++
++    Voir CONCEPTION.md, section « Contenu de config.json ».
++    """
++    raise NotImplementedError
+# (diff du fichier suivant)
+diff --git a/mise_a_jour.py b/mise_a_jour.py
+# ── Ce fichier n'existait pas avant ce commit : il vient d'être créé.
+new file mode 100644
+# (index — ignorable)
+index 0000000..f0a9c47
+# (avant — fichier suivant)
+--- /dev/null
+# (après — fichier suivant)
++++ b/mise_a_jour.py
+# ── Zone modifiée : ligne 0 (0 ligne(s)) dans l'ancienne version → ligne 1 (55 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -0,0 +1,55 @@
++"""Téléchargement, vérification SHA-256, extraction du zip de mise à
++jour et application du manifeste.
++
++Voir CONCEPTION.md, sections « Distribution des binaires — GitHub
++Releases », « Manifeste de mise à jour » et « Séquence de démarrage —
++vérification non bloquante » (étapes 3 et 4).
++"""
++
++from pathlib import Path
++from typing import Any
++
++
++def telecharger_zip(url: str, sha256_attendu: str) -> Path | None:
++    """Télécharge le zip de mise à jour depuis ``url`` et vérifie son
++    intégrité via ``sha256_attendu``.
++
++    Voir CONCEPTION.md, « Séquence de démarrage » étape 3 : en cas de
++    non-correspondance du SHA-256, le téléchargement est rejeté et
++    aucune zone d'attente n'est mise à jour (même repli qu'un échec
++    réseau). Retourne le chemin du zip téléchargé et validé, ou
++    ``None`` en cas d'échec (réseau ou SHA-256 invalide).
++    """
++    raise NotImplementedError
++
++
++def verifier_sha256(chemin_fichier: Path, hash_attendu: str) -> bool:
++    """Calcule le SHA-256 de ``chemin_fichier`` et le compare à
++    ``hash_attendu``.
++
++    Voir CONCEPTION.md, « Format de version » (champ ``sha256`` du
++    version.json) et « Vérification SHA-256 du zip » dans le tableau
++    « Décisions actées ».
++    """
++    raise NotImplementedError
++
++
++def extraire_zip(chemin_zip: Path, destination: Path) -> None:
++    """Extrait ``chemin_zip`` dans ``destination``, en écrasant les
++    fichiers existants de même nom et en ajoutant les nouveaux.
++
++    Voir CONCEPTION.md, « Séquence de démarrage » étape 4, sous-étape 1
++    (« extraction du zip »).
++    """
++    raise NotImplementedError
++
++
++def appliquer_manifeste(manifest: dict[str, Any], destination: Path) -> None:
++    """Applique le manifeste (``manifest.json``) après extraction :
++    supprime les fichiers listés dans ``manifest["supprimer"]``.
++
++    Liste noire optionnelle et fail-safe : seuls les chemins listés sont
++    supprimés. Voir CONCEPTION.md, « Manifeste de mise à jour » et
++    « Séquence de démarrage » étape 4, sous-étape 2.
++    """
++    raise NotImplementedError
+# (diff du fichier suivant)
+diff --git a/notifications.py b/notifications.py
+# ── Ce fichier n'existait pas avant ce commit : il vient d'être créé.
+new file mode 100644
+# (index — ignorable)
+index 0000000..e1f3088
+# (avant — fichier suivant)
+--- /dev/null
+# (après — fichier suivant)
++++ b/notifications.py
+# ── Zone modifiée : ligne 0 (0 ligne(s)) dans l'ancienne version → ligne 1 (16 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -0,0 +1,16 @@
++"""Envoi de notifications ntfy.
++
++Voir CONCEPTION.md, section « Contenu de config.json » (champ
++``topic_ntfy``) et « Décisions actées » (« un topic ntfy dédié par
++programme géré »).
++"""
++
++
++def notifier_ntfy(topic: str, message: str) -> None:
++    """Envoie ``message`` sur le topic ntfy ``topic``.
++
++    Utilisé notamment pour la notification informative envoyée quand une
++    mise à jour a été téléchargée et validée en arrière-plan (voir
++    CONCEPTION.md, « Séquence de démarrage » étape 3).
++    """
++    raise NotImplementedError
+# (diff du fichier suivant)
+diff --git a/requirements.txt b/requirements.txt
+# ── Ce fichier n'existait pas avant ce commit : il vient d'être créé.
+new file mode 100644
+# (index — ignorable)
+index 0000000..f229360
+# (avant — fichier suivant)
+--- /dev/null
+# (après — fichier suivant)
++++ b/requirements.txt
+# ── Zone modifiée : ligne 0 (0 ligne(s)) dans l'ancienne version → ligne 1 (1 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -0,0 +1 @@
++requests
+# (diff du fichier suivant)
+diff --git a/version_check.py b/version_check.py
+# ── Ce fichier n'existait pas avant ce commit : il vient d'être créé.
+new file mode 100644
+# (index — ignorable)
+index 0000000..c4e7347
+# (avant — fichier suivant)
+--- /dev/null
+# (après — fichier suivant)
++++ b/version_check.py
+# ── Zone modifiée : ligne 0 (0 ligne(s)) dans l'ancienne version → ligne 1 (29 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -0,0 +1,29 @@
++"""Vérification de version.json (Actualise et application cible).
++
++Voir CONCEPTION.md, sections « Format de version », « Deux fichiers
++version.json distincts » et « Vérification réseau — timeout strict ».
++"""
++
++from typing import Any
++
++# Timeout strict (2 à 3 secondes) sur toute requête réseau de
++# vérification de version. Au-delà, la vérification est traitée comme
++# un échec réseau et on se rabat silencieusement sur la version
++# installée (voir CONCEPTION.md, « Vérification réseau — timeout
++# strict » et « Décisions actées »).
++TIMEOUT_RESEAU_SECONDES = 3
++
++
++def verifier_version(depot_github: str, build_installe: int) -> dict[str, Any] | None:
++    """Vérifie si une nouvelle version est disponible pour ``depot_github``.
++
++    Récupère le version.json distant (``{"build": N, "sha256": "..."}``,
++    voir CONCEPTION.md « Format de version ») avec le timeout strict
++    ``TIMEOUT_RESEAU_SECONDES``, et le compare à ``build_installe``.
++
++    Retourne le version.json distant si une nouvelle version est
++    disponible (``distant.build > build_installe``), sinon ``None``
++    (pas de mise à jour, ou échec réseau/timeout — repli silencieux,
++    voir CONCEPTION.md « Décisions actées »).
++    """
++    raise NotImplementedError

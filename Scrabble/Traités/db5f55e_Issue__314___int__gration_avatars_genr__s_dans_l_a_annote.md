@@ -1,0 +1,119 @@
+db5f55e
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit db5f55e
+# ── Qui a fait ce commit.
+Author: CCL agent <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Wed Jul 29 07:04:31 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Issue #314 : intégration avatars genrés dans l'accueil (avatarPour/avatarStablePourPrenom portés de Rummikub)
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/src/scrabble/ui/web/accueil.html b/src/scrabble/ui/web/accueil.html
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index fa7fbfa..a285ef3 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/src/scrabble/ui/web/accueil.html
+# ── Version APRÈS ce commit.
++++ b/src/scrabble/ui/web/accueil.html
+# ── Zone modifiée : ligne 456 (6 ligne(s)) dans l'ancienne version → ligne 456 (8 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -456,6 +456,8 @@
+          L'accueil se ferme désormais directement au clic sur « Lancer la
+          partie », sans transition entre deux fenêtres. -->
+ 
++    <script src="genres.js"></script>
++    <script src="commun.js"></script>
+     <script src="accueil.js"></script>
+ </body>
+ </html>
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/web/accueil.js b/src/scrabble/ui/web/accueil.js
+# (index — ignorable)
+index 6c54f5e..49b79b1 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/web/accueil.js
+# (après — fichier suivant)
++++ b/src/scrabble/ui/web/accueil.js
+# ── Zone modifiée : ligne 72 (11 ligne(s)) dans l'ancienne version → ligne 72 (24 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -72,11 +72,24 @@ document.addEventListener('DOMContentLoaded', async () => {
+ 
+                 // Avatar configuré du joueur humain de référence (issue #148) :
+                 // s'il est fourni par Python, on affiche le portrait SVG choisi
+-                // dans les réglages (le même que celui utilisé pendant la partie),
+-                // sinon on retombe sur l'icône générique 👤 / 🖥️.
+-                const icone = joueur.avatar
+-                    ? `<img class="joueur-avatar" src="avatars/${encodeURIComponent(joueur.avatar)}.svg" alt="" width="28" height="28">`
+-                    : `<span class="joueur-icone">${joueur.humain ? '👤' : '🖥️'}</span>`;
++                // dans les réglages (le même que celui utilisé pendant la partie).
++                // À défaut, on retombe désormais sur un avatar SVG genré (issue
++                // #314) plutôt que sur l'icône générique 👤/🖥️ : stable par
++                // prénom pour un humain (avatarStablePourPrenom), déterministe
++                // par position pour un ordinateur (avatarPour) — fonctions
++                // portées de commun.js.
++                let icone;
++                if (joueur.avatar) {
++                    icone = `<img class="joueur-avatar" src="avatars/${encodeURIComponent(joueur.avatar)}.svg" alt="" width="28" height="28">`;
++                } else {
++                    const nomAvatar = joueur.humain
++                        ? avatarStablePourPrenom(joueur.nom)
++                        : avatarPour(index);
++                    const img = elementAvatar(nomAvatar, 'joueur-avatar');
++                    img.width = 28;
++                    img.height = 28;
++                    icone = img.outerHTML;
++                }
+                 let typeLabel = joueur.humain ? 'Joueur' : 'Ordinateur';
+                 if (!joueur.humain && joueur.niveau) {
+                     const niveauLabel = {
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/web/commun.js b/src/scrabble/ui/web/commun.js
+# (index — ignorable)
+index d9a98e5..8a6c514 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/web/commun.js
+# (après — fichier suivant)
++++ b/src/scrabble/ui/web/commun.js
+# ── Zone modifiée : ligne 405 (3 ligne(s)) dans l'ancienne version → ligne 405 (40 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -405,3 +405,40 @@
+         creerModaleScore,
+     };
+ })();
++
++const AVATARS_F = ["avatar-02", "avatar-08", "avatar-10"];
++const AVATARS_M = ["avatar-01", "avatar-03", "avatar-04", "avatar-05",
++    "avatar-06", "avatar-07", "avatar-09", "avatar-11", "avatar-12",
++    "avatar-13", "avatar-14", "avatar-15"];
++const AVATARS = ["avatar-01", "avatar-02", "avatar-03", "avatar-04",
++    "avatar-05", "avatar-06", "avatar-07", "avatar-08", "avatar-09",
++    "avatar-10", "avatar-11", "avatar-12", "avatar-13", "avatar-14",
++    "avatar-15"];
++
++function avatarPour(i) {
++    return AVATARS[((i % AVATARS.length) + AVATARS.length) % AVATARS.length];
++}
++
++function elementAvatar(nomFichier, className) {
++    const img = document.createElement("img");
++    img.src = `avatars/${nomFichier}.svg`;
++    img.alt = "";
++    img.className = className || "avatar-svg";
++    return img;
++}
++
++function avatarAleatoirePourPrenom(prenom, exclus) {
++    const g = typeof genrePrenom === "function" ? genrePrenom(prenom) : null;
++    const liste = g === "F" ? AVATARS_F : g === "M" ? AVATARS_M : AVATARS;
++    const disponibles = liste.filter(a => !exclus || !exclus.includes(a));
++    const source = disponibles.length > 0 ? disponibles : liste;
++    return source[Math.floor(Math.random() * source.length)];
++}
++
++function avatarStablePourPrenom(prenom) {
++    const g = typeof genrePrenom === "function" ? genrePrenom(prenom) : null;
++    const liste = g === "F" ? AVATARS_F : g === "M" ? AVATARS_M : AVATARS;
++    let hash = 0;
++    for (let i = 0; i < prenom.length; i++) hash += prenom.charCodeAt(i);
++    return liste[hash % liste.length];
++}

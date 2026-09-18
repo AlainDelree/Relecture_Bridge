@@ -1,0 +1,39 @@
+a900322
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit a900322
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Mon Aug 10 21:38:28 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    docs: TACHES.md — synthèse issue #102 (icônes menu + détection déconnexion plateau)
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/TACHES.md b/TACHES.md
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 12fc1e4..2e69788 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/TACHES.md
+# ── Version APRÈS ce commit.
++++ b/TACHES.md
+# ── Zone modifiée : ligne 23 (11 ligne(s)) dans l'ancienne version → ligne 23 (14 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -23,11 +23,14 @@
+ - **Pédagogique — boucle infinie de double-bip si pièce mal jouée puis corrigée manuellement** `[Linux]`
+ - **Numéros de lignes échiquier mal alignés (rendu police Windows)** `[Windows]`
+ 
++### Bugs résolus récemment
++- **Icônes 🖥 résiduelles sur Analyse/Retranscrire + déconnexion plateau en session non détectée** `[Linux]` — issue #102, commit `fcb51e1`. `hid_backend.get_fen()` avalait les `OSError` de lecture USB sans jamais le signaler ; ajout de `is_connected()`/`_connected` côté backend, comptage des échecs consécutifs dans `_fen_reader_loop` (driver.py), callback `_board_lost_cb` câblé sur `board_error` dans `board_adapter.create_board()`, et `reconnect_board` intercepté dans `server.py::on_action` pour fonctionner aussi bien au menu qu'en cours de partie.
++
+ ---
+ 
+ ## 💡 Fonctionnalités à venir
+ 
+-- **Chantier « l'UI reflète l'état réel du système »** `[Les deux]` — reste : déconnexion échiquier en cours de session mal gérée (modes physiques pas grisés).
++- **Chantier « l'UI reflète l'état réel du système »** `[Les deux]` — détection de la déconnexion en cours de session faite (issue #102) ; reste : griser les boutons `data-needs-board` sur réception de `board_error` en cours de partie (aujourd'hui seul `board_ok` les réactive).
+ - **Tutoriels utilisateur** `[Les deux]` — autres aides in-app à ajouter au fil des besoins.
+ - **Nettoyer le dossier Rodent dans le packaging** — trier par OS (`mac/`, `sources/`, `books/` volumineux inutiles au paquet final).
+ - **Réduire la taille des ZIP** (~210/215 Mo) — élagage `books/`/`exe/`/`docs/` de Rodent à valider avec Alain.

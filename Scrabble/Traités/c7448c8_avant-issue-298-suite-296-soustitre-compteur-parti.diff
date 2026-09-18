@@ -1,0 +1,40 @@
+c7448c8
+
+commit c7448c8
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Mon Jul 27 09:57:09 2026 +0200
+
+    avant-issue-298-suite-296-soustitre-compteur-parties-marge-france
+
+diff --git a/scripts/_harness_jeu/verif_295_out/i292_accueil_belgique_rempli_1280x800_webkitgtk.png b/scripts/_harness_jeu/verif_295_out/i292_accueil_belgique_rempli_1280x800_webkitgtk.png
+new file mode 100644
+index 0000000..ba654ba
+Binary files /dev/null and b/scripts/_harness_jeu/verif_295_out/i292_accueil_belgique_rempli_1280x800_webkitgtk.png differ
+diff --git a/scripts/_harness_jeu/verif_295_out/i292_accueil_belgique_rempli_1340x800_webkitgtk.png b/scripts/_harness_jeu/verif_295_out/i292_accueil_belgique_rempli_1340x800_webkitgtk.png
+new file mode 100644
+index 0000000..612abd7
+Binary files /dev/null and b/scripts/_harness_jeu/verif_295_out/i292_accueil_belgique_rempli_1340x800_webkitgtk.png differ
+diff --git a/scripts/_harness_jeu/verif_295_out/i292_accueil_belgique_rempli_700x800_webkitgtk.png b/scripts/_harness_jeu/verif_295_out/i292_accueil_belgique_rempli_700x800_webkitgtk.png
+new file mode 100644
+index 0000000..92dfa50
+Binary files /dev/null and b/scripts/_harness_jeu/verif_295_out/i292_accueil_belgique_rempli_700x800_webkitgtk.png differ
+diff --git a/scripts/_harness_jeu/verif_295_out/i292_accueil_belgique_vide_1280x800_webkitgtk.png b/scripts/_harness_jeu/verif_295_out/i292_accueil_belgique_vide_1280x800_webkitgtk.png
+new file mode 100644
+index 0000000..470c133
+Binary files /dev/null and b/scripts/_harness_jeu/verif_295_out/i292_accueil_belgique_vide_1280x800_webkitgtk.png differ
+diff --git a/scripts/_harness_jeu/verif_295_out/i292_accueil_belgique_vide_1340x800_webkitgtk.png b/scripts/_harness_jeu/verif_295_out/i292_accueil_belgique_vide_1340x800_webkitgtk.png
+new file mode 100644
+index 0000000..91c3a15
+Binary files /dev/null and b/scripts/_harness_jeu/verif_295_out/i292_accueil_belgique_vide_1340x800_webkitgtk.png differ
+diff --git a/scripts/_harness_jeu/verif_295_out/i292_accueil_belgique_vide_700x800_webkitgtk.png b/scripts/_harness_jeu/verif_295_out/i292_accueil_belgique_vide_700x800_webkitgtk.png
+new file mode 100644
+index 0000000..b3d98a1
+Binary files /dev/null and b/scripts/_harness_jeu/verif_295_out/i292_accueil_belgique_vide_700x800_webkitgtk.png differ
+diff --git a/scripts/_harness_jeu/verif_295_out/i292_accueil_france_rempli_700x800_webkitgtk.png b/scripts/_harness_jeu/verif_295_out/i292_accueil_france_rempli_700x800_webkitgtk.png
+new file mode 100644
+index 0000000..5efd657
+Binary files /dev/null and b/scripts/_harness_jeu/verif_295_out/i292_accueil_france_rempli_700x800_webkitgtk.png differ
+diff --git a/scripts/_harness_jeu/verif_295_out/i292_accueil_france_vide_700x800_webkitgtk.png b/scripts/_harness_jeu/verif_295_out/i292_accueil_france_vide_700x800_webkitgtk.png
+new file mode 100644
+index 0000000..d194758
+Binary files /dev/null and b/scripts/_harness_jeu/verif_295_out/i292_accueil_france_vide_700x800_webkitgtk.png differ

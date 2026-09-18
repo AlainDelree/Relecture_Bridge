@@ -1,0 +1,374 @@
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 1ef34acf6dafa6c27e86002c4bf3f6d0291a541b
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Thu Jul 23 23:39:21 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Issue #19 : bouton Analyser (remplacement gratuit si impasse reelle, 500 pts sinon)
+    
+    - hasWinningSequence(pieces, gridSnapshot) : backtracking recursif pur
+      (helpers canPlaceOn/fullLinesOn/simulatePlacementOn sur copies profondes,
+      aucun effet sur l'etat reel), sortie anticipee.
+    - Bouton '🔍 Analyser' ajoute aux controles, grise si score < 500, pendant
+      un glisser actif ou si gameOver ; etat reevalue dans updateScores() et
+      aux bornes du glisser.
+    - Clic : impasse confirmee => 3 pieces bailout gratuites ; jouable => -500
+      pts (baisse sans animation) + pieces normales.
+    - commitPlacement : neutralite de score des pieces bailout (pas de +len, pas
+      de bonus/combo a l'effacement, toast/flourish neutres 'OFFERT').
+    - Perf mesuree : pire cas ~1.14 ms (3 grandes pieces), tres sous le seuil.
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/bloc-jeu.html b/bloc-jeu.html
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index c4c8637..89f9fb2 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/bloc-jeu.html
+# ── Version APRÈS ce commit.
++++ b/bloc-jeu.html
+# ── Zone modifiée : ligne 633 (6 ligne(s)) dans l'ancienne version → ligne 633 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -633,6 +633,7 @@
+   <div class="controls">
+     <button class="ctl" id="undoBtn">↺ Annuler <span class="cnt" id="undoCnt">(3)</span></button>
+     <button class="ctl" id="shuffleBtn">🔀 Mélanger <span class="cnt" id="shuffleCnt">(2)</span></button>
++    <button class="ctl" id="analyzeBtn">🔍 Analyser</button>
+     <button class="ctl danger" id="restartBtn">Recommencer</button>
+   </div>
+ 
+# ── Zone modifiée : ligne 1154 (6 ligne(s)) dans l'ancienne version → ligne 1155 (8 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1154,6 +1155,8 @@
+   const undoCnt = document.getElementById('undoCnt');
+   const shuffleBtn = document.getElementById('shuffleBtn');
+   const shuffleCnt = document.getElementById('shuffleCnt');
++  const analyzeBtn = document.getElementById('analyzeBtn');
++  const ANALYZE_COST = 500;   // coût en points d'un remplacement quand le lot est en réalité jouable
+   const restartBtn = document.getElementById('restartBtn');
+   const overlay = document.getElementById('overlay');
+   const finalScoreEl = document.getElementById('finalScore');
+# ── Zone modifiée : ligne 1383 (6 ligne(s)) dans l'ancienne version → ligne 1386 (80 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1383,6 +1386,80 @@
+     return {rows, cols};
+   }
+ 
++  // --- faisabilité d'un lot de pièces (issue #19) ---
++  // Ces trois helpers sont des versions PURES de canPlace / fullLinesWith / commitPlacement :
++  // ils opèrent uniquement sur la grille `g` passée en argument (jamais sur l'état réel du jeu),
++  // ce qui permet à hasWinningSequence de simuler des placements sur des copies profondes.
++
++  // Comme canPlace, mais sur une grille arbitraire g au lieu de la grille globale.
++  function canPlaceOn(g, shape, anchorR, anchorC){
++    for(const [dr,dc] of shape){
++      const r = anchorR+dr, c = anchorC+dc;
++      if(r<0||r>=SIZE||c<0||c>=SIZE) return false;
++      if(g[r][c]) return false;
++    }
++    return true;
++  }
++
++  // Comme fullLinesWith, mais sur une grille arbitraire g.
++  function fullLinesOn(g, shape, anchorR, anchorC){
++    const tempFilled = new Set();
++    for(const [dr,dc] of shape) tempFilled.add((anchorR+dr)+','+(anchorC+dc));
++    const rows = [];
++    for(let r=0;r<SIZE;r++){
++      let full = true;
++      for(let c=0;c<SIZE;c++){
++        if(!g[r][c] && !tempFilled.has(r+','+c)){ full=false; break; }
++      }
++      if(full) rows.push(r);
++    }
++    const cols = [];
++    for(let c=0;c<SIZE;c++){
++      let full = true;
++      for(let r=0;r<SIZE;r++){
++        if(!g[r][c] && !tempFilled.has(r+','+c)){ full=false; break; }
++      }
++      if(full) cols.push(c);
++    }
++    return {rows, cols};
++  }
++
++  // Simule le placement de `shape` en (anchorR,anchorC) sur une COPIE profonde de g,
++  // puis efface les lignes/colonnes complétées (même logique que commitPlacement), et
++  // renvoie la nouvelle grille. La couleur exacte n'a aucune importance pour la faisabilité
++  // (seul compte "occupé / libre"), d'où le marqueur générique 'x'.
++  function simulatePlacementOn(g, shape, anchorR, anchorC){
++    const ng = g.map(row=>row.slice());
++    for(const [dr,dc] of shape) ng[anchorR+dr][anchorC+dc] = 'x';
++    const {rows, cols} = fullLinesOn(ng, shape, anchorR, anchorC);
++    rows.forEach(r=>{ for(let c=0;c<SIZE;c++) ng[r][c] = null; });
++    cols.forEach(c=>{ for(let r=0;r<SIZE;r++) ng[r][c] = null; });
++    return ng;
++  }
++
++  // Backtracking récursif : le lot `pieces` peut-il être placé DANS SON INTÉGRALITÉ sur
++  // `gridSnapshot` ? Pour chaque pièce restante prise comme "prochaine à jouer", et pour
++  // chaque position valide, on simule le placement + les effacements induits puis on rappelle
++  // récursivement avec le reste des pièces. Retourne true dès la première séquence complète
++  // trouvée (sortie anticipée). Cas de base : plus aucune pièce → true. Pur : ne touche jamais
++  // à l'état réel du jeu.
++  function hasWinningSequence(pieces, gridSnapshot){
++    if(pieces.length === 0) return true;
++    for(let i=0;i<pieces.length;i++){
++      const shape = pieces[i].shape;
++      const rest = pieces.slice(0,i).concat(pieces.slice(i+1));
++      for(let r=0;r<SIZE;r++){
++        for(let c=0;c<SIZE;c++){
++          if(canPlaceOn(gridSnapshot, shape, r, c)){
++            const ng = simulatePlacementOn(gridSnapshot, shape, r, c);
++            if(hasWinningSequence(rest, ng)) return true;
++          }
++        }
++      }
++    }
++    return false;
++  }
++
+   function saveHistory(){
+     history = {
+       grid: grid.map(row=>row.slice()),
+# ── Zone modifiée : ligne 1394 (10 ligne(s)) dans l'ancienne version → ligne 1471 (14 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1394,10 +1471,14 @@
+ 
+   function commitPlacement(piece, anchorR, anchorC){
+     saveHistory();
++    // Pièce "offerte" (issue #19) : posée après une impasse confirmée, elle est neutre
++    // en score. Elle ne rapporte rien à la pose et ne déclenche aucun bonus/combo à
++    // l'effacement (les cases se vident quand même normalement).
++    const bailout = piece.bailout === true;
+     for(const [dr,dc] of piece.shape){
+       grid[anchorR+dr][anchorC+dc] = piece.color;
+     }
+-    score += piece.shape.length;
++    if(!bailout) score += piece.shape.length;
+     piece.used = true;
+ 
+     renderGrid();
+# ── Zone modifiée : ligne 1410 (57 ligne(s)) dans l'ancienne version → ligne 1491 (71 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1410,57 +1491,71 @@
+       rows.forEach(r=>{ for(let c=0;c<SIZE;c++) toClear.add(r+','+c); });
+       cols.forEach(c=>{ for(let r=0;r<SIZE;r++) toClear.add(r+','+c); });
+ 
+-      // tally colors among cleared cells to detect same-color bursts
+-      const colorCounts = {};
++      // Animation de disparition : jouée dans tous les cas (les cases se vident,
++      // qu'il s'agisse d'une pièce normale ou d'une pièce offerte).
+       toClear.forEach(key=>{
+         const [r,c] = key.split(',').map(Number);
+-        const col = grid[r][c];
+-        if(col) colorCounts[col] = (colorCounts[col]||0) + 1;
+         cellEl(r,c).classList.add('clearing');
+       });
+ 
+-      let burstBonus = 0;
+-      let burstColor = null, burstCount = 0;
+-      Object.entries(colorCounts).forEach(([col, n])=>{
+-        if(n >= 5){
+-          const b = 40 + (n-5)*10;
+-          burstBonus += b;
+-          if(n > burstCount){ burstCount = n; burstColor = col; }
+-        }
+-      });
++      if(bailout){
++        // Effacement déclenché par une pièce offerte : aucun bonus n'est ajouté au score,
++        // le combo reste inchangé (ni incrémenté ni réinitialisé). Toast/flourish neutres
++        // pour ne pas afficher un « +0 » trompeur.
++        toast('Ligne effacée (offerte, non comptée)');
++        showFlourish('OFFERT', 'lav');
++      } else {
++        // tally colors among cleared cells to detect same-color bursts
++        const colorCounts = {};
++        toClear.forEach(key=>{
++          const [r,c] = key.split(',').map(Number);
++          const col = grid[r][c];
++          if(col) colorCounts[col] = (colorCounts[col]||0) + 1;
++        });
+ 
+-      const bonus = linesCleared*10*combo + (linesCleared>1 ? (linesCleared-1)*15 : 0) + burstBonus;
+-      score += bonus;
++        let burstBonus = 0;
++        let burstColor = null, burstCount = 0;
++        Object.entries(colorCounts).forEach(([col, n])=>{
++          if(n >= 5){
++            const b = 40 + (n-5)*10;
++            burstBonus += b;
++            if(n > burstCount){ burstCount = n; burstColor = col; }
++          }
++        });
+ 
+-      if(combo < 5) combo++;
+-      showCombo();
+-      let msg = linesCleared>1
+-        ? `Double frappe ! +${bonus} (x${combo-1})`
+-        : `Ligne nette ! +${bonus} (x${combo-1})`;
+-      if(burstBonus>0){
+-        msg = `💥 Éclatement ${COLOR_NAMES_FR[burstColor]||burstColor} x${burstCount} ! +${bonus}`;
+-      }
+-      toast(msg);
+-
+-      // Flourish superposé sur la grille : un seul message selon la priorité
+-      // éclatement > multi-lignes > combo > ligne simple (cf. issue #11).
+-      let flourishText, flourishColor;
+-      if(burstBonus > 0){
+-        flourishText = 'ÉCLATANT !';
+-        flourishColor = 'coral';
+-      } else if(linesCleared >= 2){
+-        flourishText = linesCleared === 2 ? 'DOUBLE !'
+-                     : linesCleared === 3 ? 'TRIPLE !'
+-                     : 'MULTI !';
+-        flourishColor = 'teal';
+-      } else if(combo > 1){
+-        flourishText = `COMBO x${combo}`;
+-        flourishColor = 'mustard';
+-      } else {
+-        flourishText = 'LIGNE !';
+-        flourishColor = 'teal';
++        const bonus = linesCleared*10*combo + (linesCleared>1 ? (linesCleared-1)*15 : 0) + burstBonus;
++        score += bonus;
++
++        if(combo < 5) combo++;
++        showCombo();
++        let msg = linesCleared>1
++          ? `Double frappe ! +${bonus} (x${combo-1})`
++          : `Ligne nette ! +${bonus} (x${combo-1})`;
++        if(burstBonus>0){
++          msg = `💥 Éclatement ${COLOR_NAMES_FR[burstColor]||burstColor} x${burstCount} ! +${bonus}`;
++        }
++        toast(msg);
++
++        // Flourish superposé sur la grille : un seul message selon la priorité
++        // éclatement > multi-lignes > combo > ligne simple (cf. issue #11).
++        let flourishText, flourishColor;
++        if(burstBonus > 0){
++          flourishText = 'ÉCLATANT !';
++          flourishColor = 'coral';
++        } else if(linesCleared >= 2){
++          flourishText = linesCleared === 2 ? 'DOUBLE !'
++                       : linesCleared === 3 ? 'TRIPLE !'
++                       : 'MULTI !';
++          flourishColor = 'teal';
++        } else if(combo > 1){
++          flourishText = `COMBO x${combo}`;
++          flourishColor = 'mustard';
++        } else {
++          flourishText = 'LIGNE !';
++          flourishColor = 'teal';
++        }
++        showFlourish(flourishText, flourishColor);
+       }
+-      showFlourish(flourishText, flourishColor);
+ 
+       setTimeout(()=>{
+         toClear.forEach(key=>{
+# ── Zone modifiée : ligne 1472 (8 ligne(s)) dans l'ancienne version → ligne 1567 (11 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1472,8 +1567,11 @@
+         afterMove();
+       }, 260);
+     } else {
+-      combo = 1;
+-      comboBadge.classList.remove('show');
++      // Pièce offerte sans effacement : on ne réinitialise pas le combo (état inchangé).
++      if(!bailout){
++        combo = 1;
++        comboBadge.classList.remove('show');
++      }
+       updateScores();
+       afterMove();
+     }
+# ── Zone modifiée : ligne 1516 (12 ligne(s)) dans l'ancienne version → ligne 1614 (21 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1516,12 +1614,21 @@
+     setTimeout(()=>float.remove(), 900);
+   }
+ 
++  // Grise le bouton "Analyser" dès que son coût (500 pts) n'est pas couvert, comme
++  // "Annuler"/"Mélanger" se grisent à compteur nul — la condition étant connue d'avance,
++  // pas besoin d'attendre un clic. Aussi désactivé pendant un glisser actif ou si gameOver.
++  function updateAnalyzeBtn(){
++    if(!analyzeBtn) return;
++    analyzeBtn.disabled = gameOver || !!dragState || score < ANALYZE_COST;
++  }
++
+   function updateScores(){
+     const persistedBest = topScores.length ? topScores[0].score : 0;
+     best = Math.max(persistedBest, score);
+     bumpScore(score - displayedScore);
+     displayedScore = score;
+     bestEl.textContent = best;
++    updateAnalyzeBtn();   // réévalué à chaque changement de score → grisage/dégrisage en direct
+   }
+ 
+   // --- drag & drop ---
+# ── Zone modifiée : ligne 1589 (6 ligne(s)) dans l'ancienne version → ligne 1696 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1589,6 +1696,7 @@
+ 
+     positionGhost(e.clientX, e.clientY);
+     updateDropTarget(e.clientX, e.clientY);
++    updateAnalyzeBtn();   // désactive "Analyser" tant qu'un glisser est actif
+ 
+     document.addEventListener('pointermove', onPointerMove);
+     document.addEventListener('pointerup', onPointerUp);
+# ── Zone modifiée : ligne 1691 (7 ligne(s)) dans l'ancienne version → ligne 1799 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1691,7 +1799,9 @@
+     dragState = null;
+ 
+     if(commit && lastAnchor){
+-      commitPlacement(piece, lastAnchor[0], lastAnchor[1]);
++      commitPlacement(piece, lastAnchor[0], lastAnchor[1]);   // updateScores() y rafraîchit "Analyser"
++    } else {
++      updateAnalyzeBtn();   // glisser annulé sans placement : réévalue l'état du bouton
+     }
+   }
+ 
+# ── Zone modifiée : ligne 1742 (6 ligne(s)) dans l'ancienne version → ligne 1852 (47 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1742,6 +1852,47 @@
+     if(shufflesLeft<=0) shuffleBtn.disabled = true;
+   });
+ 
++  // Remplace en place chaque pièce NON utilisée du tray par une nouvelle pièce aléatoire
++  // (les pièces déjà posées sont conservées). Si markBailout, les nouvelles pièces sont
++  // marquées `bailout` → neutres en score une fois posées (cf. commitPlacement).
++  function replaceUnusedTray(markBailout){
++    tray = tray.map(p=>{
++      if(p.used) return p;
++      const np = randomPiece();
++      if(markBailout) np.bailout = true;
++      return np;
++    });
++    renderTray();
++  }
++
++  // Bouton "Analyser" (issue #19) : le joueur déclenche à la demande une analyse de
++  // faisabilité du lot de pièces non utilisées. Le bouton n'étant cliquable que si
++  // score >= ANALYZE_COST, le cas "pas assez de points" est déjà couvert par l'état disabled.
++  if(analyzeBtn) analyzeBtn.addEventListener('click', ()=>{
++    if(gameOver || dragState || score < ANALYZE_COST) return;
++    const remaining = tray.filter(p=>!p.used);
++    const t0 = performance.now();
++    const playable = hasWinningSequence(remaining, grid);
++    const dt = performance.now() - t0;
++    // Mesure de perf remontée en console (cf. issue #19, point 6).
++    console.log(`[Analyser] hasWinningSequence : ${dt.toFixed(2)} ms — ${remaining.length} pièce(s), jouable=${playable}`);
++    if(!playable){
++      // Impasse réelle : remplacement GRATUIT (même si le joueur avait les points),
++      // nouvelles pièces neutres en score.
++      replaceUnusedTray(true);
++      toast('Impasse confirmée — nouvelles pièces offertes');
++    } else {
++      // Le lot était jouable : remplacement quand même accordé au prix de 500 points.
++      // Baisse de score → pas d'animation de gain (bumpScore ignore delta<=0). Nouvelles
++      // pièces normales (aucun marquage) : score normal dès leur pose.
++      score -= ANALYZE_COST;
++      updateScores();
++      replaceUnusedTray(false);
++      toast('Analyse : c’était jouable — 500 points dépensés pour de nouvelles pièces');
++    }
++    checkGameOver();
++  });
++
+   function openScores(){
+     renderTopList(standaloneTopList, gameOver ? lastRecorded : null);
+     scoresOverlay.classList.add('show');

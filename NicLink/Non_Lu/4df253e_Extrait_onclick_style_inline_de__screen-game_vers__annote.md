@@ -1,0 +1,234 @@
+4df253e
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 4df253e
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Sun Aug 23 21:51:31 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Extrait onclick/style inline de #screen-game vers data-action + CSS — panneau Fin de partie, début (issue #243 partie 3/4)
+    
+    Résultat, navigation (autoplay + slider vitesse, précédent/suivant),
+    sauvegarde AlChess/classeur et toggle Mes parties/Bibliothèque PGN.
+    8 onclick → data-action (dont review_nav et pgn_lib_select_tab
+    paramétrés par data-direction/data-tab), 30 style inline → classes
+    .game-gameover-* dans main.css. Aucun sélecteur e2e ne cible cette
+    section (grep exhaustif). Suites pytest et e2e complètes au vert.
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/nicsoft/web/static/app.js b/nicsoft/web/static/app.js
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 0c727db..44d4141 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/nicsoft/web/static/app.js
+# ── Version APRÈS ce commit.
++++ b/nicsoft/web/static/app.js
+# ── Zone modifiée : ligne 259 (6 ligne(s)) dans l'ancienne version → ligne 259 (24 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -259,6 +259,24 @@ document.addEventListener("click", (e) => {
+     case "pause_toggle_changer_couleur":
+       pauseToggleChangerCouleur();
+       break;
++    case "review_best_move":
++      showReviewBestMove();
++      break;
++    case "review_toggle_autoplay":
++      toggleAutoPlay();
++      break;
++    case "review_nav":
++      if (el.dataset.direction === "prev") reviewPrev(); else reviewNext();
++      break;
++    case "save_alchess":
++      sauvegarderNicLink();
++      break;
++    case "basket_add":
++      basketAdd();
++      break;
++    case "pgn_lib_select_tab":
++      pgnLibSelectTab(el.dataset.tab);
++      break;
+   }
+ });
+ 
+# (diff du fichier suivant)
+diff --git a/nicsoft/web/static/css/main.css b/nicsoft/web/static/css/main.css
+# (index — ignorable)
+index 06ec956..d7167ea 100644
+# (avant — fichier suivant)
+--- a/nicsoft/web/static/css/main.css
+# (après — fichier suivant)
++++ b/nicsoft/web/static/css/main.css
+# ── Zone modifiée : ligne 941 (6 ligne(s)) dans l'ancienne version → ligne 941 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -941,6 +941,9 @@
+     #panel-pause {
+       gap: 12px;
+     }
++    #panel-gameover {
++      gap: 12px;
++    }
+ 
+     .card {
+       background: #c2d4e8;
+# ── Zone modifiée : ligne 1392 (3 ligne(s)) dans l'ancienne version → ligne 1395 (39 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1392,3 +1395,39 @@
+ .game-btn-pause-continuer { background:#2e7d32; }
+ .game-btn-changer-couleur { background:#a0b8d0; color:#1a2a3a; border:1px solid #e94560; }
+ .game-pause-hidden-init { display:none; }
++
++/* ── Écran #screen-game — panneau "Fin de partie", début (issue #243 partie 3/4) ── */
++.game-gameover-card { padding:14px 18px; }
++.game-gameover-title-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
++.game-gameover-title { font-size:0.95rem; font-weight:bold; color:#e94560; }
++.game-gameover-result { font-size:1.1rem; font-weight:bold; color:#e94560; }
++.game-gameover-info-text { color:#445; font-size:0.82em; margin-top:4px; }
++.game-gameover-nav-header-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
++.game-gameover-nav-label { font-size:0.72rem; text-transform:uppercase; letter-spacing:2px; color:#3a5a7a; font-weight:700; }
++.game-gameover-move-info { font-size:0.72rem; text-transform:uppercase; letter-spacing:1px; color:#3a5a7a; font-weight:700; }
++.game-gameover-move-san { text-align:center; font-size:1.6rem; font-weight:bold; color:#1a2a3a; margin-bottom:10px; min-height:2rem; }
++.game-gameover-best-move-row { margin-bottom:8px; }
++.game-gameover-best-move-btn { width:100%; margin-bottom:0; }
++.game-gameover-best-move-san { text-align:center; font-size:0.9rem; color:#3a5a7a; margin-top:6px; }
++.game-gameover-autoplay-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
++.game-gameover-btn-autoplay {
++  width:44px; height:44px; border-radius:50%; border:none; cursor:pointer;
++  background:#e94560; color:#fff;
++  display:flex; align-items:center; justify-content:center;
++  box-shadow:0 2px 8px rgba(233,69,96,0.4); flex-shrink:0;
++  transition:background 0.2s; opacity:0.4; pointer-events:none; padding:0;
++}
++.game-gameover-speed-col { flex:1; display:flex; flex-direction:column; gap:3px; }
++.game-gameover-speed-labels { display:flex; justify-content:space-between; font-size:0.7rem; color:#3a5a7a; }
++.game-gameover-autoplay-slider { width:100%; accent-color:#e94560; cursor:pointer; opacity:0.4; pointer-events:none; }
++.game-gameover-nav-row { display:flex; gap:8px; margin-bottom:8px; }
++.game-gameover-nav-btn { flex:1; margin-bottom:0; padding:8px; opacity:0.4; pointer-events:none; }
++.game-gameover-save-block { display:flex; flex-direction:column; gap:6px; }
++.game-gameover-save-select { width:100%; background:#a0b8d0; border:1px solid #333; border-radius:4px; color:white; padding:8px 10px; font-size:0.88rem; }
++.game-gameover-save-btn { width:100%; margin-bottom:0; padding:8px; }
++.game-gameover-basket-btn { width:100%; margin-bottom:0; padding:8px; background:#2a5a4a; color:#e0e0e0; border:1px solid #1a4a3a; }
++.game-gameover-actions-card { padding:14px 18px; display:flex; flex-direction:column; gap:8px; }
++.game-gameover-tab-row { display:flex; gap:0; border-radius:6px; overflow:hidden; border:1px solid #a0b8d0; margin-bottom:2px; }
++.game-gameover-tab-btn { flex:1; padding:8px 4px; font-size:0.78rem; font-weight:bold; cursor:pointer; border:none; transition:opacity 0.15s; }
++.game-gameover-tab-btn-active { background:#e94560; color:white; }
++.game-gameover-tab-btn-inactive { background:#c2d4e8; color:#3a5a7a; }
+# (diff du fichier suivant)
+diff --git a/nicsoft/web/templates/index.html b/nicsoft/web/templates/index.html
+# (index — ignorable)
+index 3ec5b69..8b10a7f 100644
+# (avant — fichier suivant)
+--- a/nicsoft/web/templates/index.html
+# (après — fichier suivant)
++++ b/nicsoft/web/templates/index.html
+# ── Zone modifiée : ligne 659 (57 ligne(s)) dans l'ancienne version → ligne 659 (52 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -659,57 +659,52 @@
+       </div>
+     </div>
+     <!-- ── Fin de partie ── -->
+-    <div id="panel-gameover" style="display:none; flex-direction:column; gap:12px;">
++    <div id="panel-gameover" style="display:none;">
+       <!-- Résultat : titre + score sur une ligne -->
+-      <div class="card" style="padding:14px 18px;">
+-        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+-          <span id="gameover-title" style="font-size:0.95rem; font-weight:bold; color:#e94560;">Partie terminée</span>
+-          <span id="gameover-result" style="font-size:1.1rem; font-weight:bold; color:#e94560;"></span>
++      <div class="card game-gameover-card">
++        <div class="game-gameover-title-row">
++          <span id="gameover-title" class="game-gameover-title">Partie terminée</span>
++          <span id="gameover-result" class="game-gameover-result"></span>
+         </div>
+-        <div id="rv-game-info" style="color:#445; font-size:0.82em; margin-top:4px;"></div>
++        <div id="rv-game-info" class="game-gameover-info-text"></div>
+       </div>
+       <!-- Navigation + Sauvegarder fusionnés -->
+-      <div class="card" id="card-nav-save" style="padding:14px 18px;">
++      <div class="card game-gameover-card" id="card-nav-save">
+         <!-- Ligne : NAVIGATION + COUP N -->
+-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+-          <span style="font-size:0.72rem; text-transform:uppercase; letter-spacing:2px; color:#3a5a7a; font-weight:700;" data-i18n="game.h2.navigation">Navigation</span>
+-          <span id="review-move-info" style="font-size:0.72rem; text-transform:uppercase; letter-spacing:1px; color:#3a5a7a; font-weight:700;"></span>
++        <div class="game-gameover-nav-header-row">
++          <span class="game-gameover-nav-label" data-i18n="game.h2.navigation">Navigation</span>
++          <span id="review-move-info" class="game-gameover-move-info"></span>
+         </div>
+         <!-- Coup actuel centré, grand -->
+-        <div id="review-move-san" style="text-align:center; font-size:1.6rem; font-weight:bold; color:#1a2a3a; margin-bottom:10px; min-height:2rem;"></div>
++        <div id="review-move-san" class="game-gameover-move-san"></div>
+         <!-- Meilleur coup (visible si analysé et best_move disponible) -->
+-        <div id="review-best-move-row" style="display:none; margin-bottom:8px;">
+-          <button id="btn-review-best" class="btn btn-best" style="width:100%; margin-bottom:0;" onclick="showReviewBestMove()">💡 Voir le meilleur coup</button>
+-          <div id="review-best-move-san" style="text-align:center; font-size:0.9rem; color:#3a5a7a; margin-top:6px; display:none;"></div>
++        <div id="review-best-move-row" class="game-gameover-best-move-row" style="display:none;">
++          <button id="btn-review-best" class="btn btn-best game-gameover-best-move-btn" data-action="review_best_move">💡 Voir le meilleur coup</button>
++          <div id="review-best-move-san" class="game-gameover-best-move-san" style="display:none;"></div>
+         </div>
+         <!-- Play/Pause + Slider vitesse -->
+-        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+-          <button id="btn-autoplay" onclick="toggleAutoPlay()" disabled style="
+-            width:44px; height:44px; border-radius:50%; border:none; cursor:pointer;
+-            background:#e94560; color:#fff;
+-            display:flex; align-items:center; justify-content:center;
+-            box-shadow:0 2px 8px rgba(233,69,96,0.4); flex-shrink:0;
+-            transition:background 0.2s; opacity:0.4; pointer-events:none; padding:0;">
++        <div class="game-gameover-autoplay-row">
++          <button id="btn-autoplay" data-action="review_toggle_autoplay" disabled class="game-gameover-btn-autoplay">
+             <svg id="btn-autoplay-icon" viewBox="0 0 24 24" width="20" height="20" fill="white">
+               <polygon points="6,4 20,12 6,20"/>
+             </svg>
+           </button>
+-          <div style="flex:1; display:flex; flex-direction:column; gap:3px;">
+-            <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:#3a5a7a;">
++          <div class="game-gameover-speed-col">
++            <div class="game-gameover-speed-labels">
+               <span>0.2s</span><span data-i18n="game.nav.vitesse">Vitesse</span><span>5s</span>
+             </div>
+             <input id="autoplay-speed" type="range" min="0.2" max="5" step="0.1" value="2" disabled
+-              style="width:100%; accent-color:#e94560; cursor:pointer; opacity:0.4; pointer-events:none;">
++              class="game-gameover-autoplay-slider">
+           </div>
+         </div>
+         <!-- Précédent / Suivant -->
+-        <div style="display:flex; gap:8px; margin-bottom:8px;">
+-          <button id="btn-review-prev" class="btn btn-continuer" style="flex:1; margin-bottom:0; padding:8px; opacity:0.4; pointer-events:none;" disabled onclick="reviewPrev()" data-i18n="game.nav.precedent">← Précédent</button>
+-          <button id="btn-review-next" class="btn btn-reprendre" style="flex:1; margin-bottom:0; padding:8px; opacity:0.4; pointer-events:none;" disabled onclick="reviewNext()" data-i18n="game.nav.suivant">Suivant →</button>
++        <div class="game-gameover-nav-row">
++          <button id="btn-review-prev" class="btn btn-continuer game-gameover-nav-btn" disabled data-action="review_nav" data-direction="prev" data-i18n="game.nav.precedent">← Précédent</button>
++          <button id="btn-review-next" class="btn btn-reprendre game-gameover-nav-btn" disabled data-action="review_nav" data-direction="next" data-i18n="game.nav.suivant">Suivant →</button>
+         </div>
+         <!-- Sauvegarder -->
+-        <div id="card-save-block" style="display:flex; flex-direction:column; gap:6px;">
+-          <select id="save-type" style="width:100%; background:#a0b8d0; border:1px solid #333; border-radius:4px; color:white; padding:8px 10px; font-size:0.88rem;">
++        <div id="card-save-block" class="game-gameover-save-block">
++          <select id="save-type" class="game-gameover-save-select">
+             <optgroup data-i18n-label="save.group.stockfish" label="── Stockfish ──">
+               <option value="sf-pedagogique" data-i18n="save.option.sf_pedagogique">Stockfish — Pédagogique</option>
+               <option value="sf-serieuse"    data-i18n="save.option.sf_serieuse">Stockfish — Sérieuse</option>
+# ── Zone modifiée : ligne 722 (20 ligne(s)) dans l'ancienne version → ligne 717 (20 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -722,20 +717,20 @@
+               <option value="h-club"         data-i18n="save.option.h_club">Humain — Club</option>
+             </optgroup>
+           </select>
+-          <button class="btn btn-reprendre" style="width:100%; margin-bottom:0; padding:8px;" onclick="sauvegarderAlChess()" data-i18n="common.sauvegarder">💾 Sauvegarder dans AlChess</button>
+-          <button class="btn" style="width:100%; margin-bottom:0; padding:8px; background:#2a5a4a; color:#e0e0e0; border:1px solid #1a4a3a;" onclick="basketAdd()" data-i18n="retrans.btn.corbeille">🗂️ Ajouter au classeur</button>
++          <button class="btn btn-reprendre game-gameover-save-btn" data-action="save_alchess" data-i18n="common.sauvegarder">💾 Sauvegarder dans AlChess</button>
++          <button class="btn game-gameover-basket-btn" data-action="basket_add" data-i18n="retrans.btn.corbeille">🗂️ Ajouter au classeur</button>
+         </div>
+       </div>
+       <!-- Actions analyse + retour menu -->
+-      <div class="card" style="padding:14px 18px; display:flex; flex-direction:column; gap:8px;">
++      <div class="card game-gameover-actions-card">
+         <!-- Toggle Mes parties AlChess / Bibliothèque PGN -->
+-        <div style="display:flex; gap:0; border-radius:6px; overflow:hidden; border:1px solid #a0b8d0; margin-bottom:2px;">
+-          <button id="analyse-tab-alchess-btn" onclick="pgnLibSelectTab('alchess')" data-i18n="analyse.tab.alchess"
+-            style="flex:1; padding:8px 4px; font-size:0.78rem; font-weight:bold; cursor:pointer; border:none; background:#e94560; color:white; transition:opacity 0.15s;">
++        <div class="game-gameover-tab-row">
++          <button id="analyse-tab-alchess-btn" data-action="pgn_lib_select_tab" data-tab="alchess" data-i18n="analyse.tab.alchess"
++            class="game-gameover-tab-btn game-gameover-tab-btn-active">
+             ♟ Mes parties AlChess
+           </button>
+-          <button id="analyse-tab-library-btn" onclick="pgnLibSelectTab('library')" data-i18n="analyse.tab.library"
+-            style="flex:1; padding:8px 4px; font-size:0.78rem; font-weight:bold; cursor:pointer; border:none; background:#c2d4e8; color:#3a5a7a; transition:opacity 0.15s;">
++          <button id="analyse-tab-library-btn" data-action="pgn_lib_select_tab" data-tab="library" data-i18n="analyse.tab.library"
++            class="game-gameover-tab-btn game-gameover-tab-btn-inactive">
+             📚 Bibliothèque PGN
+           </button>
+         </div>

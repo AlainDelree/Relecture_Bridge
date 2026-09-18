@@ -1,0 +1,13 @@
+commit a6990bbd912bc7cd0799819b88b150adbf416b58
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Thu Jul 23 22:09:21 2026 +0200
+
+    avant-fix-double-clic-jouer-principal (Issue #228)
+
+diff --git a/Relecture_Bridge.code-workspace b/Relecture_Bridge.code-workspace
+new file mode 100644
+index 0000000..e69de29
+diff --git a/packages.microsoft.gpg b/packages.microsoft.gpg
+new file mode 100644
+index 0000000..b2c6f68
+Binary files /dev/null and b/packages.microsoft.gpg differ

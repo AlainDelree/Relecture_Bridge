@@ -1,0 +1,22 @@
+{
+	"folders": [
+		{ "name": "Bridge_Agent", "path": "Bridge_Agent" },
+		{ "name": "AlChess (NicLink)", "path": "NicLink" },
+		{ "name": "FF_Galerie", "path": "FF_Galerie" },
+		{ "name": "Ecole", "path": "Ecole" },
+		{ "name": "Scrabble", "path": "Scrabble" },
+		{ "name": "Diagnostique_Programme", "path": "Diagnostique_Programme" },
+		{ "name": "Actualise", "path": "Actualise" },
+		{ "name": "Bloc_score", "path": "Bloc_score" }
+	],
+	"settings": {
+		"workbench.editor.enablePreview": true,
+		"explorer.sortOrder": "modified",
+		"files.associations": {
+			"*.diff": "diff",
+			"*_annote.md": "markdown"
+		},
+		"editor.unicodeHighlight.ambiguousCharacters": false,
+		"editor.unicodeHighlight.invisibleCharacters": false
+	}
+}

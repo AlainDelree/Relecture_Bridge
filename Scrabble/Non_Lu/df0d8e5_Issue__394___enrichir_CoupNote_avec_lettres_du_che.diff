@@ -1,0 +1,58 @@
+df0d8e5
+
+commit df0d8e5
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Sun Aug 9 11:05:19 2026 +0200
+
+    Issue #394 : enrichir CoupNote avec lettres_du_chevalet (leave value, étape 1/3)
+
+diff --git a/src/scrabble/moteur/generateur.py b/src/scrabble/moteur/generateur.py
+index 0806012..07de5cf 100644
+--- a/src/scrabble/moteur/generateur.py
++++ b/src/scrabble/moteur/generateur.py
+@@ -61,11 +61,17 @@ class CoupNote:
+         placement, hors lettres déjà présentes sur le plateau). Sert de base
+         à la pénalité « hooks » de la sélection IA (voir
+         :mod:`scrabble.moteur.ia`).
++    lettres_du_chevalet:
++        Lettres du chevalet effectivement posées par ce coup, dans l'ordre
++        des cases nouvelles : ``JOKER`` (``"*"``) pour un joker, sinon la
++        lettre de la tuile. Sert au calcul de la valeur du reliquat (leave
++        value) de la sélection IA.
+     """
+ 
+     coup: Coup
+     detail: DetailScore
+     nb_nouvelles: int
++    lettres_du_chevalet: tuple[str, ...]
+ 
+     @property
+     def score(self) -> int:
+@@ -284,7 +290,13 @@ def generer_coups(
+         if not nouvelles:
+             continue
+         detail = detailler_score(copie, nouvelles, coup.direction)
+-        resultats.append(CoupNote(coup, detail, len(nouvelles)))
++        nouvelles_set = set(nouvelles)
++        lettres_du_chevalet = tuple(
++            JOKER if tuile.joker else tuile.lettre
++            for (l, c, tuile) in coup.cases()
++            if (l, c) in nouvelles_set
++        )
++        resultats.append(CoupNote(coup, detail, len(nouvelles), lettres_du_chevalet))
+ 
+     # Trier par score décroissant
+     resultats.sort(key=lambda cn: cn.score, reverse=True)
+diff --git a/tests/test_moteur_ia.py b/tests/test_moteur_ia.py
+index a304f8f..8b79ccd 100644
+--- a/tests/test_moteur_ia.py
++++ b/tests/test_moteur_ia.py
+@@ -117,7 +117,7 @@ def _coup_note(mot: str, score: int, nb_nouvelles: int, cases_bonus=()) -> CoupN
+         bonus_scrabble=0,
+         total=score,
+     )
+-    return CoupNote(coup, detail, nb_nouvelles)
++    return CoupNote(coup, detail, nb_nouvelles, ())
+ 
+ 
+ class TestScoreStrategique:

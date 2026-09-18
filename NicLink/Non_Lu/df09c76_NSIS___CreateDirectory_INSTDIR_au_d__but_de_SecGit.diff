@@ -1,0 +1,20 @@
+df09c76
+
+commit df09c76
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Thu Aug 13 17:51:29 2026 +0200
+
+    NSIS : CreateDirectory INSTDIR au début de SecGit (fix SyncGitRepo)
+
+diff --git a/installer-exe/alchess_setup.nsi b/installer-exe/alchess_setup.nsi
+index a1f6f58..f47e3b1 100644
+--- a/installer-exe/alchess_setup.nsi
++++ b/installer-exe/alchess_setup.nsi
+@@ -1432,6 +1432,7 @@ SectionGroup "Configuration AlChess" SecGroupConfig
+     ; DOIT s'executer avant SecPython/SecVenv : requirements.txt (utilise par
+     ; SecVenv) doit venir du code deja synchronise ici.
+     Section "Synchronisation Git" SecGit
++        CreateDirectory "$INSTDIR"
+         Call EnsureGitInstalled
+         Call SyncGitRepo
+     SectionEnd

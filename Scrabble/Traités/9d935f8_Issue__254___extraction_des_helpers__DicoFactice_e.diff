@@ -1,0 +1,78 @@
+9d935f8
+
+commit 9d935f8
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Fri Jul 24 16:33:19 2026 +0200
+
+    Issue #254 : extraction des helpers _DicoFactice et _partie_simple
+    
+    Déplace _DicoFactice et _partie_simple vers tests/_aides_test_jeu.py
+    (préfixé _ pour éviter la collecte pytest) pour les rendre disponibles
+    aux futurs fichiers de tests issus du découpage de test_jeu.py.
+
+diff --git a/tests/_aides_test_jeu.py b/tests/_aides_test_jeu.py
+new file mode 100644
+index 0000000..79df4dd
+--- /dev/null
++++ b/tests/_aides_test_jeu.py
+@@ -0,0 +1,25 @@
++"""Helpers partagés pour les tests de l'écran de jeu (issue #254).
++
++Ce module contient des classes et fonctions utilisées par plusieurs fichiers
++de tests issus du découpage de test_jeu.py. Le préfixe _ évite que pytest ne
++le collecte comme un fichier de tests.
++"""
++
++from scrabble.moteur.ia import Niveau
++from scrabble.moteur.partie import Joueur, Partie
++
++
++class _DicoFactice:
++    """Dictionnaire minimal (accepte tout) — l'écran de jeu ne valide rien."""
++
++    def contient(self, mot: str) -> bool:
++        return True
++
++
++def _partie_simple(graine: int = 42) -> Partie:
++    """Petite partie déterministe à deux joueurs (humain + ordinateur)."""
++    joueurs = [
++        Joueur(nom="Alice", humain=True),
++        Joueur(nom="Robot", humain=False, niveau=Niveau.FACILE),
++    ]
++    return Partie(joueurs, _DicoFactice(), graine=graine)
+diff --git a/tests/test_jeu.py b/tests/test_jeu.py
+index 50dc5dd..2e38b2a 100644
+--- a/tests/test_jeu.py
++++ b/tests/test_jeu.py
+@@ -17,6 +17,7 @@ import pytest
+ from scrabble.dictionnaire.dictionnaire import Trie
+ from scrabble.moteur.ia import Niveau
+ from scrabble.moteur.partie import Joueur, Partie, creer_partie
++from tests._aides_test_jeu import _DicoFactice, _partie_simple
+ from scrabble.moteur.plateau_partie import Coup, Direction, Tuile
+ from scrabble.moteur.score import DetailMot, DetailScore
+ from scrabble.persistance import (
+@@ -56,22 +57,6 @@ from scrabble.ui.jeu import (
+ )
+ 
+ 
+-class _DicoFactice:
+-    """Dictionnaire minimal (accepte tout) — l'écran de jeu ne valide rien."""
+-
+-    def contient(self, mot: str) -> bool:
+-        return True
+-
+-
+-def _partie_simple(graine: int = 42) -> Partie:
+-    """Petite partie déterministe à deux joueurs (humain + ordinateur)."""
+-    joueurs = [
+-        Joueur(nom="Alice", humain=True),
+-        Joueur(nom="Robot", humain=False, niveau=Niveau.FACILE),
+-    ]
+-    return Partie(joueurs, _DicoFactice(), graine=graine)
+-
+-
+ class TestSerialiserCase:
+     """Tests de la sérialisation d'une case du plateau."""
+ 

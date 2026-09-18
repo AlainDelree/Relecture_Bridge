@@ -1,0 +1,26 @@
+174d295
+
+commit 174d295
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Wed Jul 29 09:33:33 2026 +0200
+
+    Issue #327 : animation pioche — forcer reflow avant transition de sortie (suite #326)
+
+diff --git a/src/scrabble/ui/web/jeu.js b/src/scrabble/ui/web/jeu.js
+index 317c806..5ce06fe 100644
+--- a/src/scrabble/ui/web/jeu.js
++++ b/src/scrabble/ui/web/jeu.js
+@@ -1008,10 +1008,10 @@ document.addEventListener('DOMContentLoaded', async () => {
+                 resolve();
+             };
+             setTimeout(() => {
++                // Forcer le reflow pour que la transition CSS se déclenche
++                // correctement après l'animation d'apparition.
++                overlay.getBoundingClientRect();
+                 overlay.classList.add('pioche-overlay-sortie');
+-                overlay.addEventListener('transitionend', terminer, { once: true });
+-                // Filet de sécurité si l'événement de transition ne se déclenche
+-                // pas (calque sans tuile, focus perdu…).
+                 setTimeout(terminer, 800);
+             }, 900);
+         });

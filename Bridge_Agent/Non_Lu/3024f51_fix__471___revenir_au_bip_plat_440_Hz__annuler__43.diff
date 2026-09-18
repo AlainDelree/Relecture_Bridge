@@ -1,0 +1,21 @@
+3024f51
+
+commit 3024f51
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Fri Aug 21 15:35:59 2026 +0200
+
+    fix #471 : revenir au bip plat 440 Hz (annuler #437)
+
+diff --git a/scripts/traitement_fin.py b/scripts/traitement_fin.py
+index c1eb8e1..dc8377a 100644
+--- a/scripts/traitement_fin.py
++++ b/scripts/traitement_fin.py
+@@ -97,7 +97,7 @@ def main():
+                         help="Numéro de l'issue (déclenche le POST /notifier-fin-issue avec --projet)")
+     args = parser.parse_args()
+ 
+-    bip()
++    bip_plat()
+ 
+     if args.projet and args.numero:
+         notifier_fin_issue(args.projet, args.numero)

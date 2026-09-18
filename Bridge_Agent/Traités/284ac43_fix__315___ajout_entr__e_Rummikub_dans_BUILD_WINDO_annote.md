@@ -1,0 +1,71 @@
+284ac43
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 284ac43
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Sun Aug 2 11:14:34 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    fix #315 : ajout entrée Rummikub dans BUILD_WINDOWS_CCW.md
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/BUILD_WINDOWS_CCW.md b/BUILD_WINDOWS_CCW.md
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 9d2d1ba..2e5dd9f 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/BUILD_WINDOWS_CCW.md
+# ── Version APRÈS ce commit.
++++ b/BUILD_WINDOWS_CCW.md
+# ── Zone modifiée : ligne 48 (6 ligne(s)) dans l'ancienne version → ligne 48 (20 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -48,6 +48,20 @@ build suit déjà ce schéma de staging local et, si oui, étendre le
+ 
+ ---
+ 
++## Rummikub
++
++- **Chemin du clone CCW** : `Z:\CCW\rummikub`
++- **Script de build** : `build\rebuild_rummikub.bat` (6 étapes)
++- **`.spec`** : `rummikub.spec` — liste explicite des `datas`
++  (`src/rummikub/ui/web/`), aucun `collect_tree` en bloc
++- **TIMEOUT de référence observé** : 1200s (build réel : ~333s)
++- **Deux garde-fous de taille distincts** (issue #57 — dist non compressé
++  et installeur compressé sont deux grandeurs différentes) :
++  - `dist\Rummikub\` non compressé : 28 712 051 octets (~28,7 Mo),
++    fourchette 20-45 Mo
++  - `Rummikub-Setup.exe` compressé : 12 778 092 octets (~12,18 Mo),
++    fourchette 5-25 Mo
++
+ ## Scrabble
+ 
+ - **Chemin du clone CCW** : `Z:\CCW\scrabble`
+# (diff du fichier suivant)
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+# (index — ignorable)
+index af87497..5d264c3 100644
+# (avant — fichier suivant)
+--- a/CHANGELOG.md
+# (après — fichier suivant)
++++ b/CHANGELOG.md
+# ── Zone modifiée : ligne 9 (6 ligne(s)) dans l'ancienne version → ligne 9 (19 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -9,6 +9,19 @@ milliers de caractères sur une seule ligne logique, coûteux à relire et
+ 
+ Convention d'ajout : voir §10 de `BRIDGE_AGENT_DOC.md`.
+ 
++## 2 août 2026 — issue #315
++
++`BUILD_WINDOWS_CCW.md` : ajout de la checklist Rummikub (build validé),
++insérée avant l'entrée Scrabble (plus récente en premier) — clone
++`Z:\CCW\rummikub`, script `build\rebuild_rummikub.bat` (6 étapes),
++`rummikub.spec` en liste explicite des `datas` (`src/rummikub/ui/web/`,
++aucun `collect_tree` en bloc), TIMEOUT de référence 1200s (build réel
++~333s), et les deux garde-fous de taille distincts introduits par
++l'issue #57 (dist non compressé vs installeur compressé étant deux
++grandeurs différentes) : `dist\Rummikub\` non compressé 28 712 051
++octets (~28,7 Mo, fourchette 20-45 Mo) et `Rummikub-Setup.exe`
++compressé 12 778 092 octets (~12,18 Mo, fourchette 5-25 Mo).
++
+ ## 2 août 2026 — issue #314
+ 
+ `BRIDGE_AGENT_DOC.md` (§12.1, juste après le tableau des trois couches

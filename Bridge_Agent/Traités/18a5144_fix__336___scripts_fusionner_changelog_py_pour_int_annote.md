@@ -1,0 +1,194 @@
+18a5144
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 18a5144
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Sun Aug 2 22:57:18 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    fix #336 : scripts/fusionner_changelog.py pour intégrer les CHANGELOG-N.md
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 1a8baa1..c58758a 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/CHANGELOG.md
+# ── Version APRÈS ce commit.
++++ b/CHANGELOG.md
+# ── Zone modifiée : ligne 9 (6 ligne(s)) dans l'ancienne version → ligne 9 (33 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -9,6 +9,33 @@ milliers de caractères sur une seule ligne logique, coûteux à relire et
+ 
+ Convention d'ajout : voir §10 de `BRIDGE_AGENT_DOC.md`.
+ 
++## 2 août 2026 — issue #336
++
++Création de `scripts/fusionner_changelog.py`, en préparation du futur
++système de worktrees : quand CCL travaillera dans un répertoire isolé, il
++écrira son entrée CHANGELOG dans `CHANGELOG-<N>.md` (N = numéro de l'issue)
++plutôt que dans `CHANGELOG.md` directement, pour éviter les conflits
++systématiques sur ce fichier unique quand plusieurs issues mode_write
++tournent en parallèle. Ce script fusionne ces fichiers dans `CHANGELOG.md`
++avant le push d'Alain.
++
++- Scanne la racine du dépôt (`--repo`, défaut `.`) à la recherche de
++  fichiers `CHANGELOG-<N>.md`, les trie par N décroissant (plus récent en
++  tête, cohérent avec la convention de `CHANGELOG.md`, issue #252), et
++  insère leur contenu tel quel en tête de `CHANGELOG.md`, juste après
++  l'en-tête fixe (jusqu'à la ligne vide qui suit « Convention d'ajout :
++  ... »). Les fichiers traités sont ensuite supprimés.
++- Aucun `CHANGELOG-<N>.md` trouvé : message et sortie propre (code 0),
++  `CHANGELOG.md` laissé inchangé — propriété qui rend une seconde exécution
++  sans nouveaux fichiers idempotente de fait, puisque les sources du
++  premier passage ont déjà été supprimées. Vérifié par test manuel (fichiers
++  factices `CHANGELOG-338.md`/`CHANGELOG-340.md` dans un dépôt temporaire,
++  hors du dépôt réel) : fusion correcte dans l'ordre #340 puis #338,
++  suppression des fichiers sources, relance sans effet.
++- Pas encore appelé automatiquement par `watcher.py` — le système de
++  worktrees qui produira des `CHANGELOG-<N>.md` n'existe pas encore ;
++  lancement manuel uniquement pour l'instant.
++
+ ## 2 août 2026 — issue #335
+ 
+ Correction du radio Mode qui restait parfois figé sur « Lecture seule » après
+# (diff du fichier suivant)
+diff --git a/scripts/fusionner_changelog.py b/scripts/fusionner_changelog.py
+# ── Ce fichier n'existait pas avant ce commit : il vient d'être créé.
+new file mode 100644
+# (index — ignorable)
+index 0000000..a0b3563
+# (avant — fichier suivant)
+--- /dev/null
+# (après — fichier suivant)
++++ b/scripts/fusionner_changelog.py
+# ── Zone modifiée : ligne 0 (0 ligne(s)) dans l'ancienne version → ligne 1 (127 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -0,0 +1,127 @@
++#!/usr/bin/env python3
++"""scripts/fusionner_changelog.py — fusionne les CHANGELOG-<N>.md dans CHANGELOG.md.
++
++Contexte : issue #336 — futur système de worktrees. Quand CCL travaille dans
++un répertoire isolé, il écrit son entrée dans un fichier `CHANGELOG-<N>.md`
++(N = numéro de l'issue) plutôt que dans `CHANGELOG.md` directement, pour
++éviter les conflits systématiques sur ce fichier unique quand plusieurs
++issues mode_write tournent en parallèle dans des worktrees distincts. Ce
++script fusionne ces fichiers dans `CHANGELOG.md` avant le push d'Alain.
++
++Fonctionnement : chaque `CHANGELOG-<N>.md` trouvé à la racine du dépôt est
++inséré tel quel (contenu repris sans modification) en tête de `CHANGELOG.md`,
++juste après l'en-tête fixe du fichier (jusqu'à la ligne vide qui suit
++« Convention d'ajout : ... »), triés par N décroissant — cohérent avec la
++convention « plus récente en tête » de `CHANGELOG.md` (issue #252). Les
++fichiers `CHANGELOG-<N>.md` traités sont ensuite supprimés. Aucun fichier
++trouvé : message et sortie propre (code 0), `CHANGELOG.md` inchangé —
++propriété qui rend une seconde exécution sans nouveaux fichiers idempotente,
++puisque les fichiers sources du premier passage ont déjà été supprimés.
++
++Ce script n'est pas encore appelé automatiquement par watcher.py (le système
++de worktrees qui produit des CHANGELOG-<N>.md n'existe pas encore) —
++lancement manuel uniquement pour l'instant.
++
++Usage :
++    python3 scripts/fusionner_changelog.py                # dépôt courant (.)
++    python3 scripts/fusionner_changelog.py --repo /chemin/vers/le/depot
++"""
++import argparse
++import re
++import sys
++from pathlib import Path
++
++MOTIF_FICHIER = re.compile(r"^CHANGELOG-(\d+)\.md$")
++
++
++def _trouver_fichiers(repo: Path) -> list:
++    """Retourne les (N, chemin) des CHANGELOG-<N>.md trouvés à la racine du
++    dépôt, triés par N décroissant (plus récent en tête)."""
++    fichiers = []
++    for chemin in repo.iterdir():
++        if not chemin.is_file():
++            continue
++        m = MOTIF_FICHIER.match(chemin.name)
++        if m:
++            fichiers.append((int(m.group(1)), chemin))
++    fichiers.sort(key=lambda t: t[0], reverse=True)
++    return fichiers
++
++
++def _point_insertion(lignes: list) -> int:
++    """Index (dans `lignes`) de la ligne juste après la ligne vide qui suit
++    « Convention d'ajout : ... » — point d'insertion en tête du contenu,
++    juste après l'en-tête fixe de CHANGELOG.md. None si l'en-tête attendu
++    est introuvable (fichier non conforme à la convention #252)."""
++    for i, ligne in enumerate(lignes):
++        if ligne.startswith("Convention d'ajout"):
++            for j in range(i + 1, len(lignes)):
++                if lignes[j].strip() == "":
++                    return j + 1
++            return len(lignes)
++    return None
++
++
++def fusionner(repo: Path) -> dict:
++    """Exécute la fusion. Retourne un rapport structuré (utilisé aussi bien
++    pour l'affichage console que pour des tests)."""
++    fichiers = _trouver_fichiers(repo)
++    if not fichiers:
++        return {"erreur": None, "traites": [], "message": "Aucun CHANGELOG-<N>.md trouvé — rien à fusionner."}
++
++    fichier_changelog = repo / "CHANGELOG.md"
++    if not fichier_changelog.exists():
++        return {"erreur": f"CHANGELOG.md introuvable : {fichier_changelog}"}
++
++    contenu = fichier_changelog.read_text(encoding="utf-8")
++    lignes = contenu.splitlines(keepends=True)
++    idx = _point_insertion(lignes)
++    if idx is None:
++        return {"erreur": "en-tête fixe introuvable dans CHANGELOG.md "
++                           "(ligne « Convention d'ajout : ... » absente)"}
++
++    blocs = []
++    for n, chemin in fichiers:
++        texte = chemin.read_text(encoding="utf-8").strip("\n")
++        blocs.append(texte + "\n\n")
++
++    nouveau_contenu = "".join(lignes[:idx]) + "".join(blocs) + "".join(lignes[idx:])
++    fichier_changelog.write_text(nouveau_contenu, encoding="utf-8")
++
++    for n, chemin in fichiers:
++        chemin.unlink()
++
++    return {"erreur": None, "traites": [(n, chemin.name) for n, chemin in fichiers]}
++
++
++def _afficher_rapport(rapport: dict) -> int:
++    if rapport.get("erreur"):
++        print(f"ERREUR : {rapport['erreur']}", file=sys.stderr)
++        return 1
++
++    if not rapport["traites"]:
++        print(rapport["message"])
++        return 0
++
++    numeros = ", ".join(f"#{n}" for n, _ in rapport["traites"])
++    print(f"{len(rapport['traites'])} fichier(s) fusionné(s) dans CHANGELOG.md (issues {numeros}) :")
++    for n, nom in rapport["traites"]:
++        print(f"  - {nom} -> supprimé après fusion")
++    return 0
++
++
++def main():
++    parser = argparse.ArgumentParser(
++        description="Fusionne les CHANGELOG-<N>.md (worktrees) dans CHANGELOG.md, "
++                     "les plus récents (N décroissant) en tête, puis les supprime."
++    )
++    parser.add_argument("--repo", type=Path, default=Path("."),
++                         help="racine du dépôt à scanner (défaut : .)")
++    args = parser.parse_args()
++
++    rapport = fusionner(args.repo.resolve())
++    sys.exit(_afficher_rapport(rapport))
++
++
++if __name__ == "__main__":
++    main()

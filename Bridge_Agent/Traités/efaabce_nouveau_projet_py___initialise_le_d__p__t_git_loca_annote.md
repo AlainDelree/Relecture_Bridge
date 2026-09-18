@@ -1,0 +1,545 @@
+efaabce
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit efaabce
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Tue Jul 28 02:55:44 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    nouveau_projet.py : initialise le dépôt git local du répertoire de travail, sans quoi le projet créé était inutilisable (issue #257)
+    
+    creer_projet() ne faisait jamais git init/git remote add — REP_TRAVAIL non
+    versionné faisait échouer git pull --ff-only (watcher) et le commit de
+    sauvegarde obligatoire en mode écriture. Nouvelle étape « Dépôt git local »
+    (fonction initialiser_git()), entre Fichiers contexte et Documentation :
+    cas déjà-git inchangé ; cas neuf → git init -b master, remote origin en
+    HTTPS, .gitignore minimal, commit initial, puis push (exception documentée
+    à la règle de push, §18.2 — Alain déclenche la création, pas un agent ;
+    échec de push non bloquant, commande manuelle renvoyée). CLI (etape_git,
+    confirmation) et route Flask mis à jour. Web : nouvel encart
+    afficherRappelProjet() distinct de afficherRappelGit() (CONTEXTE.md vide à
+    rédiger + commandes manuelles éventuelles, dépôt projet vs dépôt
+    Bridge_Agent). §13 de la doc réécrit (étapes de bout en bout), §18.2
+    complété, entrée CHANGELOG.md ajoutée. Testé sur /tmp (cas neuf et
+    déjà-git), nettoyé après.
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/BRIDGE_AGENT_DOC.md b/BRIDGE_AGENT_DOC.md
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 6c60690..c1f4232 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/BRIDGE_AGENT_DOC.md
+# ── Version APRÈS ce commit.
++++ b/BRIDGE_AGENT_DOC.md
+# ── Zone modifiée : ligne 533 (7 ligne(s)) dans l'ancienne version → ligne 533 (6 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -533,7 +533,6 @@ python3 new_issue.py --externe
+ python3 new_issue.py --set-password
+ 
+ # Créer / installer un nouveau projet bridge (interactif, terminal)
+-# Crée le .conf, les 8 labels, CONTEXTE.md et met à jour cette doc (§2/§7).
+ # Équivalent web : bouton « + Nouveau projet » à côté du sélecteur de projet
+ # dans l'interface (mêmes étapes, compte-rendu par étape, sélecteur rafraîchi
+ # sans redémarrer new_issue.py). Le script CLI reste utilisable en parallèle.
+# ── Zone modifiée : ligne 550 (6 ligne(s)) dans l'ancienne version → ligne 549 (45 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -550,6 +549,45 @@ ps aux | grep watcher
+ git log --oneline origin/master..HEAD
+ ```
+ 
++**Étapes réellement effectuées par `nouveau_projet.py`/le bouton web** (issues
++#98/#99, complété par #257) — le même orchestrateur `creer_projet()` couvre les
++deux, mêmes étapes, mêmes messages, comportement idempotent identique :
++
++1. **Dépôt GitHub** : `gh repo view` ; s'il n'existe pas encore, `gh repo create
++   <owner>/<Nom> --public` (sauf décoché côté web). S'il existe déjà →
++   installation dessus, rien recréé.
++2. **`configs/<nom>.conf`** généré depuis le gabarit interne (dépôt, répertoire
++   de travail, périmètre, topic ntfy, couleur d'accent §121, etc.).
++3. **Labels GitHub** requis (§4) créés sur le dépôt cible, idempotent (les
++   présents sont laissés intacts).
++4. **Fichier(s) de contexte** : `CONTEXTE.md` (+ les 3 fichiers Specs MVC §15 si
++   demandé) créés **vides** dans le répertoire de travail, qui est créé au
++   besoin.
++5. **Dépôt git local du répertoire de travail** (issue #257) : si déjà un
++   dépôt git (cas de tous les projets installés jusqu'ici), rien n'est fait.
++   Sinon — projet réellement neuf — `git init` sur la branche `master`,
++   `git remote add origin` en **HTTPS** (`https://github.com/<owner>/<repo>.git`,
++   jamais SSH), `.gitignore` minimal s'il est absent, commit initial, puis
++   **push**. Sans cette étape le projet livré était inutilisable : ni
++   `git pull --ff-only` (début de cycle du watcher) ni le commit de
++   sauvegarde obligatoire en mode écriture ne peuvent s'exécuter sur un
++   répertoire non versionné. Ce push est une **exception documentée** à la
++   règle « Alain pousse lui-même » (voir §18.2, même raisonnement que la
++   route pièces jointes) : c'est Alain qui déclenche la création de projet,
++   jamais un agent. Un échec du push (réseau, droits) ne fait pas échouer la
++   création : le commit reste local, le compte-rendu indique la commande
++   manuelle à relancer (`git push -u origin master`).
++6. **`BRIDGE_AGENT_DOC.md`** (§2 Projets actifs, §7 Périmètre, date en bas)
++   mis à jour **localement** — jamais poussé automatiquement : reste à
++   committer/pousser à la main (dépôt Bridge_Agent, distinct du projet créé).
++
++**Reste à faire manuellement dans tous les cas** : rédiger `CONTEXTE.md`
++(créé vide — c'est lui qui est injecté dans chaque prompt CCL, plafonné à
++4000 caractères), lancer le watcher (`python3 watcher.py --config
++configs/<nom>.conf`), et committer/pousser les changements du dépôt
++Bridge_Agent lui-même (`configs/`, doc) — bien distinct du dépôt du projet
++créé, dont le push initial est géré par l'étape 5 ci-dessus.
++
+ ### Cycle de vie des watchers (démarrage manuel, démarrage auto, extinction auto)
+ 
+ Les watchers ne tournent **pas** en permanence : ils s'allument à la demande et
+# ── Zone modifiée : ligne 1471 (6 ligne(s)) dans l'ancienne version → ligne 1509 (15 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1471,6 +1509,15 @@ par un fichier temporaire hors dépôt, le temps de calculer son blob.
+ > non) ne peut plus jamais être emporté. L'exception ne repose donc plus
+ > uniquement sur l'intention d'Alain, mais aussi sur une impossibilité technique
+ > de dérive vers le code.
++>
++> **Seconde exception du même type (issue #257)** : le push initial que
++> `nouveau_projet.py`/le bouton web effectuent pour initialiser le dépôt git
++> **du projet créé** (§13, étape 5) — pas Bridge_Agent lui-même. Même
++> raisonnement : c'est Alain qui déclenche la création de projet, jamais un
++> agent. Contrairement aux pièces jointes, ce push n'est pas confiné à une
++> branche orpheline sans code : c'est le commit initial normal (`master`) du
++> nouveau dépôt, ce qui reste sûr car ce dépôt vient d'être créé et ne
++> contient encore aucun travail d'un tiers susceptible d'être emporté.
+ 
+ ### 18.3 Fonctionnement concret
+ 
+# ── Zone modifiée : ligne 1680 (6 ligne(s)) dans l'ancienne version → ligne 1727 (6 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1680,6 +1727,6 @@ issues de la même combinaison s'il le juge utile.
+ 
+ ---
+ 
+-*Dernière mise à jour : 27 juillet 2026 — Étend la convention `CHANGELOG.md` à toute issue qui modifie le dépôt, pas seulement celles qui touchent la doc, et rattrape l'entrée manquante de #250 (issue #253, suite #252). Contexte : le texte introduit par #252 limitait l'obligation d'ajouter une entrée aux « issue[s] qui modifi[ent] cette doc » — restriction reconduisant, sous une autre forme, le trou que #240 avait dû combler à la main (issues #237/#238/#239, du code sans modification de doc, restées sans trace plusieurs jours) ; premier cas depuis #252 : #250 (correctif de contraste CSS pur, `static/css/style.css`) n'avait d'entrée ni dans `CHANGELOG.md` ni dans le pied de page, seulement dans l'historique git. **§10** reformulé : l'obligation d'ajouter une entrée en tête de `CHANGELOG.md` porte désormais sur **toute issue qui modifie le dépôt** (code, CSS, consignes, tests, documentation, quel que soit le fichier touché) ; le pied de page de cette doc reste, lui, réservé aux **trois entrées les plus récentes parmi les seules issues qui modifient cette doc elle-même** — comportement inchangé, une issue purement CSS comme #250 n'y figure donc pas. **Entrée rétroactive de #250** ajoutée dans `CHANGELOG.md`, à sa place chronologique (entre #252 et #251) : trois atténuations cumulées sur `.filtre-projet.inactif` (`opacity:.4` + fond `#f2f2f0` + texte `#999`) rendaient le nom des projets désélectionnés illisible (contraste `#999` sur `#f2f2f0` : 2,54:1, sous le seuil WCAG AA de 4,5:1, avant même l'effet de l'opacity) ; `opacity` globale supprimée — elle délavait aussi la pastille de couleur et l'emoji du bouton Ouvriers, pas seulement le texte — ne restent que fond et texte, `#5a5a5a` sur `#f2f2f0`, ratio 6,15:1. **Vérification des écarts (point 3)** : comparaison des numéros d'issue présents dans `CHANGELOG.md` à la liste des issues `done` fermées depuis #240 (13 issues, #240 à #252) — seules #241, #242 et #246 sont également absentes du changelog, mais légitimement : trois relances de build Windows Scrabble, `PROJET=bridge_agent` uniquement par la convention d'exception #233 pour les issues `for-windows`, ne modifiant aucun fichier du dépôt Bridge_Agent lui-même (build exécuté dans un partage CCW distinct) — hors du périmètre de la nouvelle règle, pas un oubli. Aucun autre écart trouvé. Aucune section renumérotée, aucun fichier `.py` modifié. Précédemment — Extrait l'historique du pied de page de `BRIDGE_AGENT_DOC.md` vers un `CHANGELOG.md` dédié (issue #252). Contexte : le pied de page (paragraphe « Dernière mise à jour : ... ») avait fini par contenir l'intégralité de l'historique du projet depuis l'issue #96, chaîné par 34 occurrences du connecteur « Précédemment » (suivi d'un tiret cadratin), soit 55523 caractères sur une seule ligne logique — coût de lecture (la doc est lue intégralement par Claude Chat à chaque conversation impliquant Bridge_Agent), coût d'écriture (chaque issue de doc réécrivait le bloc entier pour y insérer une entrée en tête), et risque de perte silencieuse (rien ne signalerait une troncature, un `git diff` sur une ligne de cette taille étant illisible). **Solution retenue** : nouveau fichier `CHANGELOG.md` à la racine du dépôt, contenant les 35 entrées historiques (de cette issue #252 jusqu'aux issues #135/#101/#97, suite #96) reformatées en sections `## <date> — issue #N`, contenu de chaque entrée repris **tel quel** — déplacement et reformatage, pas de résumé ni de réécriture. Extraction faite par script Python : séparation du pied de page d'origine sur la chaîne de connexion (« Précédemment » + tiret cadratin), avec vérification programmatique que la concaténation des segments reconstitue exactement le texte de départ (aucune perte possible) ; dates des 34 entrées antérieures (absentes du texte lui-même, seule la plus récente portait une date explicite) retrouvées sans ambiguïté via `git log` (recherche de `issue #N` dans les messages de commit, un seul jour de commit trouvé par numéro d'issue). Pied de page de `BRIDGE_AGENT_DOC.md` réduit aux **trois entrées les plus récentes** (celle-ci, #251, #249), suivies d'un renvoi vers `CHANGELOG.md` pour l'historique complet. **Vérification de non-perte (point 4)** : 34 occurrences du connecteur « Précédemment » avant modification, 35 entrées dans `CHANGELOG.md` après (34 + l'entrée « Dernière mise à jour » elle-même comptée à part) — décompte exact, aucun écart, confirmé avant livraison. **Vérification des dépendances (point 5)** : recherche de tout fichier s'appuyant sur le format du pied de page — une dépendance réelle trouvée dans `nouveau_projet.py` (deux occurrences, mise à jour de la date des projets §2/§7) : le script repère la ligne par `ligne.startswith("*Dernière mise à jour :")` puis remplace la date via le regex `(\*Dernière mise à jour : )[^—]*( —)`, insensible à tout ce qui suit le tiret cadratin — compatible tel quel avec le nouveau pied de page réduit, à condition que sa toute première ligne conserve exactement ce préfixe suivi d'un tiret cadratin juste après la date (vérifié, conservé sans changement). Aucun test (`tests/*.py`) ni aucun autre script ne référence ce pied de page ou la chaîne « Précédemment ». **§10** complété avec la nouvelle convention : toute issue modifiant la doc ajoute désormais son entrée en tête de `CHANGELOG.md` et fait glisser les trois entrées du pied de page (la plus ancienne des trois sortant du pied de page, elle reste disponible dans `CHANGELOG.md`). Aucune section renumérotée, aucun fichier `.py` modifié. Précédemment — Déclare restype/argtypes des appels ctypes kernel32 de l'objet Job Windows (issue #251, suite #249). Contexte : `_creer_job_windows_kill_on_close`/`_assigner_job_windows` appelaient `CreateJobObjectW`, `SetInformationJobObject`, `OpenProcess`, `AssignProcessToJobObject`, `CloseHandle` sans déclarer `restype`/`argtypes` — ctypes suppose alors par défaut un retour `c_int` (32 bits signés), alors que `CreateJobObjectW`/`OpenProcess` retournent un `HANDLE` (64 bits sur Windows x64) : le handle était donc tronqué silencieusement (fonctionnel en pratique tant que sa valeur reste petite, ce qui est le cas courant pour un handle noyau, mais rien ne le garantit), puis retronqué à chaque réutilisation en argument des appels suivants, eux aussi non déclarés — défaut structurellement invisible au test #249, qui mocke `ctypes.windll`. **Solution retenue** : nouvelle `_declarer_prototypes_kernel32_windows`, déclarant les cinq prototypes avec les types de `ctypes.wintypes` (`HANDLE`, `BOOL`, `DWORD`, `LPVOID`, `LPCWSTR`), appelée **une seule fois** à l'import du module sous la garde `if os.name == "nt":` — et non répétée à chaque appel, car le test `tests/test_nettoyage_arbre_windows_249.py` mocke `kernel32` par des méthodes liées Python (qui n'admettent pas l'affectation `.restype`/`.argtypes`) et ne force `os.name` qu'après l'import : une déclaration répétée aurait cassé ce mock. `python3 -c "import watcher"` vérifié toujours fonctionnel sous Linux (la garde empêche tout accès à `ctypes.windll`, absent hors Windows). **Point 2** : `_PROCESS_ALL_ACCESS = 0x1F0FFF` (valeur pré-Vista, toujours fonctionnelle) remplacé par les deux seuls droits documentés par Microsoft pour `AssignProcessToJobObject` — `PROCESS_SET_QUOTA | PROCESS_TERMINATE` (`_PROCESS_ACCES_JOB`). **Tests** : `tests/test_nettoyage_arbre_windows_249.py` et `tests/test_nettoyage_arbre_247.py` repassés sans modification (le mock ne traverse jamais la déclaration des prototypes, appelée seulement à l'import réel) — les deux passent. **§13** complété (sous-section « Nettoyage de l'arbre de process ») : nouveau paragraphe sur cette révision, et note sur les jobs imbriqués Windows 8+ sous NSSM (le service `CCW-Watcher` peut déjà être dans un job — l'assignation du process `claude` au job créé par `_preparer_job_windows` doit donc réussir même imbriquée ; si ce n'était pas le cas, le `log.warning` de `_preparer_job_windows` le signalerait — à vérifier lors de la prochaine validation réelle sur la VM CCW). Aucune section renumérotée.*
++*Dernière mise à jour : 28 juillet 2026 — Ajoute l'initialisation git du répertoire de travail à la création de projet, sans quoi le projet créé était inutilisable (issue #257). Contexte : `creer_projet()` (CLI et route Flask) créait le dépôt GitHub distant, le `.conf`, les labels, le répertoire de travail, `CONTEXTE.md` et mettait à jour la doc — mais ne faisait jamais `git init`/`git remote add` : aucun appel à `git` dans les 784 lignes du script, seule commande externe `gh`. Sur un projet réellement neuf (REP_TRAVAIL non versionné), `git pull --ff-only` en début de cycle du watcher échoue, et le commit de sauvegarde obligatoire avant toute modification en mode écriture ne peut pas s'exécuter — toute issue `mode_write` part en erreur. Cause probable : le script avait été écrit pour installer des dépôts déjà clonés de longue date, pas pour en créer de zéro ; le cas « projet neuf » n'avait jamais été parcouru jusqu'au bout avant `rummikub` (27 juillet 2026), initialisé à la main. **Aggravation** : après une création réussie, l'encart web `afficherRappelGit()` (`static/js/app.js`) affichait « ⚠ Action requise — pousser la doc sur GitHub » avec 3 commandes portant sur le dépôt **Bridge_Agent** (pousser `BRIDGE_AGENT_DOC.md`) — un encart « action requise » plein de commandes git juste après la création laissait croire à tort que rien d'autre n'était à faire, alors que deux étapes manquaient (init git + rédaction de `CONTEXTE.md`), non mentionnées nulle part. **Solution retenue** : nouvelle étape « Dépôt git local » dans `creer_projet()` (`nouveau_projet.py`), entre « Fichiers contexte » et « Documentation », couvrant les deux cas : **déjà un dépôt git** (installation sur un projet existant, le cas de tous les projets actuels) → rien n'est fait, signalé « déjà un dépôt git — inchangé » ; **répertoire non versionné** (projet réellement neuf) → `git init -b master`, `git remote add origin` en **HTTPS** (`https://github.com/<owner>/<repo>.git`, jamais SSH — toute l'installation `gh` est en HTTPS), `.gitignore` minimal s'il est absent, commit initial, puis **push**. Nouvelle fonction `initialiser_git(rep, depot)`, réutilisée telle quelle par le CLI (`etape_git()`, avec confirmation comme les autres étapes, titre renuméroté « 8. » — Specs MVC en 7, doc en 9, résumé en 10) et par la route Flask (`creer_projet()`, sans confirmation individuelle, cohérent avec les autres étapes du flux web). **Exception documentée à la règle « CCL/le script ne pousse jamais »** (issue #257, point 2) : ce push initial est déclenché par la création de projet elle-même, toujours à l'initiative d'Alain (terminal ou bouton web), jamais par un agent — même raisonnement que la route pièces jointes (§18.2, où une seconde exception du même type est désormais documentée explicitement). Un échec du push (réseau, droits) **ne fait pas échouer la création** : le commit reste local, `ok:true` mais `push_ok:false`, et une commande manuelle (`git push -u origin master`, ou la séquence complète si `git init` lui-même a échoué) est renvoyée dans `git_commande_manuelle` — affichée dans le récapitulatif CLI et dans un nouvel encart web dédié. **Web** (`static/js/app.js`, `templates/index.html`, `static/css/style.css`) : nouvel encart `afficherRappelProjet()` (`#np-rappel-projet`, bordure bleue), **visuellement distinct** de l'encart existant `afficherRappelGit()` (bordure orange, dépôt Bridge_Agent uniquement, dont le titre est reformulé pour préciser « dépôt Bridge_Agent ») — c'est précisément la confusion entre les deux dépôts qui avait fait passer le problème inaperçu. Le nouvel encart rappelle systématiquement que `CONTEXTE.md` est créé **VIDE** (injecté dans chaque prompt CCL, plafonné à 4000 caractères) et affiche, le cas échéant, la commande git manuelle restante. **Doc** : §13 « Commandes utiles » réécrit — décrivait auparavant seulement la commande de lancement sans aucune étape suivante ; détaille maintenant les 6 étapes réelles de bout en bout (dépôt GitHub, `.conf`, labels, contexte, **dépôt git local**, doc Bridge_Agent) et ce qui reste manuel dans tous les cas. §18.2 complété d'un paragraphe documentant cette seconde exception à la règle de push. Docstring d'en-tête de `nouveau_projet.py` mise à jour (« Zéro dépendance externe (stdlib + `gh`) » ne tenait plus, `git` est désormais requis pour le cas dépôt neuf). **Test (point 6)** : sur des répertoires jetables sous `/tmp` (jamais de vrai dépôt GitHub créé, `depot_existe`/`creer_labels` court-circuités) : cas répertoire neuf → dépôt bien initialisé (`.git` présent, branche `master`, remote `origin` HTTPS correct, un commit), push échoue proprement (dépôt distant inexistant) sans faire échouer `creer_projet()` (`succes:true`), `git_commande_manuelle` renvoyée ; cas déjà-git → fichier préexistant intact, aucun remote ajouté, comportement strictement inchangé. Répertoires de test supprimés après vérification. Aucune section renumérotée. Précédemment — Étend la convention `CHANGELOG.md` à toute issue qui modifie le dépôt, pas seulement celles qui touchent la doc, et rattrape l'entrée manquante de #250 (issue #253, suite #252). Contexte : le texte introduit par #252 limitait l'obligation d'ajouter une entrée aux « issue[s] qui modifi[ent] cette doc » — restriction reconduisant, sous une autre forme, le trou que #240 avait dû combler à la main (issues #237/#238/#239, du code sans modification de doc, restées sans trace plusieurs jours) ; premier cas depuis #252 : #250 (correctif de contraste CSS pur, `static/css/style.css`) n'avait d'entrée ni dans `CHANGELOG.md` ni dans le pied de page, seulement dans l'historique git. **§10** reformulé : l'obligation d'ajouter une entrée en tête de `CHANGELOG.md` porte désormais sur **toute issue qui modifie le dépôt** (code, CSS, consignes, tests, documentation, quel que soit le fichier touché) ; le pied de page de cette doc reste, lui, réservé aux **trois entrées les plus récentes parmi les seules issues qui modifient cette doc elle-même** — comportement inchangé, une issue purement CSS comme #250 n'y figure donc pas. **Entrée rétroactive de #250** ajoutée dans `CHANGELOG.md`, à sa place chronologique (entre #252 et #251) : trois atténuations cumulées sur `.filtre-projet.inactif` (`opacity:.4` + fond `#f2f2f0` + texte `#999`) rendaient le nom des projets désélectionnés illisible (contraste `#999` sur `#f2f2f0` : 2,54:1, sous le seuil WCAG AA de 4,5:1, avant même l'effet de l'opacity) ; `opacity` globale supprimée — elle délavait aussi la pastille de couleur et l'emoji du bouton Ouvriers, pas seulement le texte — ne restent que fond et texte, `#5a5a5a` sur `#f2f2f0`, ratio 6,15:1. **Vérification des écarts (point 3)** : comparaison des numéros d'issue présents dans `CHANGELOG.md` à la liste des issues `done` fermées depuis #240 (13 issues, #240 à #252) — seules #241, #242 et #246 sont également absentes du changelog, mais légitimement : trois relances de build Windows Scrabble, `PROJET=bridge_agent` uniquement par la convention d'exception #233 pour les issues `for-windows`, ne modifiant aucun fichier du dépôt Bridge_Agent lui-même (build exécuté dans un partage CCW distinct) — hors du périmètre de la nouvelle règle, pas un oubli. Aucun autre écart trouvé. Aucune section renumérotée, aucun fichier `.py` modifié. Précédemment — Extrait l'historique du pied de page de `BRIDGE_AGENT_DOC.md` vers un `CHANGELOG.md` dédié (issue #252). Contexte : le pied de page (paragraphe « Dernière mise à jour : ... ») avait fini par contenir l'intégralité de l'historique du projet depuis l'issue #96, chaîné par 34 occurrences du connecteur « Précédemment » (suivi d'un tiret cadratin), soit 55523 caractères sur une seule ligne logique — coût de lecture (la doc est lue intégralement par Claude Chat à chaque conversation impliquant Bridge_Agent), coût d'écriture (chaque issue de doc réécrivait le bloc entier pour y insérer une entrée en tête), et risque de perte silencieuse (rien ne signalerait une troncature, un `git diff` sur une ligne de cette taille étant illisible). **Solution retenue** : nouveau fichier `CHANGELOG.md` à la racine du dépôt, contenant les 35 entrées historiques (de cette issue #252 jusqu'aux issues #135/#101/#97, suite #96) reformatées en sections `## <date> — issue #N`, contenu de chaque entrée repris **tel quel** — déplacement et reformatage, pas de résumé ni de réécriture. Extraction faite par script Python : séparation du pied de page d'origine sur la chaîne de connexion (« Précédemment » + tiret cadratin), avec vérification programmatique que la concaténation des segments reconstitue exactement le texte de départ (aucune perte possible) ; dates des 34 entrées antérieures (absentes du texte lui-même, seule la plus récente portait une date explicite) retrouvées sans ambiguïté via `git log` (recherche de `issue #N` dans les messages de commit, un seul jour de commit trouvé par numéro d'issue). Pied de page de `BRIDGE_AGENT_DOC.md` réduit aux **trois entrées les plus récentes** (celle-ci, #251, #249), suivies d'un renvoi vers `CHANGELOG.md` pour l'historique complet. **Vérification de non-perte (point 4)** : 34 occurrences du connecteur « Précédemment » avant modification, 35 entrées dans `CHANGELOG.md` après (34 + l'entrée « Dernière mise à jour » elle-même comptée à part) — décompte exact, aucun écart, confirmé avant livraison. **Vérification des dépendances (point 5)** : recherche de tout fichier s'appuyant sur le format du pied de page — une dépendance réelle trouvée dans `nouveau_projet.py` (deux occurrences, mise à jour de la date des projets §2/§7) : le script repère la ligne par `ligne.startswith("*Dernière mise à jour :")` puis remplace la date via le regex `(\*Dernière mise à jour : )[^—]*( —)`, insensible à tout ce qui suit le tiret cadratin — compatible tel quel avec le nouveau pied de page réduit, à condition que sa toute première ligne conserve exactement ce préfixe suivi d'un tiret cadratin juste après la date (vérifié, conservé sans changement). Aucun test (`tests/*.py`) ni aucun autre script ne référence ce pied de page ou la chaîne « Précédemment ». **§10** complété avec la nouvelle convention : toute issue modifiant la doc ajoute désormais son entrée en tête de `CHANGELOG.md` et fait glisser les trois entrées du pied de page (la plus ancienne des trois sortant du pied de page, elle reste disponible dans `CHANGELOG.md`). Aucune section renumérotée, aucun fichier `.py` modifié.*
+ 
+ Historique complet : voir [`CHANGELOG.md`](CHANGELOG.md).
+# (diff du fichier suivant)
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+# (index — ignorable)
+index 8efbacc..6c9ff41 100644
+# (avant — fichier suivant)
+--- a/CHANGELOG.md
+# (après — fichier suivant)
++++ b/CHANGELOG.md
+# ── Zone modifiée : ligne 9 (6 ligne(s)) dans l'ancienne version → ligne 9 (20 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -9,6 +9,20 @@ milliers de caractères sur une seule ligne logique, coûteux à relire et
+ 
+ Convention d'ajout : voir §10 de `BRIDGE_AGENT_DOC.md`.
+ 
++## 28 juillet 2026 — issue #257
++
++Ajoute l'initialisation git du répertoire de travail à la création de projet, sans quoi le projet créé était inutilisable (issue #257). Contexte : `creer_projet()` (CLI et route Flask) créait le dépôt GitHub distant, le `.conf`, les labels, le répertoire de travail, `CONTEXTE.md` et mettait à jour la doc — mais ne faisait jamais `git init`/`git remote add` : aucun appel à `git` dans les 784 lignes du script, seule commande externe `gh`. Sur un projet réellement neuf (REP_TRAVAIL non versionné), `git pull --ff-only` en début de cycle du watcher échoue, et le commit de sauvegarde obligatoire avant toute modification en mode écriture ne peut pas s'exécuter — toute issue `mode_write` part en erreur. Cause probable : le script avait été écrit pour installer des dépôts déjà clonés de longue date, pas pour en créer de zéro ; le cas « projet neuf » n'avait jamais été parcouru jusqu'au bout avant `rummikub` (27 juillet 2026), initialisé à la main. **Aggravation** : après une création réussie, l'encart web `afficherRappelGit()` (`static/js/app.js`) affichait « ⚠ Action requise — pousser la doc sur GitHub » avec 3 commandes portant sur le dépôt **Bridge_Agent** (pousser `BRIDGE_AGENT_DOC.md`) — un encart « action requise » plein de commandes git juste après la création laissait croire à tort que rien d'autre n'était à faire, alors que deux étapes manquaient (init git + rédaction de `CONTEXTE.md`), non mentionnées nulle part.
++
++**Solution retenue** : nouvelle étape « Dépôt git local » dans `creer_projet()` (`nouveau_projet.py`), entre « Fichiers contexte » et « Documentation », couvrant les deux cas : **déjà un dépôt git** (installation sur un projet existant, le cas de tous les projets actuels) → rien n'est fait, signalé « déjà un dépôt git — inchangé » ; **répertoire non versionné** (projet réellement neuf) → `git init -b master`, `git remote add origin` en **HTTPS** (`https://github.com/<owner>/<repo>.git`, jamais SSH — toute l'installation `gh` est en HTTPS), `.gitignore` minimal s'il est absent, commit initial, puis **push**. Nouvelle fonction `initialiser_git(rep, depot)`, réutilisée telle quelle par le CLI (`etape_git()`, avec confirmation comme les autres étapes, titre renuméroté « 8. » — Specs MVC en 7, doc en 9, résumé en 10) et par la route Flask (`creer_projet()`, sans confirmation individuelle, cohérent avec les autres étapes du flux web).
++
++**Exception documentée à la règle « CCL/le script ne pousse jamais »** (issue #257, point 2) : ce push initial est déclenché par la création de projet elle-même, toujours à l'initiative d'Alain (terminal ou bouton web), jamais par un agent — même raisonnement que la route pièces jointes (§18.2, où une seconde exception du même type est désormais documentée explicitement). Un échec du push (réseau, droits) **ne fait pas échouer la création** : le commit reste local, `ok:true` mais `push_ok:false`, et une commande manuelle (`git push -u origin master`, ou la séquence complète si `git init` lui-même a échoué) est renvoyée dans `git_commande_manuelle` — affichée dans le récapitulatif CLI et dans un nouvel encart web dédié.
++
++**Web** (`static/js/app.js`, `templates/index.html`, `static/css/style.css`) : nouvel encart `afficherRappelProjet()` (`#np-rappel-projet`, bordure bleue), **visuellement distinct** de l'encart existant `afficherRappelGit()` (bordure orange, dépôt Bridge_Agent uniquement, dont le titre est reformulé pour préciser « dépôt Bridge_Agent ») — c'est précisément la confusion entre les deux dépôts qui avait fait passer le problème inaperçu. Le nouvel encart rappelle systématiquement que `CONTEXTE.md` est créé **VIDE** (injecté dans chaque prompt CCL, plafonné à 4000 caractères) et affiche, le cas échéant, la commande git manuelle restante.
++
++**Doc** : §13 « Commandes utiles » réécrit — décrivait auparavant seulement la commande de lancement sans aucune étape suivante ; détaille maintenant les 6 étapes réelles de bout en bout (dépôt GitHub, `.conf`, labels, contexte, **dépôt git local**, doc Bridge_Agent) et ce qui reste manuel dans tous les cas. §18.2 complété d'un paragraphe documentant cette seconde exception à la règle de push. Docstring d'en-tête de `nouveau_projet.py` mise à jour (« Zéro dépendance externe (stdlib + `gh`) » ne tenait plus, `git` est désormais requis pour le cas dépôt neuf).
++
++**Test (point 6)** : sur des répertoires jetables sous `/tmp` (jamais de vrai dépôt GitHub créé, `depot_existe`/`creer_labels` court-circuités) : cas répertoire neuf → dépôt bien initialisé (`.git` présent, branche `master`, remote `origin` HTTPS correct, un commit), push échoue proprement (dépôt distant inexistant) sans faire échouer `creer_projet()` (`succes:true`), `git_commande_manuelle` renvoyée ; cas déjà-git → fichier préexistant intact, aucun remote ajouté, comportement strictement inchangé. Répertoires de test supprimés après vérification. Aucune section renumérotée.
++
+ ## 27 juillet 2026 — issue #253
+ 
+ Étend la convention `CHANGELOG.md` à toute issue qui modifie le dépôt, pas seulement celles qui touchent la doc, et rattrape l'entrée manquante de #250 (issue #253, suite #252). Contexte : le texte introduit par #252 limitait l'obligation d'ajouter une entrée aux « issue[s] qui modifi[ent] cette doc » — restriction reconduisant, sous une autre forme, le trou que #240 avait dû combler à la main (issues #237/#238/#239, du code sans modification de doc, restées sans trace plusieurs jours) ; premier cas depuis #252 : #250 (correctif de contraste CSS pur, `static/css/style.css`) n'avait d'entrée ni dans `CHANGELOG.md` ni dans le pied de page, seulement dans l'historique git. **§10** reformulé : l'obligation d'ajouter une entrée en tête de `CHANGELOG.md` porte désormais sur **toute issue qui modifie le dépôt** (code, CSS, consignes, tests, documentation, quel que soit le fichier touché) ; le pied de page de cette doc reste, lui, réservé aux **trois entrées les plus récentes parmi les seules issues qui modifient cette doc elle-même** — comportement inchangé, une issue purement CSS comme #250 n'y figure donc pas. **Entrée rétroactive de #250** ajoutée dans `CHANGELOG.md`, à sa place chronologique (entre #252 et #251) : trois atténuations cumulées sur `.filtre-projet.inactif` (`opacity:.4` + fond `#f2f2f0` + texte `#999`) rendaient le nom des projets désélectionnés illisible (contraste `#999` sur `#f2f2f0` : 2,54:1, sous le seuil WCAG AA de 4,5:1, avant même l'effet de l'opacity) ; `opacity` globale supprimée — elle délavait aussi la pastille de couleur et l'emoji du bouton Ouvriers, pas seulement le texte — ne restent que fond et texte, `#5a5a5a` sur `#f2f2f0`, ratio 6,15:1. **Vérification des écarts (point 3)** : comparaison des numéros d'issue présents dans `CHANGELOG.md` à la liste des issues `done` fermées depuis #240 (13 issues, #240 à #252) — seules #241, #242 et #246 sont également absentes du changelog, mais légitimement : trois relances de build Windows Scrabble, `PROJET=bridge_agent` uniquement par la convention d'exception #233 pour les issues `for-windows`, ne modifiant aucun fichier du dépôt Bridge_Agent lui-même (build exécuté dans un partage CCW distinct) — hors du périmètre de la nouvelle règle, pas un oubli. Aucun autre écart trouvé. Aucune section renumérotée, aucun fichier `.py` modifié.
+# (diff du fichier suivant)
+diff --git a/nouveau_projet.py b/nouveau_projet.py
+# (index — ignorable)
+index 92c6401..8ee0483 100755
+# (avant — fichier suivant)
+--- a/nouveau_projet.py
+# (après — fichier suivant)
++++ b/nouveau_projet.py
+# ── Zone modifiée : ligne 10 (8 ligne(s)) dans l'ancienne version → ligne 10 (13 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -10,8 +10,13 @@ met à jour BRIDGE_AGENT_DOC.md automatiquement.
+ Usage :
+     python3 nouveau_projet.py
+ 
+-Zéro dépendance externe (stdlib + la commande `gh`). Aucun `git push` n'est
+-effectué : Alain pousse lui-même après vérification.
++Zéro dépendance externe (stdlib + les commandes `gh` et `git`). Cas dépôt
++existant : comportement inchangé, aucun `git push`. Cas dépôt neuf (issue
++#257) : le répertoire de travail est initialisé (git init + remote HTTPS +
++commit) puis **poussé** — exception documentée à la règle « Alain pousse
++lui-même » (§18.2 de la doc) : c'est Alain qui déclenche la création de
++projet, jamais un agent. Le reste (configs/, doc Bridge_Agent) n'est
++toujours jamais poussé automatiquement.
+ """
+ 
+ import re
+# ── Zone modifiée : ligne 72 (6 ligne(s)) dans l'ancienne version → ligne 77 (15 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -72,6 +77,15 @@ OWNER_DEFAUT = "AlainDelree"
+ # Fichiers Specs MVC (§15) créés en plus de CONTEXTE.md quand l'option est active.
+ FICHIERS_SPECS = ("CONTEXTE_VUE.md", "CONTEXTE_METIER.md", "CONTEXTE_PERSISTANCE.md")
+ 
++# .gitignore minimal écrit à l'initialisation git d'un répertoire de travail
++# neuf (issue #257), seulement s'il n'en existe pas déjà un.
++GITIGNORE_MINIMAL = """venv/
++__pycache__/
++*.pyc
++*.log
++.env
++"""
++
+ MOIS_FR = ["", "janvier", "février", "mars", "avril", "mai", "juin", "juillet",
+            "août", "septembre", "octobre", "novembre", "décembre"]
+ 
+# ── Zone modifiée : ligne 272 (6 ligne(s)) dans l'ancienne version → ligne 286 (86 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -272,6 +286,86 @@ def creer_fichiers_contexte(rep: str, avec_specs: bool) -> dict:
+     return {"crees": crees, "existants": existants, "rep_cree": rep_cree}
+ 
+ 
++def _url_https(depot: str) -> str:
++    """URL HTTPS du dépôt (jamais SSH — toute l'installation gh/bridge est en
++    HTTPS avec authentification `gh`, cf. §9 de la doc)."""
++    return f"https://github.com/{depot}.git"
++
++
++def _commandes_git_manuelles(rep_path: Path, depot: str, complet: bool) -> str:
++    """Bloc de commandes à exécuter à la main. `complet` : bloc entier
++    (init+remote+commit+push, cas refusé/échoué dès `git init`) ou juste le
++    push (init déjà fait, seul le push a échoué)."""
++    if not complet:
++        return f"cd {rep_path} && git push -u origin master"
++    url = _url_https(depot)
++    return (f"cd {rep_path}\n"
++            f"git init -b master\n"
++            f"git remote add origin {url}\n"
++            f'git add -A && git commit -m "Initialisation du projet"\n'
++            f"git push -u origin master")
++
++
++def initialiser_git(rep: str, depot: str) -> dict:
++    """Initialise le dépôt git local du répertoire de travail (issue #257) :
++    `git init` sur la branche `master`, `git remote add origin` en **HTTPS**
++    (jamais SSH), `.gitignore` minimal s'il est absent, commit initial, puis
++    push. Si REP_TRAVAIL est déjà un dépôt git (installation sur un projet
++    existant — le cas de tous les projets actuels), ne fait strictement rien.
++
++    Exception documentée à la règle « CCL ne pousse jamais » (§18.2 de la
++    doc, même raisonnement que la route pièces jointes) : c'est Alain qui
++    déclenche la création de projet — jamais un agent — donc ce push initial
++    n'est pas soumis à cette règle. Un échec du push (réseau, droits) ne fait
++    PAS échouer l'étape : le commit reste local et `commande_manuelle`
++    indique la commande à relancer à la main.
++
++    Renvoie {ok, deja_git, push_ok, detail, commande_manuelle}."""
++    rep_path = Path(rep).expanduser()
++    if (rep_path / ".git").exists():
++        return {"ok": True, "deja_git": True, "push_ok": None,
++                "detail": "déjà un dépôt git — inchangé.",
++                "commande_manuelle": None}
++
++    def _git(*args: str) -> subprocess.CompletedProcess:
++        return subprocess.run(["git", *args], cwd=rep_path,
++                              capture_output=True, text=True)
++
++    res_init = _git("init", "-b", "master")
++    if res_init.returncode != 0:
++        return {"ok": False, "deja_git": False, "push_ok": None,
++                "detail": f"échec de git init : {res_init.stderr.strip()}",
++                "commande_manuelle": _commandes_git_manuelles(rep_path, depot,
++                                                               complet=True)}
++
++    url = _url_https(depot)
++    _git("remote", "add", "origin", url)
++
++    gitignore = rep_path / ".gitignore"
++    if not gitignore.exists():
++        gitignore.write_text(GITIGNORE_MINIMAL, encoding="utf-8")
++
++    _git("add", "-A")
++    _git("commit", "-m", "Initialisation du projet", "--allow-empty")
++
++    res_push = _git("push", "-u", "origin", "master")
++    push_ok = res_push.returncode == 0
++
++    detail = (f"git init (branche master), remote origin {url} (HTTPS), "
++              ".gitignore minimal, commit initial")
++    commande_manuelle = None
++    if push_ok:
++        detail += ", poussé sur origin/master."
++    else:
++        detail += (" — ⚠ push initial échoué (commit resté local) : "
++                   + res_push.stderr.strip())
++        commande_manuelle = _commandes_git_manuelles(rep_path, depot,
++                                                       complet=False)
++
++    return {"ok": True, "deja_git": False, "push_ok": push_ok,
++            "detail": detail, "commande_manuelle": commande_manuelle}
++
++
+ def mettre_a_jour_doc(nom: str, depot: str, rep: str, perimetre: str) -> dict:
+     """Insère le projet dans les tableaux §2 et §7 de BRIDGE_AGENT_DOC.md et
+     rafraîchit la date en bas. Renvoie {existe, ok2, ok7, ok_date}."""
+# ── Zone modifiée : ligne 384 (7 ligne(s)) dans l'ancienne version → ligne 478 (14 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -384,7 +478,14 @@ def creer_projet(nom: str, depot: str = "", rep: str = "", perimetre: str = "",
+         detail_ctx = f"répertoire {rep} créé ; " + detail_ctx
+     etapes.append({"etape": "Fichiers contexte", "ok": True, "detail": detail_ctx})
+ 
+-    # 5. Mise à jour de BRIDGE_AGENT_DOC.md (§2, §7, date).
++    # 5. Dépôt git local du répertoire de travail (issue #257) — sans quoi le
++    # projet est inutilisable (git pull --ff-only et commit de sauvegarde du
++    # watcher échouent). Rien à faire si déjà un dépôt git.
++    git_res = initialiser_git(rep, depot)
++    etapes.append({"etape": "Dépôt git local", "ok": git_res["ok"],
++                   "detail": git_res["detail"]})
++
++    # 6. Mise à jour de BRIDGE_AGENT_DOC.md (§2, §7, date).
+     doc = mettre_a_jour_doc(nom, depot, rep, perimetre)
+     if not doc["existe"]:
+         etapes.append({"etape": "Documentation", "ok": False,
+# ── Zone modifiée : ligne 397 (7 ligne(s)) dans l'ancienne version → ligne 498 (10 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -397,7 +498,10 @@ def creer_projet(nom: str, depot: str = "", rep: str = "", perimetre: str = "",
+ 
+     return {"succes": True, "nom": nom, "depot": depot, "rep": rep,
+             "perimetre": perimetre, "depot_existait": depot_existait,
+-            "couleur": couleur, "etapes": etapes, "erreur": None}
++            "couleur": couleur, "etapes": etapes, "erreur": None,
++            "git_deja_git": git_res["deja_git"],
++            "git_push_ok": git_res["push_ok"],
++            "git_commande_manuelle": git_res["commande_manuelle"]}
+ 
+ 
+ def etape_nom() -> str:
+# ── Zone modifiée : ligne 558 (6 ligne(s)) dans l'ancienne version → ligne 662 (47 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -558,6 +662,47 @@ def etape_contexte(rep: str, avec_specs: bool) -> list[Path]:
+     return crees
+ 
+ 
++def etape_git(depot: str, rep: str) -> dict:
++    """Initialise le dépôt git local du répertoire de travail (issue #257),
++    après confirmation — cohérent avec les autres étapes, qui demandent
++    toutes. Rien n'est demandé si REP_TRAVAIL est déjà un dépôt git (cas
++    laissé strictement inchangé). Renvoie le même dict que initialiser_git()."""
++    titre("8. Dépôt git local")
++    rep_path = Path(rep).expanduser()
++    if (rep_path / ".git").exists():
++        print(f"   ✓ {rep_path} est déjà un dépôt git — inchangé.")
++        return {"ok": True, "deja_git": True, "push_ok": None,
++                "detail": "déjà un dépôt git — inchangé.",
++                "commande_manuelle": None}
++
++    url = _url_https(depot)
++    print(f"   {rep_path} n'est pas encore un dépôt git.")
++    print("   Sans initialisation, « git pull --ff-only » (watcher) et le "
++          "commit de sauvegarde (mode écriture) échoueront systématiquement.")
++    if not demander_oui_non(
++            f"Initialiser git (init sur master, remote origin {url} en "
++            "HTTPS, .gitignore, commit initial, PUIS push)", defaut=True):
++        cmd = _commandes_git_manuelles(rep_path, depot, complet=True)
++        print("   ⚠️  Non initialisé — reste à faire à la main avant tout usage :")
++        for ligne in cmd.splitlines():
++            print(f"      {ligne}")
++        return {"ok": False, "deja_git": False, "push_ok": None,
++                "detail": "non initialisé (refusé) — à faire à la main.",
++                "commande_manuelle": cmd}
++
++    resultat = initialiser_git(rep, depot)
++    if resultat["push_ok"]:
++        print("   ✓ dépôt initialisé (branche master, remote HTTPS) et poussé "
++              "sur origin/master.")
++    elif resultat["ok"]:
++        print("   ✓ dépôt initialisé, commit local créé.")
++        print(f"   ⚠️  push initial échoué — à relancer à la main : "
++              f"{resultat['commande_manuelle']}")
++    else:
++        print(f"   ❌ {resultat['detail']}")
++    return resultat
++
++
+ # ─── Mise à jour de la documentation (§2, §7, date) ───────────────────────────
+ 
+ def _inserer_ligne_tableau(lignes: list[str], titre_section: str,
+# ── Zone modifiée : ligne 596 (7 ligne(s)) dans l'ancienne version → ligne 741 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -596,7 +741,7 @@ def _afficher_rep(rep: str) -> str:
+ 
+ 
+ def etape_doc(nom: str, depot: str, rep: str, perimetre: str) -> bool:
+-    titre("8. Mise à jour de BRIDGE_AGENT_DOC.md")
++    titre("9. Mise à jour de BRIDGE_AGENT_DOC.md")
+     if not DOC.exists():
+         print(f"   ⚠️  {DOC.name} introuvable — mise à jour ignorée.")
+         return False
+# ── Zone modifiée : ligne 705 (9 ligne(s)) dans l'ancienne version → ligne 850 (10 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -705,9 +850,10 @@ def main() -> None:
+     if demander_oui_non("Mettre en place le pattern Specs MVC", defaut=False):
+         fichiers_contexte += etape_contexte(rep, avec_specs=True)
+ 
++    git_res = etape_git(depot, rep)
+     doc_ok = etape_doc(nom, depot, rep, perimetre)
+ 
+-    # 9. Résumé final.
++    # 10. Résumé final.
+     titre("✅ Résumé")
+     print(f"   Projet          : {nom}")
+     print(f"   Dépôt GitHub    : {depot} "
+# ── Zone modifiée : ligne 721 (14 ligne(s)) dans l'ancienne version → ligne 867 (32 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -721,14 +867,32 @@ def main() -> None:
+     if fichiers_contexte:
+         print("   Contexte        : " +
+               ", ".join(str(f) for f in fichiers_contexte))
++    if git_res["deja_git"]:
++        print("   Dépôt git local : déjà un dépôt git — inchangé")
++    elif git_res["push_ok"]:
++        print("   Dépôt git local : initialisé (master, remote HTTPS) et "
++              "poussé sur origin/master")
++    elif git_res["ok"]:
++        print("   Dépôt git local : initialisé, commit local — push manuel requis")
++    else:
++        print("   Dépôt git local : NON initialisé — le projet est inutilisable "
++              "en l'état")
+     print(f"   Documentation   : {'§2/§7/date mis à jour' if doc_ok else 'à vérifier'}")
+ 
+     print("\n\033[1mReste à faire manuellement :\033[0m")
++    print(f"   Côté projet {nom} créé :")
++    print(f"   • Rédiger {rep}/CONTEXTE.md — créé VIDE, injecté dans chaque "
++          "prompt CCL (plafonné à 4000 caractères).")
++    if git_res.get("commande_manuelle"):
++        print("   • Initialisation git incomplète — à terminer à la main :")
++        for ligne in git_res["commande_manuelle"].splitlines():
++            print(f"       {ligne}")
+     print(f"   • Lancer le watcher : "
+           f"python3 watcher.py --config configs/{nom}.conf")
+-    print(f"   • Vérifier puis committer/pousser les changements du dépôt "
+-          "Bridge_Agent (configs/, doc).")
+     print("   • (Optionnel) Piloter le watcher depuis l'interface new_issue.py.")
++    print(f"   Côté dépôt Bridge_Agent (distinct du projet {nom}) :")
++    print("   • Vérifier puis committer/pousser les changements locaux "
++          "(configs/, doc).")
+ 
+     rappel_projet_claude(nom)
+ 
+# (diff du fichier suivant)
+diff --git a/static/css/style.css b/static/css/style.css
+# (index — ignorable)
+index 6b1a1f0..88184ac 100644
+# (avant — fichier suivant)
+--- a/static/css/style.css
+# (après — fichier suivant)
++++ b/static/css/style.css
+# ── Zone modifiée : ligne 49 (6 ligne(s)) dans l'ancienne version → ligne 49 (14 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -49,6 +49,14 @@ textarea{width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;
+ .np-rappel-git{margin-top:14px;padding:10px 12px;border:1px solid #ffe08a;border-left:4px solid #f0ad4e;border-radius:6px;background:#fff3cd;color:#856404}
+ .np-rappel-git .titre{font-size:13px;font-weight:600;margin-bottom:8px}
+ .np-rappel-git pre{margin:0;padding:8px 10px;background:#fffaf0;border:1px solid #ffe08a;border-radius:4px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#5a4a00;white-space:pre;overflow-x:auto;cursor:pointer}
++/* Rappels côté PROJET créé — CONTEXTE.md vide + init git manuelle éventuelle
++   (issue #257). Bordure bleue, délibérément distincte de .np-rappel-git
++   (bordure orange, dépôt Bridge_Agent) : la confusion entre les deux dépôts
++   est précisément ce qui avait fait passer inaperçu le bug de cette issue. */
++.np-rappel-projet{margin-top:14px;padding:10px 12px;border:1px solid #b6d4f0;border-left:4px solid #4a90d9;border-radius:6px;background:#eaf2fb;color:#1d4a76}
++.np-rappel-projet .titre{font-size:13px;font-weight:600;margin-bottom:8px}
++.np-rappel-projet div{margin-bottom:6px}
++.np-rappel-projet pre{margin:0;padding:8px 10px;background:#f5f9fd;border:1px solid #b6d4f0;border-radius:4px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#1d4a76;white-space:pre;overflow-x:auto;cursor:pointer}
+ /* Sélecteur de couleur d'accent du modal « Nouveau projet » (issue #121) :
+    une pastille cliquable par couleur disponible, la choisie entourée d'un anneau. */
+ .np-couleurs{display:flex;flex-wrap:wrap;gap:10px;padding:2px 0}
+# (diff du fichier suivant)
+diff --git a/static/js/app.js b/static/js/app.js
+# (index — ignorable)
+index f13cf0e..c54b7b4 100644
+# (avant — fichier suivant)
+--- a/static/js/app.js
+# (après — fichier suivant)
++++ b/static/js/app.js
+# ── Zone modifiée : ligne 3454 (6 ligne(s)) dans l'ancienne version → ligne 3454 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -3454,6 +3454,7 @@ function ouvrirNouveauProjet() {
+   document.getElementById('np-compte-rendu').style.display = 'none';
+   document.getElementById('np-message').style.display = 'none';
+   document.getElementById('np-rappel-git').style.display = 'none';
++  document.getElementById('np-rappel-projet').style.display = 'none';
+   const btn = document.getElementById('np-creer');
+   btn.disabled = false; btn.textContent = 'Créer le projet';
+   document.getElementById('np-fermer').textContent = 'Fermer';
+# ── Zone modifiée : ligne 3604 (6 ligne(s)) dans l'ancienne version → ligne 3605 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -3604,6 +3605,7 @@ async function soumettreNouveauProjet() {
+   document.getElementById('np-message').style.display = 'none';
+   cr.style.display = 'none';
+   document.getElementById('np-rappel-git').style.display = 'none';
++  document.getElementById('np-rappel-projet').style.display = 'none';
+   if (!nom) { npMsg('Un nom de projet est requis.', 'erreur'); return; }
+ 
+   const btn = document.getElementById('np-creer');
+# ── Zone modifiée : ligne 3659 (6 ligne(s)) dans l'ancienne version → ligne 3661 (10 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -3659,6 +3661,10 @@ async function soumettreNouveauProjet() {
+     // CLI — Alain vérifie puis pousse). Sans push, la doc reste invisible pour
+     // Claude Chat. Encart distinct du compte-rendu, sélectionnable en un clic.
+     afficherRappelGit(res.nom);
++    // Rappels propres au PROJET créé (dépôt distinct de Bridge_Agent) : issue
++    // #257 — sans eux l'encart ci-dessus, seul affiché jusque-là, laissait
++    // croire à tort que rien d'autre n'était à faire.
++    afficherRappelProjet(res);
+     // Création réussie : on verrouille « Créer » (évite un double envoi) et on
+     // renomme « Fermer » en « Terminé ».
+     btn.disabled = true;
+# ── Zone modifiée : ligne 3681 (7 ligne(s)) dans l'ancienne version → ligne 3687 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -3681,7 +3687,7 @@ function afficherRappelGit(nom) {
+              + 'git push';
+   const box = document.getElementById('np-rappel-git');
+   box.innerHTML =
+-    '<div class="titre">⚠ Action requise — pousser la doc sur GitHub</div>'
++    '<div class="titre">⚠ Action requise — dépôt Bridge_Agent : pousser la doc</div>'
+     + 'Le projet est créé, mais la mise à jour de <b>BRIDGE_AGENT_DOC.md</b> (§2) '
+     + "n'est que locale. Tant qu'elle n'est pas poussée, le projet reste invisible "
+     + 'pour Claude Chat. Exécute (clic pour sélectionner) :'
+# ── Zone modifiée : ligne 3689 (6 ligne(s)) dans l'ancienne version → ligne 3695 (39 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -3689,6 +3695,39 @@ function afficherRappelGit(nom) {
+   box.style.display = 'block';
+ }
+ 
++// Rappels propres au PROJET créé (dépôt distinct de Bridge_Agent, cf.
++// afficherRappelGit ci-dessus) — issue #257. Deux points, jamais mentionnés
++// nulle part avant cette issue :
++//  1. CONTEXTE.md est créé VIDE (injecté dans chaque prompt CCL, plafonné à
++//     4000 caractères) — toujours à rappeler, quel que soit le cas git.
++//  2. Si l'initialisation git du répertoire de travail n'a pas pu se
++//     terminer (push initial échoué, ou init entièrement absente sur un
++//     backend plus ancien), les commandes manuelles nécessaires.
++// Encart visuellement distinct (bordure bleue) de celui de afficherRappelGit
++// (bordure orange) : c'est précisément la confusion entre « dépôt
++// Bridge_Agent » et « dépôt du projet créé » qui a fait passer inaperçu le
++// bug d'origine de cette issue.
++function afficherRappelProjet(res) {
++  const box = document.getElementById('np-rappel-projet');
++  let html = '<div class="titre">ℹ Côté projet « ' + escapeHtml(res.nom) + ' » créé</div>';
++  html += '<div>CONTEXTE.md est créé <b>VIDE</b> — à rédiger avant de compter sur '
++        + 'le projet : c\'est ce fichier qui est injecté dans chaque prompt CCL '
++        + '(plafonné à 4000 caractères).</div>';
++  if (res.git_deja_git) {
++    html += '<div>Dépôt git local : déjà un dépôt git existant, inchangé.</div>';
++  } else if (res.git_push_ok) {
++    html += '<div>Dépôt git local : initialisé (branche master, remote HTTPS) '
++          + 'et poussé sur origin/master.</div>';
++  } else if (res.git_commande_manuelle) {
++    html += '<div>⚠ Initialisation git incomplète — à terminer à la main '
++          + '(clic pour sélectionner) :</div>'
++          + '<pre onclick="npSelectionnerTexte(this)">'
++          + escapeHtml(res.git_commande_manuelle) + '</pre>';
++  }
++  box.innerHTML = html;
++  box.style.display = 'block';
++}
++
+ // Sélectionne tout le texte d'un élément (le <pre> des commandes git) pour que
+ // l'utilisateur puisse copier en un clic puis Ctrl+C.
+ function npSelectionnerTexte(el) {
+# (diff du fichier suivant)
+diff --git a/templates/index.html b/templates/index.html
+# (index — ignorable)
+index 2b0c2cf..b48ccc2 100644
+# (avant — fichier suivant)
+--- a/templates/index.html
+# (après — fichier suivant)
++++ b/templates/index.html
+# ── Zone modifiée : ligne 491 (6 ligne(s)) dans l'ancienne version → ligne 491 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -491,6 +491,7 @@
+ 
+     <div id="np-compte-rendu" class="modal-liste" style="display:none"></div>
+     <div id="np-message" class="message" style="display:none;margin-bottom:14px"></div>
++    <div id="np-rappel-projet" class="np-rappel-projet" style="display:none"></div>
+     <div id="np-rappel-git" class="np-rappel-git" style="display:none"></div>
+ 
+     <div class="modal-boutons">

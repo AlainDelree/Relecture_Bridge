@@ -1,0 +1,410 @@
+cbea092
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit cbea092
+# ── Qui a fait ce commit.
+Author: CCL agent <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Fri Jul 24 16:49:29 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Issue #257 : extraction des classes de test de brouillon vers test_jeu_brouillon.py
+    
+    - Création de tests/test_jeu_brouillon.py avec TestVerifierMotDictionnaire
+      et sa classe helper _DicoMots
+    - Import de _partie_simple depuis tests._aides_test_jeu
+    - Retrait de la classe et nettoyage des imports inutilisés (json,
+      verifier_mot_dictionnaire) de test_jeu.py
+    
+    Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/tests/test_jeu.py b/tests/test_jeu.py
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 0c063bb..3db20fc 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/tests/test_jeu.py
+# ── Version APRÈS ce commit.
++++ b/tests/test_jeu.py
+# ── Zone modifiée : ligne 9 (7 ligne(s)) dans l'ancienne version → ligne 9 (6 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -9,7 +9,6 @@ Note : les tests de sérialisation ont été déplacés dans
+ ``test_jeu_serialisation.py`` (issue #255).
+ """
+ 
+-import json
+ from collections import Counter
+ 
+ import pytest
+# ── Zone modifiée : ligne 35 (7 ligne(s)) dans l'ancienne version → ligne 34 (6 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -35,7 +34,6 @@ from scrabble.ui.jeu import (
+     etat_public,
+     jouer_tours_ia_ui,
+     passer_tour,
+-    verifier_mot_dictionnaire,
+ )
+ 
+ 
+# ── Zone modifiée : ligne 352 (166 ligne(s)) dans l'ancienne version → ligne 350 (12 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -352,166 +350,12 @@ class TestApiPoserMot:
+ 
+ 
+ # --------------------------------------------------------------------------- #
+-# Suite #29 (issue #31) : comptage des humains, vérification dictionnaire,
+-# échange complet du chevalet.
++# Suite #29 (issue #31) : comptage des humains, échange complet du chevalet.
++# Note : les tests de vérification dictionnaire du brouillon ont été déplacés
++# dans ``test_jeu_brouillon.py`` (issue #257).
+ # --------------------------------------------------------------------------- #
+ 
+ 
+-class TestVerifierMotDictionnaire:
+-    """Vérification d'un mot du brouillon (lecture seule, sans mutation)."""
+-
+-    def test_mot_valide(self):
+-        res = verifier_mot_dictionnaire(_DicoMots("CHAT"), ["C", "H", "A", "T"])
+-        assert res["succes"] is True
+-        assert res["mot"] == "CHAT"
+-        assert res["valide"] is True
+-        # La clé ``definition`` est toujours présente (issue #124).
+-        assert "definition" in res
+-
+-    def test_mot_invalide(self):
+-        res = verifier_mot_dictionnaire(_DicoMots("CHAT"), ["X", "Y", "Z"])
+-        assert res["succes"] is True
+-        assert res["mot"] == "XYZ"
+-        assert res["valide"] is False
+-        # Un mot invalide n'a jamais de définition (issue #124).
+-        assert res["definition"] is None
+-
+-    def test_definition_mot_ods8(self, tmp_path):
+-        # Mot valide ET présent dans l'index de définitions ODS8.
+-        fichier = tmp_path / "definitions.json"
+-        fichier.write_text(
+-            json.dumps({"CHAT": ["Petit félin domestique."]}),
+-            encoding="utf-8",
+-        )
+-        res = verifier_mot_dictionnaire(
+-            _DicoMots("CHAT"), ["C", "H", "A", "T"], fichier
+-        )
+-        assert res["valide"] is True
+-        assert res["definition"] == ["Petit félin domestique."]
+-
+-    def test_definition_mot_hunspell_sans_definition(self, tmp_path):
+-        # Mot valide mais absent de l'index (cas Hunspell uniquement) : None.
+-        fichier = tmp_path / "definitions.json"
+-        fichier.write_text(json.dumps({"CHAT": ["Félin."]}), encoding="utf-8")
+-        res = verifier_mot_dictionnaire(
+-            _DicoMots("KWYJIBO"), ["K", "W", "Y", "J", "I", "B", "O"], fichier
+-        )
+-        assert res["valide"] is True
+-        assert res["definition"] is None
+-
+-    def test_definition_non_calculee_si_invalide(self, tmp_path):
+-        # Même si le mot figure dans l'index, un mot invalide reste sans déf.
+-        fichier = tmp_path / "definitions.json"
+-        fichier.write_text(json.dumps({"XYZ": ["Bruit."]}), encoding="utf-8")
+-        res = verifier_mot_dictionnaire(_DicoMots("CHAT"), ["X", "Y", "Z"], fichier)
+-        assert res["valide"] is False
+-        assert res["definition"] is None
+-
+-    def test_definition_ods_source_active(self, tmp_path):
+-        # Non-régression #124 : mot valide en ODS8, source active ODS →
+-        # définition renvoyée normalement.
+-        fichier = tmp_path / "definitions.json"
+-        fichier.write_text(
+-            json.dumps({"CHAT": ["Petit félin domestique."]}),
+-            encoding="utf-8",
+-        )
+-        res = verifier_mot_dictionnaire(
+-            _DicoMots("CHAT"), ["C", "H", "A", "T"], fichier, source="ods"
+-        )
+-        assert res["valide"] is True
+-        assert res["definition"] == ["Petit félin domestique."]
+-
+-    def test_definition_jamais_en_source_hunspell(self, tmp_path):
+-        # Issue #127 : mot valide en Hunspell, présent PAR COÏNCIDENCE dans
+-        # l'index ODS8 → définition None malgré tout (source active ≠ ODS).
+-        fichier = tmp_path / "definitions.json"
+-        fichier.write_text(
+-            json.dumps({"CHAT": ["Petit félin domestique."]}),
+-            encoding="utf-8",
+-        )
+-        res = verifier_mot_dictionnaire(
+-            _DicoMots("CHAT"), ["C", "H", "A", "T"], fichier, source="hunspell"
+-        )
+-        assert res["valide"] is True
+-        assert res["definition"] is None
+-
+-    def test_accepte_chaine_deja_assemblee(self):
+-        res = verifier_mot_dictionnaire(_DicoMots("CHAT"), "chat")
+-        assert res["mot"] == "CHAT"
+-        assert res["valide"] is True
+-
+-    def test_ordre_des_lettres_respecte(self):
+-        # L'ordre du brouillon compte : "TACH" n'est pas "CHAT".
+-        res = verifier_mot_dictionnaire(_DicoMots("CHAT"), ["T", "A", "C", "H"])
+-        assert res["mot"] == "TACH"
+-        assert res["valide"] is False
+-
+-    def test_brouillon_vide(self):
+-        res = verifier_mot_dictionnaire(_DicoMots("CHAT"), [])
+-        assert res["succes"] is False
+-        assert res.get("erreur")
+-
+-    def test_joker_empeche_le_mot(self):
+-        # Un joker ('*') laissé dans le brouillon n'est pas une lettre fixe.
+-        res = verifier_mot_dictionnaire(_DicoMots("CHAT"), ["C", "H", "A", "*"])
+-        assert res["succes"] is True
+-        assert res["valide"] is False
+-
+-    def test_lecture_seule_pas_de_mutation(self):
+-        # La vérification ne doit toucher NI la partie NI le dictionnaire.
+-        joueurs = [
+-            Joueur(nom="Alice", humain=True),
+-            Joueur(nom="Robot", humain=False, niveau=Niveau.FACILE),
+-        ]
+-        partie = Partie(joueurs, _DicoMots("CHAT"), graine=1)
+-        partie.index_courant = 0
+-        partie.joueurs[0].chevalet = list("CHATSER")
+-        api = ApiJeu(partie, None)
+-
+-        avant = etat_public(partie, None)
+-        chevalet_avant = list(partie.joueurs[0].chevalet)
+-        sac_avant = partie.sac.jetons_restants()
+-
+-        res = api.verifier_mot(["C", "H", "A", "T"])
+-        assert res["valide"] is True
+-        # Aucune mutation : tour, chevalet, sac et état public inchangés.
+-        assert partie.index_courant == 0
+-        assert list(partie.joueurs[0].chevalet) == chevalet_avant
+-        assert partie.sac.jetons_restants() == sac_avant
+-        assert etat_public(partie, None) == avant
+-
+-    def test_api_definition_en_source_ods(self, monkeypatch):
+-        # Source active ODS : la définition est bien renvoyée (issue #124/#127).
+-        monkeypatch.setattr(
+-            "scrabble.ui.jeu.charger_config",
+-            lambda: {"source_dictionnaire": "ods"},
+-        )
+-        monkeypatch.setattr(
+-            "scrabble.ui.jeu.definition_mot",
+-            lambda mot, chemin=None: ["Petit félin domestique."],
+-        )
+-        api = ApiJeu(_partie_simple(), None)
+-        res = api.verifier_mot(["C", "H", "A", "T"])
+-        assert res["valide"] is True
+-        assert res["definition"] == ["Petit félin domestique."]
+-
+-    def test_api_pas_de_definition_en_source_hunspell(self, monkeypatch):
+-        # Issue #127 : source active Hunspell → jamais de définition, même si le
+-        # mot valide est par coïncidence présent dans l'index ODS8.
+-        monkeypatch.setattr(
+-            "scrabble.ui.jeu.charger_config",
+-            lambda: {"source_dictionnaire": "hunspell"},
+-        )
+-        monkeypatch.setattr(
+-            "scrabble.ui.jeu.definition_mot",
+-            lambda mot, chemin=None: ["Petit félin domestique."],
+-        )
+-        api = ApiJeu(_partie_simple(), None)
+-        res = api.verifier_mot(["C", "H", "A", "T"])
+-        assert res["valide"] is True
+-        assert res["definition"] is None
+-
+-
+ class TestEchangerChevaletComplet:
+     """Échange de la totalité du chevalet (remet tout et passe le tour)."""
+ 
+# (diff du fichier suivant)
+diff --git a/tests/test_jeu_brouillon.py b/tests/test_jeu_brouillon.py
+# ── Ce fichier n'existait pas avant ce commit : il vient d'être créé.
+new file mode 100644
+# (index — ignorable)
+index 0000000..e6d1514
+# (avant — fichier suivant)
+--- /dev/null
+# (après — fichier suivant)
++++ b/tests/test_jeu_brouillon.py
+# ── Zone modifiée : ligne 0 (0 ligne(s)) dans l'ancienne version → ligne 1 (181 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -0,0 +1,181 @@
++"""Tests de vérification d'un mot du brouillon (issue #257).
++
++Couvre la fonction ``verifier_mot_dictionnaire`` : lecture seule, sans
++mutation de la partie ni du dictionnaire.
++
++Classe extraite de ``test_jeu.py`` (issue #257).
++"""
++
++import json
++
++import pytest
++
++from scrabble.moteur.ia import Niveau
++from scrabble.moteur.partie import Joueur, Partie
++from scrabble.ui.jeu import ApiJeu, etat_public, verifier_mot_dictionnaire
++from tests._aides_test_jeu import _DicoFactice, _partie_simple
++
++
++class _DicoMots:
++    """Dictionnaire de test acceptant uniquement un ensemble de mots donnés."""
++
++    def __init__(self, *mots: str) -> None:
++        self._mots = {mot.upper() for mot in mots}
++
++    def contient(self, mot: str) -> bool:
++        return mot.upper() in self._mots
++
++
++class TestVerifierMotDictionnaire:
++    """Vérification d'un mot du brouillon (lecture seule, sans mutation)."""
++
++    def test_mot_valide(self):
++        res = verifier_mot_dictionnaire(_DicoMots("CHAT"), ["C", "H", "A", "T"])
++        assert res["succes"] is True
++        assert res["mot"] == "CHAT"
++        assert res["valide"] is True
++        # La clé ``definition`` est toujours présente (issue #124).
++        assert "definition" in res
++
++    def test_mot_invalide(self):
++        res = verifier_mot_dictionnaire(_DicoMots("CHAT"), ["X", "Y", "Z"])
++        assert res["succes"] is True
++        assert res["mot"] == "XYZ"
++        assert res["valide"] is False
++        # Un mot invalide n'a jamais de définition (issue #124).
++        assert res["definition"] is None
++
++    def test_definition_mot_ods8(self, tmp_path):
++        # Mot valide ET présent dans l'index de définitions ODS8.
++        fichier = tmp_path / "definitions.json"
++        fichier.write_text(
++            json.dumps({"CHAT": ["Petit félin domestique."]}),
++            encoding="utf-8",
++        )
++        res = verifier_mot_dictionnaire(
++            _DicoMots("CHAT"), ["C", "H", "A", "T"], fichier
++        )
++        assert res["valide"] is True
++        assert res["definition"] == ["Petit félin domestique."]
++
++    def test_definition_mot_hunspell_sans_definition(self, tmp_path):
++        # Mot valide mais absent de l'index (cas Hunspell uniquement) : None.
++        fichier = tmp_path / "definitions.json"
++        fichier.write_text(json.dumps({"CHAT": ["Félin."]}), encoding="utf-8")
++        res = verifier_mot_dictionnaire(
++            _DicoMots("KWYJIBO"), ["K", "W", "Y", "J", "I", "B", "O"], fichier
++        )
++        assert res["valide"] is True
++        assert res["definition"] is None
++
++    def test_definition_non_calculee_si_invalide(self, tmp_path):
++        # Même si le mot figure dans l'index, un mot invalide reste sans déf.
++        fichier = tmp_path / "definitions.json"
++        fichier.write_text(json.dumps({"XYZ": ["Bruit."]}), encoding="utf-8")
++        res = verifier_mot_dictionnaire(_DicoMots("CHAT"), ["X", "Y", "Z"], fichier)
++        assert res["valide"] is False
++        assert res["definition"] is None
++
++    def test_definition_ods_source_active(self, tmp_path):
++        # Non-régression #124 : mot valide en ODS8, source active ODS →
++        # définition renvoyée normalement.
++        fichier = tmp_path / "definitions.json"
++        fichier.write_text(
++            json.dumps({"CHAT": ["Petit félin domestique."]}),
++            encoding="utf-8",
++        )
++        res = verifier_mot_dictionnaire(
++            _DicoMots("CHAT"), ["C", "H", "A", "T"], fichier, source="ods"
++        )
++        assert res["valide"] is True
++        assert res["definition"] == ["Petit félin domestique."]
++
++    def test_definition_jamais_en_source_hunspell(self, tmp_path):
++        # Issue #127 : mot valide en Hunspell, présent PAR COÏNCIDENCE dans
++        # l'index ODS8 → définition None malgré tout (source active ≠ ODS).
++        fichier = tmp_path / "definitions.json"
++        fichier.write_text(
++            json.dumps({"CHAT": ["Petit félin domestique."]}),
++            encoding="utf-8",
++        )
++        res = verifier_mot_dictionnaire(
++            _DicoMots("CHAT"), ["C", "H", "A", "T"], fichier, source="hunspell"
++        )
++        assert res["valide"] is True
++        assert res["definition"] is None
++
++    def test_accepte_chaine_deja_assemblee(self):
++        res = verifier_mot_dictionnaire(_DicoMots("CHAT"), "chat")
++        assert res["mot"] == "CHAT"
++        assert res["valide"] is True
++
++    def test_ordre_des_lettres_respecte(self):
++        # L'ordre du brouillon compte : "TACH" n'est pas "CHAT".
++        res = verifier_mot_dictionnaire(_DicoMots("CHAT"), ["T", "A", "C", "H"])
++        assert res["mot"] == "TACH"
++        assert res["valide"] is False
++
++    def test_brouillon_vide(self):
++        res = verifier_mot_dictionnaire(_DicoMots("CHAT"), [])
++        assert res["succes"] is False
++        assert res.get("erreur")
++
++    def test_joker_empeche_le_mot(self):
++        # Un joker ('*') laissé dans le brouillon n'est pas une lettre fixe.
++        res = verifier_mot_dictionnaire(_DicoMots("CHAT"), ["C", "H", "A", "*"])
++        assert res["succes"] is True
++        assert res["valide"] is False
++
++    def test_lecture_seule_pas_de_mutation(self):
++        # La vérification ne doit toucher NI la partie NI le dictionnaire.
++        joueurs = [
++            Joueur(nom="Alice", humain=True),
++            Joueur(nom="Robot", humain=False, niveau=Niveau.FACILE),
++        ]
++        partie = Partie(joueurs, _DicoMots("CHAT"), graine=1)
++        partie.index_courant = 0
++        partie.joueurs[0].chevalet = list("CHATSER")
++        api = ApiJeu(partie, None)
++
++        avant = etat_public(partie, None)
++        chevalet_avant = list(partie.joueurs[0].chevalet)
++        sac_avant = partie.sac.jetons_restants()
++
++        res = api.verifier_mot(["C", "H", "A", "T"])
++        assert res["valide"] is True
++        # Aucune mutation : tour, chevalet, sac et état public inchangés.
++        assert partie.index_courant == 0
++        assert list(partie.joueurs[0].chevalet) == chevalet_avant
++        assert partie.sac.jetons_restants() == sac_avant
++        assert etat_public(partie, None) == avant
++
++    def test_api_definition_en_source_ods(self, monkeypatch):
++        # Source active ODS : la définition est bien renvoyée (issue #124/#127).
++        monkeypatch.setattr(
++            "scrabble.ui.jeu.charger_config",
++            lambda: {"source_dictionnaire": "ods"},
++        )
++        monkeypatch.setattr(
++            "scrabble.ui.jeu.definition_mot",
++            lambda mot, chemin=None: ["Petit félin domestique."],
++        )
++        api = ApiJeu(_partie_simple(), None)
++        res = api.verifier_mot(["C", "H", "A", "T"])
++        assert res["valide"] is True
++        assert res["definition"] == ["Petit félin domestique."]
++
++    def test_api_pas_de_definition_en_source_hunspell(self, monkeypatch):
++        # Issue #127 : source active Hunspell → jamais de définition, même si le
++        # mot valide est par coïncidence présent dans l'index ODS8.
++        monkeypatch.setattr(
++            "scrabble.ui.jeu.charger_config",
++            lambda: {"source_dictionnaire": "hunspell"},
++        )
++        monkeypatch.setattr(
++            "scrabble.ui.jeu.definition_mot",
++            lambda mot, chemin=None: ["Petit félin domestique."],
++        )
++        api = ApiJeu(_partie_simple(), None)
++        res = api.verifier_mot(["C", "H", "A", "T"])
++        assert res["valide"] is True
++        assert res["definition"] is None

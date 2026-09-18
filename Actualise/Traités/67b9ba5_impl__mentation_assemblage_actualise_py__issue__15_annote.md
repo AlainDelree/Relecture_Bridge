@@ -1,0 +1,531 @@
+67b9ba5
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 67b9ba5
+# ── Qui a fait ce commit.
+Author: Alain Delree <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Sat Jul 25 23:48:45 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    implémentation assemblage actualise.py (issue #15, suite #9)
+    
+    Remplace les 3 stubs restants (appliquer_mises_a_jour_en_attente,
+    lancer_application_cible, tache_verification_arriere_plan) en
+    orchestrant config/mise_a_jour/version_check/notifications selon le
+    cycle de vie et le nommage versionné des zips décrits dans
+    CONCEPTION.md. main() attend désormais la fin du thread de
+    vérification (join()) avant de terminer.
+    
+    Choix d'implémentation :
+    - Tag de Release GitHub = build brut préfixé "v" (ex. v48) ; nom
+      d'asset "<prefixe>.zip" (ex. actualise.zip, scrabble.zip).
+    - Relancement --child via subprocess.Popen (sys.executable + script,
+      ou sys.executable seul si figé PyInstaller), suivi d'un SystemExit
+      immédiat côté parent pour ne pas relancer l'app cible ni redémarrer
+      la tâche de fond après une auto-mise-à-jour d'Actualise lui-même.
+    
+    Ajoute tests/test_actualise.py (mocks complets, aucun sous-processus
+    ni appel réseau réel) couvrant les cas demandés.
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/actualise.py b/actualise.py
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 6cacfbe..dd1bcb6 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/actualise.py
+# ── Version APRÈS ce commit.
++++ b/actualise.py
+# ── Zone modifiée : ligne 7 (7 ligne(s)) dans l'ancienne version → ligne 7 (30 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -7,7 +7,30 @@ infinie » pour le rôle de l'argument ``--child``.
+ """
+ 
+ import argparse
++import json
++import logging
++import re
++import shutil
++import subprocess
++import sys
+ import threading
++import zipfile
++from pathlib import Path
++
++import config
++import mise_a_jour
++import notifications
++import version_check
++
++_LOGGER = logging.getLogger(__name__)
++
++# Gabarit de l'URL d'un asset de Release GitHub (voir CONCEPTION.md,
++# « Distribution des binaires — GitHub Releases »). Le numéro de build
++# sert directement de tag (ex. ``v48``) : simple, lisible, et cohérent
++# avec l'entier incrémental déjà acté comme identifiant de version
++# (voir « Format de version ») — à documenter/adapter si un autre
++# format de tag devait un jour être retenu.
++_GABARIT_URL_RELEASE = "https://github.com/{depot}/releases/download/v{build}/{fichier}"
+ 
+ 
+ def analyser_arguments(argv: list[str] | None = None) -> argparse.Namespace:
+# ── Zone modifiée : ligne 27 (6 ligne(s)) dans l'ancienne version → ligne 50 (51 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -27,6 +50,51 @@ def analyser_arguments(argv: list[str] | None = None) -> argparse.Namespace:
+     return analyseur.parse_args(argv)
+ 
+ 
++def _prefixe_pour(nom: str) -> str:
++    """Dérive le préfixe de nommage en zone d'attente à partir du nom
++    d'un programme (ex. ``"Scrabble"`` → ``"scrabble"``).
++
++    Voir CONCEPTION.md, « Nommage versionné des zips en zone d'attente »
++    (ex. ``scrabble_112.zip`` pour un ``config["application_cible"]["nom"]``
++    valant ``"Scrabble"``).
++    """
++    return nom.lower()
++
++
++def _chercher_zip_en_attente(zone_attente: Path, prefixe: str) -> tuple[Path, int] | None:
++    """Cherche dans ``zone_attente`` un fichier ``<prefixe>_<build>.zip``.
++
++    Retourne son chemin et le ``build`` extrait du nom de fichier, ou
++    ``None`` si aucun fichier de ce préfixe n'est présent. Voir
++    CONCEPTION.md, « Nommage versionné des zips en zone d'attente ».
++    """
++    if not zone_attente.is_dir():
++        return None
++
++    motif = re.compile(rf"^{re.escape(prefixe)}_(\d+)\.zip$")
++    for chemin in zone_attente.iterdir():
++        correspondance = motif.match(chemin.name)
++        if correspondance:
++            return chemin, int(correspondance.group(1))
++
++    return None
++
++
++def _relancer_en_enfant() -> None:
++    """Relance une 2ème instance d'Actualise avec le marqueur ``--child``.
++
++    Voir CONCEPTION.md, « Garde-fou anti-boucle infinie ». Gère aussi
++    bien le cas d'un exécutable PyInstaller gelé (``sys.frozen``) que
++    l'exécution directe du script Python.
++    """
++    if getattr(sys, "frozen", False):
++        commande = [sys.executable, "--child"]
++    else:
++        commande = [sys.executable, str(Path(__file__).resolve()), "--child"]
++
++    subprocess.Popen(commande)
++
++
+ def appliquer_mises_a_jour_en_attente(est_enfant: bool) -> None:
+     """Applique, au lancement, les mises à jour mises en attente au
+     cycle précédent (étape 4 de la séquence de démarrage).
+# ── Zone modifiée : ligne 35 (7 ligne(s)) dans l'ancienne version → ligne 103 (57 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -35,7 +103,57 @@ def appliquer_mises_a_jour_en_attente(est_enfant: bool) -> None:
+     étape est sautée inconditionnellement pour Actualise lui-même — voir
+     CONCEPTION.md, « Garde-fou anti-boucle infinie ».
+     """
+-    raise NotImplementedError
++    if est_enfant:
++        return
++
++    configuration = config.charger_config()
++    zone_attente = Path(configuration["zone_attente"])
++
++    cibles = [
++        ("actualise", configuration["actualise"], config.chemin_config_portable()),
++        (
++            _prefixe_pour(configuration["application_cible"]["nom"]),
++            configuration["application_cible"],
++            Path(configuration["application_cible"]["repertoire_installation"]),
++        ),
++    ]
++
++    for prefixe, bloc_config, repertoire_installation in cibles:
++        resultat = _chercher_zip_en_attente(zone_attente, prefixe)
++        if resultat is None:
++            continue
++
++        chemin_zip, build_zip = resultat
++
++        if build_zip <= bloc_config["build_installe"]:
++            # Résidu obsolète (déjà appliqué à un cycle précédent, ou
++            # périmé) : nettoyage automatique sans bascule, voir
++            # CONCEPTION.md « Nommage versionné des zips en zone
++            # d'attente ».
++            chemin_zip.unlink()
++            continue
++
++        with zipfile.ZipFile(chemin_zip) as archive:
++            manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
++
++        mise_a_jour.extraire_zip(chemin_zip, repertoire_installation)
++        mise_a_jour.appliquer_manifeste(manifest, repertoire_installation)
++
++        bloc_config["build_installe"] = build_zip
++        config.sauvegarder_config(configuration)
++
++        chemin_zip.unlink()
++
++        if prefixe == "actualise":
++            # Une nouvelle version d'Actualise vient d'être installée :
++            # on relance la version fraîchement installée comme 2ème
++            # instance (marqueur --child), puis on termine ce process
++            # parent immédiatement, sans lancer l'application cible ni
++            # démarrer la tâche de fond — l'enfant reprend la suite de
++            # la séquence de démarrage à sa place. Voir CONCEPTION.md,
++            # « Garde-fou anti-boucle infinie ».
++            _relancer_en_enfant()
++            raise SystemExit(0)
+ 
+ 
+ def lancer_application_cible() -> None:
+# ── Zone modifiée : ligne 44 (7 ligne(s)) dans l'ancienne version → ligne 162 (26 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -44,7 +162,26 @@ def lancer_application_cible() -> None:
+ 
+     Voir CONCEPTION.md, « Séquence de démarrage », étape 2.
+     """
+-    raise NotImplementedError
++    configuration = config.charger_config()
++    bloc_config = configuration["application_cible"]
++    chemin_executable = Path(bloc_config["repertoire_installation"]) / bloc_config["executable"]
++
++    # Popen sans wait() : cycles de vie indépendants dès le lancement
++    # (voir CONCEPTION.md, « Cycle de vie du processus Actualise »).
++    subprocess.Popen([str(chemin_executable)])
++
++
++def _url_asset_release(depot_github: str, build: int, prefixe: str) -> str:
++    """Construit l'URL de l'asset zip de Release GitHub pour ``build``.
++
++    Voir CONCEPTION.md, « Distribution des binaires — GitHub Releases » :
++    un seul asset zip par tag, le tag étant ``v<build>`` (ex. ``v48``).
++    Convention retenue ici pour le nom de fichier de l'asset publié :
++    ``<prefixe>.zip`` (ex. ``actualise.zip``, ``scrabble.zip``) — à
++    documenter/adapter si un autre nommage d'asset est publié côté
++    Release.
++    """
++    return _GABARIT_URL_RELEASE.format(depot=depot_github, build=build, fichier=f"{prefixe}.zip")
+ 
+ 
+ def tache_verification_arriere_plan() -> None:
+# ── Zone modifiée : ligne 52 (9 ligne(s)) dans l'ancienne version → ligne 189 (48 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -52,9 +189,48 @@ def tache_verification_arriere_plan() -> None:
+     (Actualise et application cible), notifie via ntfy si une mise à
+     jour est prête.
+ 
+-    Voir CONCEPTION.md, « Séquence de démarrage », étape 3.
++    Voir CONCEPTION.md, « Séquence de démarrage », étape 3. Toute
++    exception inattendue est capturée et loguée : cette tâche tourne
++    dans un thread séparé, sans supervision, et ne doit jamais faire
++    planter le programme.
+     """
+-    raise NotImplementedError
++    try:
++        configuration = config.charger_config()
++        zone_attente = Path(configuration["zone_attente"])
++        zone_attente.mkdir(parents=True, exist_ok=True)
++
++        cibles = [
++            ("actualise", configuration["actualise"]),
++            (
++                _prefixe_pour(configuration["application_cible"]["nom"]),
++                configuration["application_cible"],
++            ),
++        ]
++
++        for prefixe, bloc_config in cibles:
++            distant = version_check.verifier_version(
++                bloc_config["depot_github"], bloc_config["build_installe"]
++            )
++            if distant is None:
++                continue
++
++            build_distant = distant["build"]
++            url = _url_asset_release(bloc_config["depot_github"], build_distant, prefixe)
++
++            chemin_telecharge = mise_a_jour.telecharger_zip(url, distant["sha256"])
++            if chemin_telecharge is None:
++                continue
++
++            chemin_zone_attente = zone_attente / f"{prefixe}_{build_distant}.zip"
++            shutil.move(str(chemin_telecharge), str(chemin_zone_attente))
++
++            notifications.notifier_ntfy(
++                configuration["topic_ntfy"],
++                f"Mise à jour disponible pour {prefixe} (build {build_distant}) : "
++                "elle sera appliquée au prochain lancement.",
++            )
++    except Exception:
++        _LOGGER.exception("Erreur inattendue dans la tâche de vérification en arrière-plan")
+ 
+ 
+ def main(argv: list[str] | None = None) -> int:
+# ── Zone modifiée : ligne 67 (6 ligne(s)) dans l'ancienne version → ligne 243 (8 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -67,6 +243,8 @@ def main(argv: list[str] | None = None) -> int:
+ 
+     # Étape 4 : bascule des mises à jour déjà téléchargées et validées
+     # au cycle précédent (sautée pour Actualise si --child est présent).
++    # Si une bascule d'Actualise lui-même vient d'avoir lieu, cette
++    # fonction termine le process (SystemExit) avant de revenir ici.
+     appliquer_mises_a_jour_en_attente(est_enfant=arguments.child)
+ 
+     # Étape 2 : lancement immédiat de l'application cible, sans attendre
+# ── Zone modifiée : ligne 80 (6 ligne(s)) dans l'ancienne version → ligne 258 (11 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -80,6 +258,11 @@ def main(argv: list[str] | None = None) -> int:
+     )
+     thread_verification.start()
+ 
++    # Cycle de vie d'Actualise : on attend la fin de la tâche de fond
++    # (pas celle de l'application cible) avant de terminer — voir
++    # CONCEPTION.md, « Cycle de vie du processus Actualise ».
++    thread_verification.join()
++
+     return 0
+ 
+ 
+# (diff du fichier suivant)
+diff --git a/tests/test_actualise.py b/tests/test_actualise.py
+# ── Ce fichier n'existait pas avant ce commit : il vient d'être créé.
+new file mode 100644
+# (index — ignorable)
+index 0000000..69b5ef9
+# (avant — fichier suivant)
+--- /dev/null
+# (après — fichier suivant)
++++ b/tests/test_actualise.py
+# ── Zone modifiée : ligne 0 (0 ligne(s)) dans l'ancienne version → ligne 1 (232 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -0,0 +1,232 @@
++"""Tests unitaires pour ``actualise.py``.
++
++Aucune exécution réelle de sous-processus ni appel réseau : ``Popen``
++et les fonctions des autres modules (``config``, ``mise_a_jour``,
++``version_check``, ``notifications``) sont simulés via
++``unittest.mock``. Voir CONCEPTION.md, « Séquence de démarrage —
++vérification non bloquante » et « Garde-fou anti-boucle infinie ».
++"""
++
++import json
++import tempfile
++import unittest
++import zipfile
++from pathlib import Path
++from unittest.mock import MagicMock, call, patch
++
++from actualise import (
++    appliquer_mises_a_jour_en_attente,
++    lancer_application_cible,
++    tache_verification_arriere_plan,
++)
++
++
++def _creer_zip_avec_manifest(chemin_zip: Path, build: int, supprimer=None) -> None:
++    manifest = {"build": build, "supprimer": supprimer or []}
++    with zipfile.ZipFile(chemin_zip, "w") as archive:
++        archive.writestr("manifest.json", json.dumps(manifest))
++        archive.writestr("fichier.txt", "contenu")
++
++
++class TestAppliquerMisesAJourEnAttenteEnfant(unittest.TestCase):
++    @patch("actualise.mise_a_jour")
++    @patch("actualise.config")
++    def test_est_enfant_ne_fait_rien(self, mock_config, mock_mise_a_jour):
++        appliquer_mises_a_jour_en_attente(est_enfant=True)
++
++        mock_config.charger_config.assert_not_called()
++        mock_mise_a_jour.extraire_zip.assert_not_called()
++        mock_mise_a_jour.appliquer_manifeste.assert_not_called()
++
++
++class TestAppliquerMisesAJourEnAttente(unittest.TestCase):
++    def setUp(self):
++        self.dossier_temp = tempfile.TemporaryDirectory()
++        self.addCleanup(self.dossier_temp.cleanup)
++        self.racine = Path(self.dossier_temp.name)
++
++        self.zone_attente = self.racine / "attente"
++        self.zone_attente.mkdir()
++        self.repertoire_cible = self.racine / "cible"
++        self.repertoire_cible.mkdir()
++        self.dossier_actualise = self.racine / "actualise_install"
++        self.dossier_actualise.mkdir()
++
++        self.configuration = {
++            "actualise": {"build_installe": 10, "depot_github": "AlainDelree/Actualise"},
++            "application_cible": {
++                "nom": "Scrabble",
++                "depot_github": "AlainDelree/Scrabble",
++                "build_installe": 47,
++                "repertoire_installation": str(self.repertoire_cible),
++                "executable": "Scrabble.exe",
++            },
++            "zone_attente": str(self.zone_attente),
++            "topic_ntfy": "actualise-scrabble",
++        }
++
++        patcher_config = patch("actualise.config")
++        self.mock_config = patcher_config.start()
++        self.addCleanup(patcher_config.stop)
++        self.mock_config.charger_config.return_value = self.configuration
++        self.mock_config.chemin_config_portable.return_value = self.dossier_actualise
++
++    def test_zip_valide_bascule_appliquee_et_config_sauvegardee(self):
++        chemin_zip = self.zone_attente / "scrabble_48.zip"
++        _creer_zip_avec_manifest(chemin_zip, build=48)
++
++        with patch("actualise.mise_a_jour") as mock_mise_a_jour:
++            appliquer_mises_a_jour_en_attente(est_enfant=False)
++
++            mock_mise_a_jour.extraire_zip.assert_called_once_with(
++                chemin_zip, self.repertoire_cible
++            )
++            mock_mise_a_jour.appliquer_manifeste.assert_called_once_with(
++                {"build": 48, "supprimer": []}, self.repertoire_cible
++            )
++
++        self.assertFalse(chemin_zip.exists())
++        self.assertEqual(self.configuration["application_cible"]["build_installe"], 48)
++        self.mock_config.sauvegarder_config.assert_called_once_with(self.configuration)
++
++    def test_zip_obsolete_supprime_sans_bascule(self):
++        chemin_zip = self.zone_attente / "scrabble_40.zip"
++        _creer_zip_avec_manifest(chemin_zip, build=40)
++
++        with patch("actualise.mise_a_jour") as mock_mise_a_jour:
++            appliquer_mises_a_jour_en_attente(est_enfant=False)
++
++            mock_mise_a_jour.extraire_zip.assert_not_called()
++            mock_mise_a_jour.appliquer_manifeste.assert_not_called()
++
++        self.assertFalse(chemin_zip.exists())
++        self.assertEqual(self.configuration["application_cible"]["build_installe"], 47)
++        self.mock_config.sauvegarder_config.assert_not_called()
++
++    def test_zip_actualise_valide_relance_enfant_et_termine(self):
++        chemin_zip = self.zone_attente / "actualise_11.zip"
++        _creer_zip_avec_manifest(chemin_zip, build=11)
++
++        with patch("actualise.mise_a_jour") as mock_mise_a_jour, patch(
++            "actualise._relancer_en_enfant"
++        ) as mock_relancer:
++            with self.assertRaises(SystemExit):
++                appliquer_mises_a_jour_en_attente(est_enfant=False)
++
++            mock_mise_a_jour.extraire_zip.assert_called_once_with(
++                chemin_zip, self.dossier_actualise
++            )
++            mock_relancer.assert_called_once()
++
++        self.assertFalse(chemin_zip.exists())
++        self.assertEqual(self.configuration["actualise"]["build_installe"], 11)
++
++    def test_aucun_zip_ne_fait_rien(self):
++        with patch("actualise.mise_a_jour") as mock_mise_a_jour:
++            appliquer_mises_a_jour_en_attente(est_enfant=False)
++
++            mock_mise_a_jour.extraire_zip.assert_not_called()
++            mock_mise_a_jour.appliquer_manifeste.assert_not_called()
++
++        self.mock_config.sauvegarder_config.assert_not_called()
++
++
++class TestLancerApplicationCible(unittest.TestCase):
++    @patch("actualise.subprocess.Popen")
++    @patch("actualise.config")
++    def test_popen_appele_avec_le_bon_chemin_sans_wait(self, mock_config, mock_popen):
++        mock_config.charger_config.return_value = {
++            "application_cible": {
++                "repertoire_installation": "/opt/scrabble",
++                "executable": "Scrabble.exe",
++                "nom": "Scrabble",
++                "build_installe": 47,
++                "depot_github": "AlainDelree/Scrabble",
++            }
++        }
++        mock_processus = MagicMock()
++        mock_popen.return_value = mock_processus
++
++        lancer_application_cible()
++
++        mock_popen.assert_called_once_with([str(Path("/opt/scrabble") / "Scrabble.exe")])
++        mock_processus.wait.assert_not_called()
++
++
++class TestTacheVerificationArrierePlan(unittest.TestCase):
++    def setUp(self):
++        self.dossier_temp = tempfile.TemporaryDirectory()
++        self.addCleanup(self.dossier_temp.cleanup)
++        self.zone_attente = Path(self.dossier_temp.name) / "attente"
++
++        self.configuration = {
++            "actualise": {"build_installe": 10, "depot_github": "AlainDelree/Actualise"},
++            "application_cible": {
++                "nom": "Scrabble",
++                "depot_github": "AlainDelree/Scrabble",
++                "build_installe": 47,
++                "repertoire_installation": "/opt/scrabble",
++                "executable": "Scrabble.exe",
++            },
++            "zone_attente": str(self.zone_attente),
++            "topic_ntfy": "actualise-scrabble",
++        }
++
++        patcher_config = patch("actualise.config")
++        self.mock_config = patcher_config.start()
++        self.addCleanup(patcher_config.stop)
++        self.mock_config.charger_config.return_value = self.configuration
++
++    def test_mise_a_jour_disponible_zip_renomme_et_notification_envoyee(self):
++        chemin_temp_actualise = Path(self.dossier_temp.name) / "telecharge_actualise_tmp.zip"
++        chemin_temp_actualise.write_bytes(b"contenu-actualise")
++        chemin_temp_scrabble = Path(self.dossier_temp.name) / "telecharge_scrabble_tmp.zip"
++        chemin_temp_scrabble.write_bytes(b"contenu-scrabble")
++
++        with patch("actualise.version_check") as mock_version_check, patch(
++            "actualise.mise_a_jour"
++        ) as mock_mise_a_jour, patch("actualise.notifications") as mock_notifications:
++            mock_version_check.verifier_version.side_effect = [
++                {"build": 11, "sha256": "hash-actualise"},
++                {"build": 48, "sha256": "hash-scrabble"},
++            ]
++            mock_mise_a_jour.telecharger_zip.side_effect = [
++                chemin_temp_actualise,
++                chemin_temp_scrabble,
++            ]
++
++            tache_verification_arriere_plan()
++
++            self.assertEqual(mock_mise_a_jour.telecharger_zip.call_count, 2)
++            mock_notifications.notifier_ntfy.assert_has_calls(
++                [
++                    call("actualise-scrabble", unittest.mock.ANY),
++                    call("actualise-scrabble", unittest.mock.ANY),
++                ]
++            )
++
++        self.assertTrue((self.zone_attente / "actualise_11.zip").exists())
++        self.assertTrue((self.zone_attente / "scrabble_48.zip").exists())
++
++    def test_pas_de_mise_a_jour_ne_fait_rien(self):
++        with patch("actualise.version_check") as mock_version_check, patch(
++            "actualise.mise_a_jour"
++        ) as mock_mise_a_jour, patch("actualise.notifications") as mock_notifications:
++            mock_version_check.verifier_version.return_value = None
++
++            tache_verification_arriere_plan()
++
++            mock_mise_a_jour.telecharger_zip.assert_not_called()
++            mock_notifications.notifier_ntfy.assert_not_called()
++
++        self.assertFalse(self.zone_attente.exists() and any(self.zone_attente.iterdir()))
++
++    def test_exception_inattendue_ne_se_propage_pas(self):
++        with patch("actualise.config") as mock_config:
++            mock_config.charger_config.side_effect = RuntimeError("boom")
++
++            tache_verification_arriere_plan()
++
++
++if __name__ == "__main__":
++    unittest.main()

@@ -1,0 +1,528 @@
+42dacd6
+
+commit 42dacd6
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Sun Jul 26 22:06:39 2026 +0200
+
+    Issue #290 : mode Belgicisme, panneau translucide (60%) + titre en tuiles de Scrabble
+    
+    Remplace le panneau blanc quasi-opaque de #289 (jugé trop opaque par Alain
+    à l'usage réel) par un panneau translucide laissant les trois bandes
+    tricolores visibles à travers tout le panneau, et redessine le titre
+    principal en 8 tuiles de Scrabble individuelles (fond crème, contour doré,
+    relief), en mode Belgicisme uniquement. Contraste WCAG AA revérifié pour
+    tout le texte non transformé en tuiles (≥6.5:1 dans le pire cas). Mode
+    France strictement inchangé. Harnais Playwright mis à jour, nouveau harnais
+    WebKitGTK #290 avec captures réelles à l'appui.
+
+diff --git a/scripts/_harness_jeu/i269_accueil_avant.png b/scripts/_harness_jeu/i269_accueil_avant.png
+index 6a653e7..cef7c61 100644
+Binary files a/scripts/_harness_jeu/i269_accueil_avant.png and b/scripts/_harness_jeu/i269_accueil_avant.png differ
+diff --git a/scripts/_harness_jeu/i269_accueil_belgique.png b/scripts/_harness_jeu/i269_accueil_belgique.png
+index 73d92b0..c45c0b2 100644
+Binary files a/scripts/_harness_jeu/i269_accueil_belgique.png and b/scripts/_harness_jeu/i269_accueil_belgique.png differ
+diff --git a/scripts/_harness_jeu/i290_accueil_belgique_1280x800_webkitgtk.png b/scripts/_harness_jeu/i290_accueil_belgique_1280x800_webkitgtk.png
+new file mode 100644
+index 0000000..aa801ff
+Binary files /dev/null and b/scripts/_harness_jeu/i290_accueil_belgique_1280x800_webkitgtk.png differ
+diff --git a/scripts/_harness_jeu/i290_accueil_belgique_1340x800_webkitgtk.png b/scripts/_harness_jeu/i290_accueil_belgique_1340x800_webkitgtk.png
+new file mode 100644
+index 0000000..aa801ff
+Binary files /dev/null and b/scripts/_harness_jeu/i290_accueil_belgique_1340x800_webkitgtk.png differ
+diff --git a/scripts/_harness_jeu/i290_accueil_belgique_700x800_webkitgtk.png b/scripts/_harness_jeu/i290_accueil_belgique_700x800_webkitgtk.png
+new file mode 100644
+index 0000000..fa72c17
+Binary files /dev/null and b/scripts/_harness_jeu/i290_accueil_belgique_700x800_webkitgtk.png differ
+diff --git a/scripts/_harness_jeu/i290_accueil_france_700x800_webkitgtk.png b/scripts/_harness_jeu/i290_accueil_france_700x800_webkitgtk.png
+new file mode 100644
+index 0000000..5d25440
+Binary files /dev/null and b/scripts/_harness_jeu/i290_accueil_france_700x800_webkitgtk.png differ
+diff --git a/scripts/_harness_jeu/verif_belgicisme_269.mjs b/scripts/_harness_jeu/verif_belgicisme_269.mjs
+index 4b1d164..7cfdcdd 100644
+--- a/scripts/_harness_jeu/verif_belgicisme_269.mjs
++++ b/scripts/_harness_jeu/verif_belgicisme_269.mjs
+@@ -1,9 +1,9 @@
+-// Vérification issues #269 + #270 + #271 + #272 + #289 : cercles-drapeaux
+-// France/Belgique de l'accueil, et fond du mode Belgicisme.
++// Vérification issues #269 + #270 + #271 + #272 + #289 + #290 : cercles-
++// drapeaux France/Belgique de l'accueil, et fond du mode Belgicisme.
+ //
+ // Contrôle en headless Playwright — le rendu réel WebKitGTK a été vérifié
+-// manuellement par capture GTK+WebKit2 (issues #270/#271/#272/#289, cf.
+-// verif_belgicisme_270_webkitgtk.py et accueil.css) :
++// manuellement par capture GTK+WebKit2 (issues #270/#271/#272/#289/#290, cf.
++// verif_belgicisme_290_webkitgtk.py et accueil.css) :
+ //   1. France actif par défaut, Belgique inactif.
+ //   2. Clic sur le drapeau belge -> classe .actif bascule, aria-checked
+ //      correct, body.mode-belgicisme posé, api.definir_mode_belgicisme(true)
+@@ -12,18 +12,25 @@
+ //      0.95, issue #272 — remplace l'alpha 0.22/0.32/0.26 trop pâle de #271,
+ //      qui remplaçait le bandeau opaque 6px de #270, qui remplaçait lui-même
+ //      le voile 12% invisible sur fond vert de #269) sur TOUTE la surface.
+-//   4. Titre, sous-titre et légendes des drapeaux en texte noir uniforme
++//   4. Sous-titre et légendes des drapeaux en texte noir uniforme
+ //      (#1a1a1a), SANS plaque de fond (issue #272 — supprime le système de
+ //      plaques blanches de #271) en mode Belgicisme — inchangés (texte
+-//      blanc, pas de plaque) en mode France.
++//      blanc, pas de plaque) en mode France. Le titre principal ("Scrabble")
++//      n'est PLUS concerné par cette règle depuis #290 : voir point 7.
+ //   5. Plusieurs allers-retours France <-> Belgique : aucun résidu visuel
+ //      (retour exact au fond normal, un seul cercle actif à la fois).
+-//   6. Panneau blanc central (issue #289) : à plusieurs largeurs de fenêtre
+-//      (700px repli, ~1280px résolution cible, 1920px pleine largeur),
+-//      `.container` reste entièrement contenu dans le panneau blanc de
+-//      `.container::before` (aucun débordement sur le voile tricolore), et
+-//      le panneau laisse toujours une marge visible avec le bord de la
+-//      fenêtre (bandes tricolores toujours visibles, en bordure).
++//   6. Panneau translucide central (issue #289, opacité réduite à 60% par
++//      #290) : à plusieurs largeurs de fenêtre (700px repli, ~1280px
++//      résolution cible, 1920px pleine largeur), `.container` reste
++//      entièrement contenu dans le panneau de `.container::before` (aucun
++//      débordement sur le voile tricolore), et le panneau laisse toujours
++//      une marge visible avec le bord de la fenêtre (bandes tricolores
++//      toujours visibles, en bordure comme au centre à travers le panneau).
++//   7. Titre en tuiles de Scrabble (issue #290) : en mode Belgicisme, chaque
++//      lettre de "Scrabble" (8 `<span class="lettre-scrabble">`) porte un
++//      fond opaque crème (#f5e6c8) et un contour doré — pas de couleur de
++//      texte uniforme sur le h1 lui-même. En mode France, ces spans restent
++//      sans style propre (texte blanc hérité du h1, comme avant #290).
+ import pw from '/home/alain/.npm-global/lib/node_modules/playwright/index.js';
+ const { chromium } = pw;
+ import { fileURLToPath } from 'url';
+@@ -114,9 +121,10 @@ const html = fs.readFileSync(path.join(web, 'accueil.html'), 'utf8')
+     fond.backgroundImage.includes('rgba(237, 41, 57, 0.95)') &&
+     /100%\s*100%/.test(fond.backgroundSize);
+ 
+-  // Titre/sous-titre/légendes en texte noir uniforme, SANS plaque de fond
+-  // (issue #272 — supprime le système de plaques blanches ciblées de #271 :
+-  // tout le contenu repose sur la bande jaune, un texte sombre y suffit).
++  // Sous-titre/légendes en texte noir uniforme, SANS plaque de fond (issue
++  // #272 — supprime le système de plaques blanches ciblées de #271). Le
++  // titre principal n'est PLUS dans ce groupe depuis #290 (vérifié à part
++  // ci-dessous, en tuiles).
+   const textes = await page.evaluate(() => {
+     const lire = (sel) => {
+       const el = document.querySelector(sel);
+@@ -124,7 +132,6 @@ const html = fs.readFileSync(path.join(web, 'accueil.html'), 'utf8')
+       return { color: style.color, backgroundColor: style.backgroundColor };
+     };
+     return {
+-      titre: lire('header h1'),
+       sousTitre: lire('.subtitle'),
+       legendeFrance: lire('.drapeau-choix:nth-child(1) .drapeau-legende'),
+       legendeBelgique: lire('.drapeau-choix:nth-child(2) .drapeau-legende'),
+@@ -134,17 +141,34 @@ const html = fs.readFileSync(path.join(web, 'accueil.html'), 'utf8')
+     v.color === 'rgb(26, 26, 26)' &&
+     (v.backgroundColor === 'rgba(0, 0, 0, 0)' || v.backgroundColor === 'transparent');
+   const textesOk =
+-    noirSansPlaque(textes.titre) &&
+     noirSansPlaque(textes.sousTitre) &&
+     noirSansPlaque(textes.legendeFrance) &&
+     noirSansPlaque(textes.legendeBelgique);
+ 
+-  // Panneau blanc central (issue #289) : à plusieurs largeurs de fenêtre
+-  // (700px repli, ~1280px résolution cible, 1920px pleine largeur déjà
+-  // correcte avant #289 — ne doit pas être cassée), `.container` doit rester
+-  // entièrement contenu dans le panneau blanc de `.container::before`, et le
+-  // panneau doit toujours laisser une marge visible avec le bord de fenêtre
+-  // (bande tricolore visible, en bordure uniquement).
++  // Titre en tuiles de Scrabble (issue #290) : les 8 lettres de "Scrabble"
++  // (`header h1 .lettre-scrabble`) doivent chacune porter un fond opaque
++  // crème et une couleur de texte sombre distincte de la couleur France
++  // (blanc) — la preuve que le titre n'est plus un texte plat mais bien
++  // composé de tuiles individuelles en mode Belgicisme.
++  const tuiles = await page.evaluate(() => {
++    const spans = Array.from(document.querySelectorAll('header h1 .lettre-scrabble'));
++    return spans.map((el) => {
++      const style = getComputedStyle(el);
++      return { texte: el.textContent, color: style.color, backgroundColor: style.backgroundColor };
++    });
++  });
++  const tuilesOk =
++    tuiles.length === 8 &&
++    tuiles.map((t) => t.texte).join('') === 'Scrabble' &&
++    tuiles.every((t) => t.backgroundColor === 'rgb(245, 230, 200)' && t.color === 'rgb(74, 52, 24)');
++
++  // Panneau translucide central (issue #289, opacité réduite à 60% par
++  // #290) : à plusieurs largeurs de fenêtre (700px repli, ~1280px résolution
++  // cible, 1920px pleine largeur déjà correcte avant #289 — ne doit pas être
++  // cassée), `.container` doit rester entièrement contenu dans le panneau de
++  // `.container::before`, et le panneau doit toujours laisser une marge
++  // visible avec le bord de fenêtre (bande tricolore visible, en bordure
++  // comme — désormais — en transparence à travers le panneau lui-même).
+   const largeursPanneau = [700, 1280, 1920];
+   const mesuresPanneau = [];
+   for (const largeur of largeursPanneau) {
+@@ -178,8 +202,7 @@ const html = fs.readFileSync(path.join(web, 'accueil.html'), 'utf8')
+     m.conteneurDroit <= m.panneauDroit + TOLERANCE &&
+     m.panneauGauche > 0 &&
+     m.panneauDroit < m.largeurFenetre &&
+-    m.fondPanneau !== 'rgba(0, 0, 0, 0)' &&
+-    m.fondPanneau !== 'transparent'
++    m.fondPanneau === 'rgba(255, 255, 255, 0.6)'
+   );
+ 
+   // Plusieurs allers-retours pour détecter un résidu visuel.
+@@ -233,6 +256,7 @@ const html = fs.readFileSync(path.join(web, 'accueil.html'), 'utf8')
+     JSON.stringify(apresBelgique.appels) === JSON.stringify([true]) &&
+     fondOk &&
+     textesOk &&
++    tuilesOk &&
+     panneauOk &&
+     etatFinal.bodyModeBelge === false &&
+     etatFinal.franceActif === true &&
+@@ -245,12 +269,13 @@ const html = fs.readFileSync(path.join(web, 'accueil.html'), 'utf8')
+   console.log('État initial :', JSON.stringify(etatInitial));
+   console.log('Après clic Belgique :', JSON.stringify(apresBelgique));
+   console.log('Fond blanc + voile tricolore quasi-opaque (issue #272) :', JSON.stringify(fond), fondOk ? '(OK)' : '(INSUFFISANT)');
+-  console.log('Titre/sous-titre/légendes texte noir sans plaque (issue #272) :', JSON.stringify(textes), textesOk ? '(OK)' : '(INSUFFISANT)');
+-  console.log('Panneau blanc central (issue #289), par largeur :', JSON.stringify(mesuresPanneau), panneauOk ? '(OK)' : '(DEBORDEMENT)');
++  console.log('Sous-titre/légendes texte noir sans plaque (issue #272) :', JSON.stringify(textes), textesOk ? '(OK)' : '(INSUFFISANT)');
++  console.log('Titre en tuiles de Scrabble (issue #290) :', JSON.stringify(tuiles), tuilesOk ? '(OK)' : '(INSUFFISANT)');
++  console.log('Panneau translucide central (issues #289/#290), par largeur :', JSON.stringify(mesuresPanneau), panneauOk ? '(OK)' : '(DEBORDEMENT/OPACITE)');
+   console.log('Historique bascules (mode belge actif ?) :', historique);
+   console.log('État final (retour France) :', JSON.stringify(etatFinal));
+   console.log('Erreurs JS :', errs.length ? errs : 'aucune');
+-  console.log(ok ? 'OK — cercles-drapeaux fonctionnels, fond blanc+tricolore franc, texte sans plaque, panneau blanc sans débordement à 700/1280/1920px, aucun résidu visuel'
++  console.log(ok ? 'OK — cercles-drapeaux fonctionnels, fond blanc+tricolore franc, texte sans plaque, titre en tuiles, panneau translucide (60%) sans débordement à 700/1280/1920px, aucun résidu visuel'
+                  : 'ECHEC');
+   await browser.close();
+   process.exit(ok ? 0 : 1);
+diff --git a/scripts/_harness_jeu/verif_belgicisme_290_webkitgtk.py b/scripts/_harness_jeu/verif_belgicisme_290_webkitgtk.py
+new file mode 100644
+index 0000000..c5854f8
+--- /dev/null
++++ b/scripts/_harness_jeu/verif_belgicisme_290_webkitgtk.py
+@@ -0,0 +1,150 @@
++"""Vérification issue #290 : refonte visuelle du mode Belgicisme sous
++WebKitGTK (le moteur utilisé par pywebview sous Linux, cf. CONTEXTE.md — le
++harnais Playwright habituel de _harness_jeu ne teste que Chromium et n'aurait
++pas détecté l'écart de rendu constaté en #270).
++
++#290 remplace le panneau blanc quasi-opaque de #289 (jugé trop opaque par
++Alain à l'usage réel, le voile tricolore disparaissait sous le contenu) par
++un panneau translucide (60% d'opacité blanche, cf. `.container::before` dans
++accueil.css) qui laisse les trois bandes tricolores visibles à travers tout
++le panneau, et redessine le titre principal ("Scrabble") en tuiles de
++Scrabble individuelles (une par lettre, fond crème + contour doré). Ce
++harnais reprend celui de #289 (même mock d'API, même mécanique de capture
++via webkit_web_view_get_snapshot) aux mêmes largeurs, pour comparaison directe
++avant/après.
++
++Prérequis système (déjà présents sur cette machine) : gir1.2-webkit2-4.1,
++python3-gi (paquets système — utiliser /usr/bin/python3, pas un venv qui ne
++voit pas les dist-packages système), un DISPLAY X11 valide (le WebView a
++besoin d'un GtkWindow réel ; pas de Xvfb installé ici, mais le DISPLAY
++existant a suffi).
++
++Usage : /usr/bin/python3 verif_belgicisme_290_webkitgtk.py [dossier_sortie]
++"""
++import pathlib
++import sys
++
++import gi
++
++gi.require_version("Gtk", "3.0")
++gi.require_version("WebKit2", "4.1")
++from gi.repository import GLib, Gtk, WebKit2  # noqa: E402
++
++ICI = pathlib.Path(__file__).resolve().parent
++WEB = ICI.parent.parent / "src" / "scrabble" / "ui" / "web"
++SORTIE = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else ICI
++
++MOCK_JS = """
++window.pywebview = { platform: 'test' };
++window.__appelsMode = [];
++setTimeout(() => {
++  window.pywebview.api = {
++    obtenir_etat: async () => ({
++      joueurs: [{nom:'Alain', humain:true, niveau:null}],
++      nb_humains: 1, nb_ordinateurs: 0, nb_total: 1,
++      peut_ajouter_humain: true, peut_ajouter_ordinateur: true, peut_lancer: true,
++      mode_belgicisme: false,
++    }),
++    obtenir_niveaux: async () => ['Débutant','Facile','Intermédiaire','Expert'],
++    lister_parties_en_cours: async () => [],
++    obtenir_prenom_principal: async () => 'Alain',
++    definir_mode_belgicisme: async (actif) => {
++      window.__appelsMode.push(actif);
++      return { succes: true, mode_belgicisme: actif };
++    },
++  };
++  window.dispatchEvent(new Event('pywebviewready'));
++}, 100);
++"""
++
++
++def construire_mock():
++    css = (WEB / "accueil.css").read_text()
++    js = (WEB / "accueil.js").read_text()
++    html = (WEB / "accueil.html").read_text()
++    html = html.replace(
++        '<link rel="stylesheet" href="accueil.css">', f"<style>{css}</style>"
++    )
++    html = html.replace(
++        '<script src="accueil.js"></script>',
++        f"<script>{MOCK_JS}</script><script>{js}</script>",
++    )
++    chemin = SORTIE / "_i290_mock_tmp.html"
++    chemin.write_text(html)
++    return chemin
++
++
++def capturer(url, largeur, hauteur, sortie_png, sequence_clics):
++    win = Gtk.Window()
++    win.set_default_size(largeur, hauteur)
++    webview = WebKit2.WebView()
++    win.add(webview)
++    win.show_all()
++
++    etape = {"i": 0}
++
++    def apres_chargement(view, event):
++        if event == WebKit2.LoadEvent.FINISHED and etape["i"] == 0:
++            etape["i"] = 1
++            GLib.timeout_add(400, lambda: jouer_sequence(0))
++
++    def jouer_sequence(i):
++        if i >= len(sequence_clics):
++            # Le fond passe du vert au blanc+tricolore (transition CSS
++            # `background-image 0.2s ease` du body) : 700ms de marge pour
++            # être sûr que la capture ne tombe jamais en plein fondu.
++            GLib.timeout_add(700, prendre_snapshot)
++            return False
++        webview.run_javascript(
++            f"document.querySelector('{sequence_clics[i]}').click();",
++            None, None, None,
++        )
++        GLib.timeout_add(250, lambda: jouer_sequence(i + 1))
++        return False
++
++    def prendre_snapshot():
++        webview.get_snapshot(
++            WebKit2.SnapshotRegion.FULL_DOCUMENT,
++            WebKit2.SnapshotOptions.NONE,
++            None, snapshot_pret, None,
++        )
++        return False
++
++    def snapshot_pret(view, result, data):
++        surface = webview.get_snapshot_finish(result)
++        surface.write_to_png(str(sortie_png))
++        win.destroy()
++        Gtk.main_quit()
++
++    webview.connect("load-changed", apres_chargement)
++    webview.load_uri("file://" + url)
++    GLib.timeout_add(15000, Gtk.main_quit)
++    Gtk.main()
++
++
++if __name__ == "__main__":
++    mock = construire_mock()
++    url = str(mock)
++
++    # Mêmes largeurs que #289 (700 repli, 1280 résolution cible, 1340 proche
++    # pleine largeur — écran physique de cette machine limité à 1360x768,
++    # cf. commentaire équivalent dans verif_belgicisme_289_webkitgtk.py) pour
++    # comparaison directe avant/après #290.
++    largeurs = [700, 1280, 1340]
++    for largeur in largeurs:
++        print(f"Capture Belgique {largeur}x800...")
++        capturer(
++            url, largeur, 800,
++            SORTIE / f"i290_accueil_belgique_{largeur}x800_webkitgtk.png",
++            ["#drapeau-belgique"],
++        )
++
++    print("Capture France 700x800 (référence, mode inchangé)...")
++    capturer(
++        url, 700, 800,
++        SORTIE / "i290_accueil_france_700x800_webkitgtk.png",
++        [],
++    )
++
++    mock.unlink()
++    print("Captures écrites dans", SORTIE)
+diff --git a/src/scrabble/ui/web/accueil.css b/src/scrabble/ui/web/accueil.css
+index c4a95fb..87cd063 100644
+--- a/src/scrabble/ui/web/accueil.css
++++ b/src/scrabble/ui/web/accueil.css
+@@ -90,7 +90,23 @@ body {
+    tricolore du body (inchangé ci-dessous) ne reste visible que dans les
+    marges latérales, hors du panneau, jamais sous du texte ou une carte.
+    Le mode France reste strictement inchangé (aucune de ces règles n'existe
+-   hors de `body.mode-belgicisme`). */
++   hors de `body.mode-belgicisme`).
++
++   Refonte translucide + titre en tuiles (issue #290) : retour d'Alain après
++   test réel du panneau quasi-opaque (97%) de #289 — ce n'est pas le rendu
++   souhaité, il masque totalement le voile tricolore sous le contenu. Deux
++   changements :
++   1. Le panneau (`.container::before` ci-dessous) passe de 97% à 60%
++      d'opacité blanche : les trois bandes restent nettement reconnaissables
++      en transparence à travers tout le panneau, pas seulement dans ses
++      marges. Contraste WCAG AA revérifié à cette opacité pour le texte
++      #1a1a1a (calcul détaillé dans le commentaire de `.container::before`).
++   2. Le titre principal (`header h1`) n'est plus un texte plat #1a1a1a :
++      chaque lettre devient une tuile de Scrabble opaque individuelle (fond
++      crème, contour doré, relief), donc retiré de la liste "texte sombre
++      uniforme" ci-dessous — son style est désormais défini séparément, plus
++      bas dans ce fichier, avec son propre calcul de contraste (les tuiles
++      étant opaques, leur contraste ne dépend pas de l'opacité du panneau). */
+ body.mode-belgicisme {
+     background-color: #ffffff;
+     background-image:
+@@ -123,7 +139,26 @@ body.mode-belgicisme {
+    le contexte d'empilement créé par `position: relative` sur `.container` :
+    le panneau reste sous son contenu (header, cartes, boutons, tous non
+    positionnés) sans affecter l'empilement par rapport au fond tricolore du
+-   body, peint séparément avant `.container` dans l'ordre du document. */
++   body, peint séparément avant `.container` dans l'ordre du document.
++
++   Opacité translucide (issue #290, remplace le 0.97 quasi-opaque de #289) :
++   Alain a jugé le panneau #289 trop opaque à l'usage réel — le voile
++   tricolore du body disparaissait sous le contenu. 0.6 (60%, dans la
++   fourchette 55-70% demandée) laisse les trois bandes clairement
++   reconnaissables à travers tout le panneau tout en gardant un contraste
++   confortable pour le texte sombre posé dessus (voir liste "texte sombre
++   uniforme" plus bas). Calcul de contraste WCAG (fond body déjà mélangé à
++   95% sur blanc, cf. plus haut ; panneau blanc à 60% par-dessus ; texte
++   #1a1a1a, luminance relative ~0.0104) sur les trois bandes, cas le plus
++   défavorable en premier :
++     - bande noire  (~#0d0d0d dessous) -> effectif ~rgb(158,158,158) -> ratio ≈ 6.5:1
++     - bande rouge  (~#ef3443 dessous) -> effectif ~rgb(249,178,184) -> ratio ≈ 10.0:1
++     - bande jaune  (~#fae24b dessous) -> effectif ~rgb(253,244,187) -> ratio ≈ 15.6:1
++   Les trois dépassent le seuil WCAG AA (4.5:1), la bande noire restant la
++   plus contraignante avec une marge confortable (~1.4x le minimum). Une
++   opacité plus basse (vers 55%) resterait conforme mais avec moins de marge
++   sur la bande noire ; 60% a été retenu comme compromis entre translucidité
++   marquée et marge de sécurité du contraste. */
+ body.mode-belgicisme .container {
+     position: relative;
+ }
+@@ -136,25 +171,21 @@ body.mode-belgicisme .container::before {
+     left: 50%;
+     transform: translateX(-50%);
+     width: clamp(620px, 94vw, 720px);
+-    background: rgba(255, 255, 255, 0.97);
++    background: rgba(255, 255, 255, 0.6);
+     border-radius: 12px;
+     box-shadow: 0 2px 16px rgba(0, 0, 0, 0.18);
+     z-index: -1;
+ }
+ 
+ /* Texte sombre uniforme (issue #272, remplace le système de plaques de #271 ;
+-   toujours d'actualité après #289). Ces éléments reposaient sur la bande
+-   jaune (#272) ; ils reposent désormais sur le panneau blanc de #289 — la
+-   raison change, la couleur reste : #1a1a1a contraste ~19:1 sur le panneau
+-   quasi-opaque (blanc à 97%), bien au-delà du seuil WCAG AA (4.5:1), et ce
+-   contraste ne dépend plus des proportions du voile tricolore puisque le
+-   panneau ne fait plus jamais transparaître la bande dessous. Un retour aux
+-   couleurs France d'origine (texte blanc, pensées pour le tapis vert plein
+-   écran) a été envisagé (cf. tâche #289) mais écarté : sur le panneau blanc
+-   quasi-opaque, du texte blanc tomberait sous le seuil WCAG AA (contraste
+-   ~1:1), ce qui aurait réintroduit le problème de lisibilité que #289
+-   corrige. */
+-body.mode-belgicisme header h1,
++   panneau devenu translucide en #290, cf. contour du fichier). Ces éléments
++   reposent sur le panneau blanc/translucide (`.container::before`) plutôt
++   que directement sur le voile tricolore : #1a1a1a y garde un contraste
++   confortable (≥6.5:1 dans le pire cas, la bande noire — calcul détaillé
++   au-dessus de `.container::before`), au-delà du seuil WCAG AA (4.5:1).
++   `header h1` n'est PLUS dans cette liste depuis #290 : le titre est
++   désormais composé de tuiles de Scrabble opaques par lettre (voir plus
++   bas), dont le contraste ne dépend pas de l'opacité du panneau. */
+ body.mode-belgicisme .subtitle,
+ body.mode-belgicisme .drapeau-legende,
+ body.mode-belgicisme section h2,
+@@ -165,6 +196,48 @@ body.mode-belgicisme .parties-en-cours .vide {
+     text-shadow: none;
+ }
+ 
++/* Titre en tuiles de Scrabble (issue #290), mode Belgicisme uniquement.
++   Le HTML (accueil.html) découpe "Scrabble" en 8 `<span class="lettre-
++   scrabble">` ; en mode France, aucune règle ne cible cette classe, le texte
++   s'affiche comme un h1 normal (blanc, cf. règle générale `header h1` plus
++   bas). Ici, chaque lettre devient une tuile individuelle :
++   - fond crème `#f5e6c8` (teinte jaune/crème façon tuile réelle, cohérente
++     avec le jaune du drapeau belge) ;
++   - contour doré `#caa02c` + ombres internes (clair en haut-gauche, sombre
++     en bas-droite) simulant un relief/embossage, et une ombre portée légère
++     qui détache chaque tuile du panneau ;
++   - coins légèrement arrondis.
++   Fond opaque : le contraste du texte `#4a3418` sur `#f5e6c8` (~9.5:1) ne
++   dépend pas de l'opacité du panneau dessous. */
++body.mode-belgicisme header h1 {
++    display: flex;
++    justify-content: center;
++    align-items: center;
++    gap: 4px;
++    margin-bottom: 8px;
++}
++
++body.mode-belgicisme header h1 .lettre-scrabble {
++    display: inline-flex;
++    align-items: center;
++    justify-content: center;
++    min-width: 1.6rem;
++    height: 1.6rem;
++    padding: 0 2px;
++    background: #f5e6c8;
++    color: #4a3418;
++    font-size: 1.15rem;
++    font-weight: 700;
++    line-height: 1;
++    text-shadow: none;
++    border-radius: 4px;
++    border: 2px solid #caa02c;
++    box-shadow:
++        inset 1px 1px 0 rgba(255, 250, 230, 0.7),
++        inset -1px -1px 0 rgba(120, 80, 10, 0.5),
++        0 2px 3px rgba(0, 0, 0, 0.3);
++}
++
+ body.mode-belgicisme .btn-reglages {
+     background: rgba(0, 0, 0, 0.4);
+ }
+@@ -176,11 +249,14 @@ body.mode-belgicisme section h2 {
+ /* Toujours nécessaire après #289 (vérifié) : la bordure pointillée par
+    défaut (`rgba(255, 255, 255, 0.4)`, pensée pour ressortir sur le tapis vert
+    ou la bande tricolore) resterait invisible sur le panneau blanc — il faut
+-   une bordure sombre. Le fond (`rgba(255, 255, 255, 0.55)`) est en revanche
+-   devenu sans objet : posé sur le panneau blanc de #289 plutôt que sur la
+-   bande tricolore directe de #272, il ne se distingue plus visuellement du
+-   fond par défaut (`rgba(255, 255, 255, 0.08)`, ligne ~316) — conservé tel
+-   quel par prudence, sans effet visible constaté. */
++   une bordure sombre. Le fond (`rgba(255, 255, 255, 0.55)`) était devenu sans
++   objet sur le panneau quasi-opaque de #289 (indiscernable du fond par
++   défaut) mais redevient utile depuis que le panneau est translucide à 60%
++   (#290) : cette couche blanche supplémentaire éclaircit encore le fond sous
++   ce texte, sans jamais faire baisser le contraste (empilement de couches
++   blanches translucides = seulement plus clair, jamais plus sombre — vérifié
++   au pire cas sur la bande noire : ~211,211,211 effectif, contraste #1a1a1a
++   ≈ 11.6:1, au-delà du 6.5:1 déjà obtenu sur le panneau seul). */
+ body.mode-belgicisme .liste-joueurs:has(.vide),
+ body.mode-belgicisme .parties-en-cours:has(.vide) {
+     background: rgba(255, 255, 255, 0.55);
+diff --git a/src/scrabble/ui/web/accueil.html b/src/scrabble/ui/web/accueil.html
+index 666b265..8192822 100644
+--- a/src/scrabble/ui/web/accueil.html
++++ b/src/scrabble/ui/web/accueil.html
+@@ -15,7 +15,15 @@
+         <header>
+             <button id="btn-reglages" class="btn-reglages" title="Réglages"
+                     aria-label="Réglages">⚙</button>
+-            <h1>Scrabble</h1>
++            <!-- Lettres découpées en <span> individuels (issue #290) : en mode
++                 France, ce balisage est invisible (aucune règle CSS hors
++                 `body.mode-belgicisme` ne cible `.lettre-scrabble`, le texte
++                 s'affiche comme un h1 normal). En mode Belgicisme uniquement,
++                 accueil.css transforme chaque span en tuile de Scrabble
++                 individuelle (fond crème, contour doré, relief). Généré
++                 statiquement ici plutôt qu'en JS : le texte "Scrabble" est
++                 fixe, pas besoin de complexité dynamique pour 8 lettres. -->
++            <h1><span class="lettre-scrabble">S</span><span class="lettre-scrabble">c</span><span class="lettre-scrabble">r</span><span class="lettre-scrabble">a</span><span class="lettre-scrabble">b</span><span class="lettre-scrabble">b</span><span class="lettre-scrabble">l</span><span class="lettre-scrabble">e</span></h1>
+             <p class="subtitle">Configuration de la partie</p>
+         </header>
+ 

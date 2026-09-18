@@ -1,0 +1,218 @@
+aaf1e67
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit aaf1e67
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Sun Aug 9 17:35:51 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    fix: #96 — udev vendor-wide (2d80) + diagnostics hid_backend
+    
+    install.sh écrivait une règle udev filtrée sur idProduct==8003, laissant
+    les autres modèles Chessnut (dont le Go, 8501) sans protection autosuspend
+    -> coups manqués en session réelle. La règle est désormais vendor-wide
+    (idVendor==2d80 seul), et le check d'existence détecte une règle obsolète
+    pour proposer la mise à jour. 99-chessnutair.rules.example harmonisé avec
+    la même règle unique. hid_backend.py mémorise et logue (INFO) le PID
+    connecté, et logue en DEBUG les échecs de décodage FEN (taille de paquet,
+    octets bruts, position de l'exception) pour diagnostiquer un futur modèle
+    au format inattendu sans toucher au code.
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/99-chessnutair.rules.example b/99-chessnutair.rules.example
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index f0dd737..1b1d2c8 100755
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/99-chessnutair.rules.example
+# ── Version APRÈS ce commit.
++++ b/99-chessnutair.rules.example
+# ── Zone modifiée : ligne 1 (15 ligne(s)) dans l'ancienne version → ligne 1 (3 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,15 +1,3 @@
+-SUBSYSTEM=="usb", ATTRS{idVendor}=="2d80", /
+-ATTRS{idProduct}=="8002", GROUP="wheel", MODE="0660"
+-
+-# Chessnut Air
+-SUBSYSTEM=="usb", ATTRS{idVendor}=="2d80", ATTRS{idProduct}=="8003", GROUP="wheel", MODE="0660"
+-
+-# Chessnut Air Plus
+-SUBSYSTEM=="usb", ATTRS{idVendor}=="2d80", ATTRS{idProduct}=="8202", GROUP="wheel", MODE="0660"
+-
+-# Chessnut Go (CG100, idProduct 8501)
+-SUBSYSTEM=="usb", ATTRS{idVendor}=="2d80", ATTRS{idProduct}=="8501", GROUP="plugdev", TAG+="uaccess"
+-KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2d80", ATTRS{idProduct}=="8501", GROUP="plugdev", TAG+="uaccess"
+-
+-# set the permissions for device files
+-KERNEL=="hidraw*", GROUP="wheel", MODE="0660"
++# Chessnut — tous modèles (Air, Air Plus, Go, ...), identifiés par le vendor 2d80
++ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="2d80", MODE="0666", ATTR{power/control}="on", ATTR{power/autosuspend}="-1"
++KERNEL=="hidraw*", ATTRS{idVendor}=="2d80", MODE="0666"
+# (diff du fichier suivant)
+diff --git a/TACHES.md b/TACHES.md
+# (index — ignorable)
+index 537988f..6c2f5f6 100644
+# (avant — fichier suivant)
+--- a/TACHES.md
+# (après — fichier suivant)
++++ b/TACHES.md
+# ── Zone modifiée : ligne 45 (6 ligne(s)) dans l'ancienne version → ligne 45 (10 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -45,6 +45,10 @@
+ 
+ ## ✅ Bugs résolus récemment
+ 
++### Session du 9 août
++
++**Robustesse multi-plateau — coups manqués sur Chessnut Go, règle udev vendor-only** `[Linux]` (issue #96) — Alain a branché son Chessnut Go (idProduct `8501`) en session réelle : des coups n'étaient pas tous reçus par le programme, comportement intermittent typique d'un autosuspend USB actif. **Cause racine** : `install.sh` écrivait la règle udev (`/etc/udev/rules.d/99-chessnut.rules`) filtrée sur `idProduct==8003` (Air uniquement) — la protection `autosuspend=-1` ne s'appliquait donc pas au Go ni aux autres modèles, malgré le fait que `99-chessnutair.rules.example` avait déjà été élargi lors de l'issue #78. Problème aggravant : le check d'existence d'`install.sh` (`[[ -f "$UDEV_FILE" ]]`) considérait toute règle déjà présente comme « déjà en place », donc un fichier issu d'une install antérieure (avec l'ancienne règle 8003-only) n'était jamais mis à jour même en relançant le script. **Correctifs** : (1) `install.sh` section 4 — la règle udev écrite est désormais **vendor-wide** (`ATTRS{idVendor}=="2d80"`, sans filtre `idProduct`), couvrant tous les modèles Chessnut actuels et futurs par construction ; le check d'existence détecte spécifiquement une règle vendor-wide déjà en place (grep `autosuspend` + `2d80` + absence d'`idProduct`) et propose une mise à jour si le fichier est absent ou contient l'ancienne règle filtrée. (2) `99-chessnutair.rules.example` harmonisé avec la même règle vendor-wide unique, en remplacement des entrées par modèle (dont l'entrée `8501` incohérente qui utilisait `GROUP="plugdev"` au lieu de `GROUP="wheel"`). (3) `hid_backend.py` — `connect()` mémorise désormais le `product_id` sélectionné dans `_connected_product_id` et logue en `INFO` le modèle connecté (`"Chessnut connecté : PID=0x8501 (Chessnut Go)"`, mapping PID→nom via `_PRODUCT_NAMES`) ; `_decode_fen()` logue en `DEBUG` la longueur réelle reçue + les 8 premiers octets en hex si le paquet est trop court, et l'exception + position `i`/`j`/`data[idx]` en cas d'échec du décodage — aucun impact en production (niveau DEBUG uniquement), mais permet de diagnostiquer un futur modèle au format de paquet inattendu sans modifier le code. `py_compile` OK sur `hid_backend.py`, `bash -n` OK sur `install.sh`. **Pas de test réel possible côté CCL** (Chessnut Go chez Alain) — test décisif à faire par Alain : relancer `install.sh` sur une install existante (règle 8003-only) et vérifier la mise à jour vers la règle vendor-wide, puis rebrancher le Go et confirmer l'absence de coups manqués. Backup pinné avant modif.
++
+ ### Session du 29 juillet
+ 
+ Menu Analyse — bouton 📋 Coller PGN : zone textarea pour coller un PGN
+# (diff du fichier suivant)
+diff --git a/install.sh b/install.sh
+# (index — ignorable)
+index 0a77277..d8f69ad 100755
+# (avant — fichier suivant)
+--- a/install.sh
+# (après — fichier suivant)
++++ b/install.sh
+# ── Zone modifiée : ligne 99 (17 ligne(s)) dans l'ancienne version → ligne 99 (20 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -99,17 +99,20 @@ do
+     fi
+ done
+ 
+-# ── 4. Règles udev (Chessnut Air) ────────────────────────────────────────────
+-step "Règles udev (Chessnut Air)"
++# ── 4. Règles udev (Chessnut — tous modèles) ─────────────────────────────────
++step "Règles udev (Chessnut — tous modèles)"
+ 
+ UDEV_FILE="/etc/udev/rules.d/99-chessnut.rules"
+-if [[ -f "$UDEV_FILE" ]]; then
+-    ok "Règles udev déjà en place"
++if [[ -f "$UDEV_FILE" ]] && grep -q "autosuspend" "$UDEV_FILE" && grep -q "2d80" "$UDEV_FILE" && ! grep -q "idProduct" "$UDEV_FILE"; then
++    ok "Règles udev déjà en place (vendor-wide)"
+ else
+-    if ask_yn "Installer les règles udev ? (sudo requis)"; then
++    if [[ -f "$UDEV_FILE" ]]; then
++        warn "Règles udev existantes obsolètes (filtrées par modèle) — mise à jour recommandée"
++    fi
++    if ask_yn "Installer/mettre à jour les règles udev ? (sudo requis)"; then
+         sudo tee "$UDEV_FILE" > /dev/null << 'EOF'
+-ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="2d80", ATTR{idProduct}=="8003", MODE="0666", ATTR{power/control}="on", ATTR{power/autosuspend}="-1"
+-KERNEL=="hidraw*", ATTRS{idVendor}=="2d80", ATTRS{idProduct}=="8003", MODE="0666"
++ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="2d80", MODE="0666", ATTR{power/control}="on", ATTR{power/autosuspend}="-1"
++KERNEL=="hidraw*", ATTRS{idVendor}=="2d80", MODE="0666"
+ EOF
+         sudo udevadm control --reload-rules
+         ok "Règles udev installées"
+# (diff du fichier suivant)
+diff --git a/nicsoft/niclink/hid_backend.py b/nicsoft/niclink/hid_backend.py
+# (index — ignorable)
+index d1c51fe..2c8fb8c 100644
+# (avant — fichier suivant)
+--- a/nicsoft/niclink/hid_backend.py
+# (après — fichier suivant)
++++ b/nicsoft/niclink/hid_backend.py
+# ── Zone modifiée : ligne 5 (14 ligne(s)) dans l'ancienne version → ligne 5 (26 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -5,14 +5,26 @@ set_all_leds, lights_out, set_led, beep, gameover_lights.
+ """
+ 
+ import hid
++import logging
+ import threading
+ import time
+ 
++logger = logging.getLogger(__name__)
++
+ VENDOR_ID   = 0x2d80
+ PRODUCT_IDS = [0x8001, 0x8002, 0x8003, 0x8202, 0x8501]  # 8003=Air, 8202=Air Plus, 8501=Chessnut Go
+ USAGE_PAGE  = 0xFF00
+ WRITE_INTERVAL = 0.2  # secondes — identique au C++ (200ms)
+ 
++# Mapping PID → nom lisible (pour les logs de diagnostic)
++_PRODUCT_NAMES = {
++    0x8001: "Chessnut (8001)",
++    0x8002: "Chessnut (8002)",
++    0x8003: "Chessnut Air",
++    0x8202: "Chessnut Air Plus",
++    0x8501: "Chessnut Go",
++}
++
+ # Mapping pièces — identique à ChessLink::toFen dans EasyLink.cpp
+ _PIECES = ['0', 'q', 'k', 'b', 'p', 'n', 'R', 'P', 'r', 'B', 'N', 'Q', 'K']
+ 
+# ── Zone modifiée : ligne 21 (19 ligne(s)) dans l'ancienne version → ligne 33 (20 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -21,19 +33,20 @@ _current_fen: str = ""
+ _led_status: list[int] = [0] * 8  # pattern LED courant en ordre USB (index 0 = rangée 8)
+ _write_lock = threading.Lock()
+ _last_write: float = 0.0
++_connected_product_id: int | None = None
+ 
+ 
+-def _list_paths() -> list[bytes]:
+-    """Retourne les paths HID des Chessnut Air détectés."""
++def _list_paths() -> list[tuple[bytes, int]]:
++    """Retourne les (path, product_id) HID des Chessnut Air détectés."""
+     paths = []
+     for info in hid.enumerate(VENDOR_ID, 0):
+         if info['product_id'] in PRODUCT_IDS and info.get('usage_page') == USAGE_PAGE:
+-            paths.append(info['path'])
++            paths.append((info['path'], info['product_id']))
+     if not paths:
+         # Fallback sans filtre usage_page (Linux hidraw ne l'expose pas toujours)
+         for info in hid.enumerate(VENDOR_ID, 0):
+             if info['product_id'] in PRODUCT_IDS:
+-                paths.append(info['path'])
++                paths.append((info['path'], info['product_id']))
+     return paths
+ 
+ 
+# ── Zone modifiée : ligne 59 (12 ligne(s)) dans l'ancienne version → ligne 72 (17 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -59,12 +72,17 @@ def connect() -> None:
+     donc c'était un no-op (b_write vérifie connectStatus). On ne l'envoie pas ici
+     pour éviter un bip parasite causé par la commande de switch de mode.
+     """
+-    global _dev, _current_fen
++    global _dev, _current_fen, _connected_product_id
+     paths = _list_paths()
+     if not paths:
+         raise RuntimeError("Chessnut Air introuvable (VID=0x2d80)")
++    path, product_id = paths[0]
+     _dev = hid.device()
+-    _dev.open_path(paths[0])
++    _dev.open_path(path)
++
++    _connected_product_id = product_id
++    name = _PRODUCT_NAMES.get(product_id, "modèle inconnu")
++    logger.info("Chessnut connecté : PID=0x%04x (%s)", product_id, name)
+ 
+     time.sleep(2)  # attente initialisation hardware (identique C++)
+     _write(bytes([0x0b, 0x04, 0x02, 0x58, 0x00, 0xc8]))  # beep (600Hz, 200ms)
+# ── Zone modifiée : ligne 119 (7 ligne(s)) dans l'ancienne version → ligne 137 (12 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -119,7 +137,12 @@ def _decode_fen(data: bytes) -> str:
+     Fonctionne sur Linux (report ID 0x01) et Windows (0x01 ou 0x2a).
+     """
+     if len(data) < 34:  # besoin de 2 octets header + 32 octets FEN (idx max = 33)
++        logger.debug(
++            "_decode_fen: paquet trop court (%d octets, 34 requis) — premiers octets : %s",
++            len(data), data[:8].hex(),
++        )
+         return ""
++    i = j = idx = None
+     try:
+         fen = ""
+         empty = 0
+# ── Zone modifiée : ligne 143 (7 ligne(s)) dans l'ancienne version → ligne 166 (11 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -143,7 +166,11 @@ def _decode_fen(data: bytes) -> str:
+                 fen += "/"
+             empty = 0
+         return fen
+-    except Exception:
++    except Exception as e:
++        value = data[idx] if idx is not None and idx < len(data) else "?"
++        logger.debug(
++            "_decode_fen: exception à i=%s j=%s data[idx]=%s : %s", i, j, value, e,
++        )
+         return ""
+ 
+ 

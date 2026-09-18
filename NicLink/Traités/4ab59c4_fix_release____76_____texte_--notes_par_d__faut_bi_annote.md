@@ -1,0 +1,59 @@
+4ab59c4
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 4ab59c4
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Sun Jul 26 16:25:12 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    fix(release): #76 — texte --notes par défaut bilingue FR/EN, ne dépend plus de la version
+    
+    Le texte --notes suggéré par make_release.sh restait figé sur "Première
+    version téléchargeable" depuis v1.0.0, copié-collé tel quel sur v1.1.0 et
+    v1.2.0. Remplacé par un défaut générique bilingue FR/EN pointant vers le
+    README, avec un commentaire rappelant de le personnaliser avant publication.
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/TACHES.md b/TACHES.md
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 104b925..aa08816 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/TACHES.md
+# ── Version APRÈS ce commit.
++++ b/TACHES.md
+# ── Zone modifiée : ligne 47 (6 ligne(s)) dans l'ancienne version → ligne 47 (8 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -47,6 +47,8 @@
+ 
+ ### Session du 26 juillet
+ 
++- **📄 `make_release.sh` — texte `--notes` par défaut corrigé (bilingue FR/EN, plus jamais figé sur "Première version")** `[Linux/Windows]` (issue #76) — La commande `gh release create` suggérée en fin de script contenait un texte `--notes` fixe : « Première version téléchargeable. Voir le README pour l'installation. » Vrai seulement pour v1.0.0, ce texte avait été copié-collé tel quel sur v1.1.0 et v1.2.0, rendant leur description trompeuse (une 3e release affichant encore « Première version téléchargeable »). Le texte n'était de plus pas bilingue, contrairement au README (FR/EN). **Correctif** : texte `--notes` remplacé par un défaut générique toujours vrai quelle que soit la version, bilingue FR/EN, renvoyant vers le README (`Voir le README pour les instructions d'installation (FR/EN). / See the README for installation instructions (FR/EN). / https://github.com/AlainDelree/AlChess#readme`). **Commentaire ajouté juste avant la commande suggérée**, rappelant explicitement à Alain de personnaliser ce texte avec les changements notables de la version avant de publier, plutôt que de le copier-coller tel quel — pour éviter que l'erreur ne se reproduise. Vérifié : `bash -n make_release.sh` (syntaxe OK) + rendu de la commande testé isolément (guillemets bien équilibrés, texte multi-lignes s'affiche correctement). Backup pinné + commit checkpoint avant modif.
++
+ - **📄 README.md — mention de l'installeur `AlChess_Setup.exe` + correction de la note PowerShell obsolète** `[Windows]` (issue #75, suite du chantier NSIS #50-#70) — La section Windows du README ne présentait que l'installation historique via `1-Installer.bat` (PowerShell), sans mentionner `AlChess_Setup.exe` (désormais validé en conditions réelles sur VM et sur machine Windows physique — voir #68, #70). Deux problèmes concrets : (1) les utilisateurs bloqués par une policy d'exécution PowerShell (le problème d'origine que tout le chantier NSIS visait à résoudre) ignoraient qu'une alternative existait ; (2) la note « Ne fermez pas la fenêtre PowerShell pendant l'utilisation » était devenue **fausse** depuis #70 (`2-Lancer_AlChess.bat` réécrit en batch pur, sans dépendance PowerShell au lancement). **Correctif** : section Windows 10/11 (FR + EN) réécrite avec deux options côte à côte — **Option A** (installeur `.exe`, recommandée) et **Option B** (script PowerShell, méthode historique pour utilisateurs avancés ou souhaitant inspecter le script avant exécution) — avec une note expliquant le critère de choix (basculer vers A si B échoue sur une erreur de policy PowerShell, fréquent en environnement scolaire/entreprise sous GPO). Note de lancement corrigée en « Ne fermez pas la fenêtre du serveur pendant l'utilisation d'AlChess » (correcte pour les deux méthodes). Vérifié par `grep PowerShell README.md` : plus aucune mention incorrecte concernant le LANCEMENT, seules restent les mentions correctes de l'option B (script) et de la note de choix. Backup pinné + commit checkpoint avant modif.
+ 
+ - **🔒 `2-Lancer_AlChess.bat` réécrit en batch pur — plus aucune dépendance PowerShell au LANCEMENT** `[Windows]` (issue #70, suite du signal de sécurité #58) — **Ferme la dernière porte PowerShell du parcours utilisateur.** Découvert en #58 (validation VM) : le lanceur invoquait `powershell.exe` **2×** (`-ExecutionPolicy Bypass`) pour (1) réécrire `start_alchess.ps1` en UTF-8 BOM dans un `_launch_tmp.ps1` (contrainte de lecture PowerShell 5.1) puis (2) l'exécuter. Le `Bypass` en ligne de commande (scope Process) surclasse la policy par défaut (`LocalMachine` = `Restricted`) **mais est ignoré** si une policy est imposée par Group Policy (scope `MachinePolicy`/`UserPolicy`, prioritaire) → une machine sous GPO stricte pouvait **installer** AlChess (via `AlChess_Setup.exe`, chantier NSIS #50-#69) puis rester **bloquée au lancement** — exactement le blocage que tout le chantier NSIS visait à éviter, un cran plus loin. **Correctif** : `2-Lancer_AlChess.bat` entièrement réécrit en **batch pur**, aucune invocation `powershell.exe`/`pwsh.exe`. `%~dp0` localise le dossier du script de façon fiable (équivalent `$scriptDir`, sans « réécriture » dynamique), les variables d'env du `.ps1` sont reproduites (`PYTHONPYCACHEPREFIX=%TEMP%\alchess_pyc`, `PYTHONIOENCODING=utf-8`), `cd /d "%~dp0"` (≡ `Set-Location`), puis `"%~dp0venv\Scripts\python.exe" -m nicsoft.web`. **Ouverture du navigateur inchangée** : elle n'était PAS faite par le `.ps1` mais par `nicsoft.web` (`webbrowser.open`, `alchess.py:137`) → rien de perdu. **CHOIX DE LOGGING documenté** (point de conception tranché) : cmd.exe n'a pas de « tee » natif (impossible d'afficher ET logger comme `Tee-Object`) → **option (a) retenue : redirection vers `alchess_log.txt` uniquement** (`> … 2>&1`, écrase à chaque run comme l'ancien Tee-Object sans `-Append`). Raison : l'utilisateur final travaille dans le navigateur (ouvert auto), pas dans la fenêtre console ; le log complet reste pour le support/débogage via le bridge. Ajout d'un `pause` final (ne se déclenche **qu'après** l'arrêt du serveur) pour lire un message d'erreur si `python.exe` s'arrête tout de suite (sinon fenêtre qui se referme sans rien montrer, sortie étant redirigée). **`start_alchess.ps1` NON supprimé** (usage manuel/développeur préservé), simplement plus appelé. **Aucune modif des raccourcis** : `SecShortcut` (`.nsi`, l.1618) et `install_alchess.ps1` (l.447) ciblent le `.bat` **par son nom**, pas son contenu → inchangés. `1-Installer.bat` / `install_alchess.ps1` **non touchés** (hors scope, voie d'installation historique). Vérif : `grep powershell\|pwsh` → présent uniquement dans les commentaires `rem`, aucune invocation réelle. Test réel décisif à faire par Alain : double-cliquer `2-Lancer_AlChess.bat` (ou le raccourci) sur une machine où PowerShell est bloqué par policy (simulable via `gpedit.msc` sur Windows Pro) et confirmer que l'app se lance quand même. Backup pinné avant modif.
+# (diff du fichier suivant)
+diff --git a/make_release.sh b/make_release.sh
+# (index — ignorable)
+index fae72db..4bdd074 100755
+# (avant — fichier suivant)
+--- a/make_release.sh
+# (après — fichier suivant)
++++ b/make_release.sh
+# ── Zone modifiée : ligne 242 (4 ligne(s)) dans l'ancienne version → ligne 242 (13 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -242,4 +242,13 @@ echo "  gh release create v$VERSION \\"
+ echo "     dist/$NAME-linux-x86_64.zip \\"
+ echo "     dist/$NAME-windows-x86_64.zip \\"
+ echo "     --title \"AlChess v$VERSION\" \\"
+-echo "     --notes \"Première version téléchargeable. Voir le README pour l'installation.\""
++# ⚠️ Alain : PERSONNALISE ce texte --notes avec les changements notables de
++# CETTE version avant de publier — ne le copie-colle jamais tel quel d'une
++# release à l'autre. (Issue #76 : le texte "Première version téléchargeable"
++# était resté figé depuis v1.0.0 et affichait encore ça sur v1.1.0/v1.2.0,
++# rendant la description trompeuse.) Le texte ci-dessous n'est qu'un défaut
++# générique bilingue FR/EN, toujours vrai mais volontairement vague.
++echo "     --notes \"Voir le README pour les instructions d'installation (FR/EN).
++See the README for installation instructions (FR/EN).
++
++https://github.com/AlainDelree/AlChess#readme\""

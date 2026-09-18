@@ -1,0 +1,38 @@
+caf5711
+
+commit caf5711
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Mon Aug 3 19:11:11 2026 +0200
+
+    Issue #354 : deplace le git reset --hard du clone CCW avant le bloc --publier
+    
+    Le reset detruisait le commit version.json produit par --publier (issue #353).
+    Le bloc de nettoyage s'execute desormais dans tous les cas (avec ou sans
+    --publier), mais avant le bloc de publication.
+
+diff --git a/build/rebuild_scrabble.bat b/build/rebuild_scrabble.bat
+index 8775b82..d8b4bfc 100644
+--- a/build/rebuild_scrabble.bat
++++ b/build/rebuild_scrabble.bat
+@@ -275,6 +275,11 @@ echo interactive pour verifier que tout fonctionne bien
+ echo ^(WebView2, dictionnaire, interface^).
+ echo.
+ 
++echo Nettoyage du clone CCW (reset commits locaux)...
++git -C Z:\CCW\scrabble reset --hard origin/master
++echo Clone CCW propre.
++echo.
++
+ if "%PUBLIER%"=="1" (
+     echo ============================================
+     echo   PUBLICATION ^(--publier^)
+@@ -339,9 +344,5 @@ if "%PUBLIER%"=="1" (
+     echo.
+ )
+ 
+-echo Nettoyage du clone CCW (reset commits locaux)...
+-git -C Z:\CCW\scrabble reset --hard origin/master
+-echo Clone CCW propre.
+-echo.
+ popd
+ exit /b 0

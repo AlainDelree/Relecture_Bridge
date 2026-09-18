@@ -1,0 +1,1687 @@
+e1e55c8
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit e1e55c8
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Thu Aug 13 19:15:55 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    nettoyage : supprimer 31 fichiers obsolètes NicLink/dev (issue #123)
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/INSTALLATION/CONFIGURATION_SYSTEME.md.raccourcisanglais b/INSTALLATION/CONFIGURATION_SYSTEME.md.raccourcisanglais
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index ef63bda..0000000
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/INSTALLATION/CONFIGURATION_SYSTEME.md.raccourcisanglais
+# ── Version APRÈS ce commit.
++++ /dev/null
+# ── Zone modifiée : ligne 1 (294 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,294 +0,0 @@
+-# NicLink — Configuration système requise
+-
+-Ces deux configurations sont à effectuer **une seule fois** sur chaque PC utilisé avec NicLink.
+-Elles sont persistantes (survivent aux redémarrages) et ciblées uniquement sur l'échiquier Chessnut Air.
+-
+----
+-
+-## 1. Désactiver l'autosuspend USB pour le Chessnut Air
+-
+-### Pourquoi
+-
+-Linux gère l'énergie des périphériques USB en les "suspendant" après une période d'inactivité.
+-Pour un clavier ou une souris, ce mécanisme est transparent car ils se réveillent à la première
+-interaction. Pour le Chessnut Air, la suspension provoque des déconnexions brutales suivies de
+-reconnexions ratées — le driver HID échoue avec l'erreur `-75` et l'échiquier devient
+-non-fonctionnel pendant plusieurs minutes, jusqu'à une deuxième tentative de reconnexion.
+-
+-C'est la cause principale des lenteurs de détection de coups observées par vagues irrégulières.
+-
+-### Commande
+-
+-```bash
+-echo 'ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="2d80", ATTR{idProduct}=="8003", TEST=="power/autosuspend", ATTR{power/autosuspend}="-1"' | sudo tee /etc/udev/rules.d/99-chessnut.rules
+-sudo udevadm control --reload-rules
+-sudo udevadm trigger
+-```
+-
+-Et pour appliquer immédiatement sans rebrancher l'échiquier :
+-
+-```bash
+-echo -1 | sudo tee /sys/bus/usb/devices/1-1.1/power/autosuspend
+-```
+-
+-### Impact sur les autres périphériques USB
+-
+-**Aucun.** La règle cible exclusivement le Chessnut Air via ses identifiants matériels
+-(`idVendor=2d80`, `idProduct=8003`). Clavier, souris, disque externe, dongle Bluetooth,
+-et tout autre périphérique USB conservent leur gestion d'énergie habituelle.
+-
+-### Pour vérifier que c'est actif
+-
+-```bash
+-cat /sys/bus/usb/devices/1-1.1/power/autosuspend
+-# Doit afficher : -1
+-```
+-
+-### Pour annuler
+-
+-```bash
+-sudo rm /etc/udev/rules.d/99-chessnut.rules
+-sudo udevadm control --reload-rules
+-```
+-
+----
+-
+-## 2. Autoriser NicLink à gérer ModemManager sans mot de passe
+-
+-### Pourquoi
+-
+-ModemManager est un service Linux qui surveille les périphériques de type modem — modems GSM,
+-dongles 4G, certains adaptateurs série. Au démarrage, il sonde tous les ports USB en leur
+-envoyant des commandes AT pour détecter des modems. Le Chessnut Air, qui se présente comme
+-un périphérique HID, peut être perturbé par ces tentatives de sondage, causant des
+-déconnexions ou des comportements imprévisibles.
+-
+-NicLink stoppe ModemManager automatiquement à son démarrage et le relance à la fermeture.
+-Pour pouvoir le faire sans demander le mot de passe à chaque fois, il faut une règle sudoers.
+-
+-### Commande
+-
+-```bash
+-echo "$USER ALL=(ALL) NOPASSWD: /bin/systemctl stop ModemManager, /bin/systemctl start ModemManager" | sudo tee /etc/sudoers.d/niclink-modemmanager
+-sudo chmod 440 /etc/sudoers.d/niclink-modemmanager
+-```
+-
+-### Impact sur les autres connecteurs USB et périphériques
+-
+-**Dongle Bluetooth :** non affecté. Le Bluetooth est géré par `bluetoothd`, un service
+-indépendant de ModemManager. Le dongle Bluetooth continuera à fonctionner normalement
+-pendant et après l'utilisation de NicLink.
+-
+-**Clavier, souris, disque externe, webcam :** non affectés. Ces périphériques HID et
+-de stockage ne sont pas gérés par ModemManager.
+-
+-**Dongle 4G / modem USB :** si tu utilises un dongle 4G ou un modem USB sur ce PC,
+-il sera temporairement non-fonctionnel pendant qu'une session NicLink est ouverte.
+-Il redeviendra disponible dès la fermeture de NicLink. Si c'est problématique,
+-il suffit de ne pas configurer cette règle sudoers et de stopper ModemManager
+-manuellement avant chaque session : `sudo systemctl stop ModemManager`.
+-
+-**Adaptateur série USB (RS-232) :** potentiellement affecté pendant la session NicLink,
+-pour la même raison que le dongle 4G.
+-
+-### Ce que NicLink fait exactement
+-
+-- Au démarrage de `python -m nicsoft.web` : `sudo systemctl stop ModemManager`
+-- À la fermeture (bouton Quitter ou Ctrl+C) : `sudo systemctl start ModemManager`
+-
+-Si la règle sudoers n'est pas configurée, NicLink affiche un message d'échec silencieux
+-et continue de fonctionner — c'est non-bloquant.
+-
+-### Pour vérifier que la règle est active
+-
+-```bash
+-sudo -n systemctl stop ModemManager && echo "OK — pas de mot de passe requis"
+-```
+-
+-### Pour annuler
+-
+-```bash
+-sudo rm /etc/sudoers.d/niclink-modemmanager
+-```
+-
+----
+-
+-## Résumé — checklist sur un nouveau PC
+-
+-```bash
+-# 1. Règle autosuspend Chessnut Air
+-echo 'ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="2d80", ATTR{idProduct}=="8003", TEST=="power/autosuspend", ATTR{power/autosuspend}="-1"' | sudo tee /etc/udev/rules.d/99-chessnut.rules
+-sudo udevadm control --reload-rules
+-sudo udevadm trigger
+-
+-# 2. Règle sudoers ModemManager
+-echo "$USER ALL=(ALL) NOPASSWD: /bin/systemctl stop ModemManager, /bin/systemctl start ModemManager" | sudo tee /etc/sudoers.d/niclink-modemmanager
+-sudo chmod 440 /etc/sudoers.d/niclink-modemmanager
+-
+-# 3. Vérifications
+-cat /sys/bus/usb/devices/1-1.1/power/autosuspend   # doit afficher -1
+-sudo -n systemctl stop ModemManager && echo "sudoers OK"
+-```
+-
+-Ces deux configurations suffisent. NicLink gère ensuite tout automatiquement.
+-
+----
+-
+-## 3. Installation de NicLink
+-
+-### Prérequis système
+-
+-```bash
+-sudo apt update
+-sudo apt install python3 python3-pip python3-venv -y
+-# Moteur Stockfish
+-sudo apt install stockfish -y
+-```
+-
+-### Copier NicLink sur le PC
+-
+-Copier le dossier `NicLink` depuis une clé USB ou par réseau :
+-
+-```bash
+-# Depuis une clé USB (adapter le chemin)
+-cp -r /media/$USER/USB/NicLink ~/NicLink
+-
+-# Ou depuis un autre PC via réseau local
+-scp -r source@adresse-pc:~/NicLink ~/NicLink
+-```
+-
+-### Créer l'environnement virtuel
+-
+-```bash
+-cd ~/NicLink
+-python3 -m venv venv
+-source venv/bin/activate
+-pip install -r requirements.txt
+-```
+-
+-### Vérifier le driver Chessnut
+-
+-```bash
+-ls ~/NicLink/nicsoft/niclink/_niclink.so
+-# Doit afficher le fichier — si absent, contacter l'administrateur
+-```
+-
+-### Lancer NicLink
+-
+-```bash
+-cd ~/NicLink
+-source venv/bin/activate
+-python -m nicsoft.web
+-```
+-
+-### Créer un raccourci bureau (optionnel)
+-
+-```bash
+-cat > ~/Desktop/NicLink.desktop << 'DESK'
+-[Desktop Entry]
+-Name=NicLink
+-Exec=bash -c "cd ~/NicLink && source ~/NicLink/venv/bin/activate && python -m nicsoft.web"
+-Icon=applications-games
+-Terminal=false
+-Type=Application
+-DESK
+-chmod +x ~/Desktop/NicLink.desktop
+-```
+-
+----
+-
+-## 4. Données et fichiers
+-
+-| Dossier | Contenu |
+-|---|---|
+-| `~/NicLink/data/books/` | Livres Polyglot (.bin) pour les exercices |
+-| `~/NicLink/data/eco_hierarchy.json` | Hiérarchie ECO (généré par `manage.py`) |
+-| `~/NicLink/data/eco_*.tsv` | Catalogue ECO Lichess (à télécharger) |
+-| `~/NicLink/games/` | Parties sauvegardées (PGN) |
+-| `~/NicLink/logs/niclink.log` | Journal des erreurs |
+-| `~/NicLink/backups/` | Sauvegardes pinned |
+-
+-### Télécharger les fichiers ECO Lichess (pour les exercices)
+-
+-```bash
+-cd ~/NicLink/data
+-for letter in a b c d e; do
+-  curl -o eco_${letter}.tsv https://raw.githubusercontent.com/lichess-org/chess-openings/master/${letter}.tsv
+-done
+-```
+-
+-### Mettre à jour la hiérarchie ECO Wikipedia
+-
+-```bash
+-cd ~/NicLink
+-source venv/bin/activate
+-python -m nicsoft.exercices.manage
+-# Choisir option 5
+-```
+-
+-### Gérer le catalogue d'ouvertures
+-
+-```bash
+-cd ~/NicLink
+-source venv/bin/activate
+-python -m nicsoft.exercices.manage
+-```
+-
+----
+-
+-## 5. En cas de problème
+-
+-### L'échiquier n'est pas détecté
+-
+-1. Vérifier que l'échiquier est allumé et branché
+-2. Vérifier la règle udev : `cat /sys/bus/usb/devices/*/idVendor | grep 2d80`
+-3. Redémarrer NicLink — il tentera une reconnexion automatique
+-4. En dernier recours : débrancher/rebrancher l'échiquier
+-
+-### Envoyer les logs en cas de bug
+-
+-Le fichier `~/NicLink/logs/niclink.log` contient les erreurs enregistrées.
+-Il est aussi accessible depuis l'interface web : cliquer sur `📋 logs` en haut à droite.
+-
+-```bash
+-# Voir les dernières erreurs
+-tail -50 ~/NicLink/logs/niclink.log
+-```
+-
+----
+-
+-## Résumé — checklist complète sur un nouveau PC
+-
+-```bash
+-# 1. Règle autosuspend Chessnut Air
+-echo 'ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="2d80", ATTR{idProduct}=="8003", TEST=="power/autosuspend", ATTR{power/autosuspend}="-1"' | sudo tee /etc/udev/rules.d/99-chessnut.rules
+-sudo udevadm control --reload-rules
+-sudo udevadm trigger
+-
+-# 2. Règle sudoers ModemManager
+-echo "$USER ALL=(ALL) NOPASSWD: /bin/systemctl stop ModemManager, /bin/systemctl start ModemManager" | sudo tee /etc/sudoers.d/niclink-modemmanager
+-sudo chmod 440 /etc/sudoers.d/niclink-modemmanager
+-
+-# 3. Installation NicLink
+-cp -r /media/$USER/USB/NicLink ~/NicLink   # adapter le chemin
+-cd ~/NicLink
+-python3 -m venv venv
+-source venv/bin/activate
+-pip install -r requirements.txt
+-sudo apt install stockfish -y
+-
+-# 4. Fichiers ECO (exercices)
+-cd ~/NicLink/data
+-for letter in a b c d e; do
+-  curl -o eco_${letter}.tsv https://raw.githubusercontent.com/lichess-org/chess-openings/master/${letter}.tsv
+-done
+-
+-# 5. Vérifications
+-cat /sys/bus/usb/devices/1-1.1/power/autosuspend   # doit afficher -1
+-sudo -n systemctl stop ModemManager && echo "sudoers OK"
+-ls ~/NicLink/nicsoft/niclink/_niclink.so && echo "driver OK"
+-
+-# 6. Lancer
+-source ~/NicLink/venv/bin/activate
+-python -m nicsoft.web
+-```
+# (diff du fichier suivant)
+diff --git a/INSTRUCTION GESTION USB b/INSTRUCTION GESTION USB
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index 2a17181..0000000
+# (avant — fichier suivant)
+--- a/INSTRUCTION GESTION USB	
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (6 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,6 +0,0 @@
+-which systemctl
+-//Si le résultat est /usr/bin/systemctl au lieu de /bin/systemctl, adapte la ligne en conséquence. visudo valide la syntaxe avant de sauvegarder — utilise Ctrl+X puis Y pour quitter si c'est nano.//
+-sudo visudo
+-//Ajouter à la fin du fichier//
+-alain ALL=(ALL) NOPASSWD: /bin/systemctl stop ModemManager
+-alain ALL=(ALL) NOPASSWD: /bin/systemctl start ModemManager
+# (diff du fichier suivant)
+diff --git a/Plan plusieurs moteurs.txt b/Plan plusieurs moteurs.txt
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index f04840e..0000000
+# (avant — fichier suivant)
+--- a/Plan plusieurs moteurs.txt	
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (31 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,31 +0,0 @@
+-1. Couche moteur universelle (engine_manager.py)
+-
+-Communique avec n'importe quel moteur UCI (Stockfish, Maia, autres)
+-Expose une interface commune : demander un coup, évaluer une position, changer de moteur
+-Remplace la bibliothèque stockfish spécifique actuelle
+-
+-2. Contrôle de force par Elo
+-
+-Remplace les niveaux 1-20 flous par un vrai Elo (1320–3190)
+-Dans l'écran paramètres : boutons -50/+50 et saisie directe
+-Affiché clairement : "Vous jouez contre Stockfish ~1700 Elo"
+-
+-3. Barre d'évaluation WDL
+-
+-Affiche les probabilités Victoire/Nulle/Défaite visuellement (style Chess.com)
+-Disponible pendant la partie pédagogique après chaque coup
+-Disponible dans l'écran d'analyse de partie
+-
+-4. Analyse de partie refaite proprement
+-
+-Utilise l'EngineManager au lieu de Stockfish directement
+-Profite du MultiPV : affiche le meilleur coup ET 2 alternatives dans la révision
+-
+-5. Choix du moteur dans les paramètres
+-
+-Sélecteur de moteur (Stockfish, Maia, etc.)
+-Chemin vers l'exécutable configurable
+-Sauvegardé dans config.json
+-
+-
+-Tout est lié par l'EngineManager — c'est la pièce centrale qui débloque tout le reste. On commence par là quand tu es prêt.
+# (diff du fichier suivant)
+diff --git a/TRAVAIL_EN_COURS/fichier terminal.txt b/TRAVAIL_EN_COURS/fichier terminal.txt
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index 7ae5afa..0000000
+# (avant — fichier suivant)
+--- a/TRAVAIL_EN_COURS/fichier terminal.txt	
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (32 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,32 +0,0 @@
+-venv) alain@alain-PC:~/NicLink$ NICLINK_LOG=DEBUG python -m nicsoft.web 2>&1 | ts '[%H:%M:%S]' | grep -E "get_fen lent|fen_lock|IllegalMove|await_move|TOUR"
+-[20:20:47] [TOUR] début tour HUMAIN (0.00s depuis dernier tour)
+-[20:20:51] [TIMING] await_move: 0.36s — move=d2d4
+-[20:20:51] [TOUR] fin tour HUMAIN: 4.17s
+-[20:20:51] [TOUR] début tour STOCKFISH (4.17s depuis dernier tour)
+-[20:20:55] [TOUR] fin tour STOCKFISH: 3.15s
+-[20:20:55] [TOUR] début tour HUMAIN (3.15s depuis dernier tour)
+-[20:21:02] [DRIVER] IllegalMove après stabilisation: rnbqkbnr/pppp1ppp/4p
+-[20:21:03] [TIMING] await_move: 2.69s — move=e2e4
+-[20:21:03] [TOUR] fin tour HUMAIN: 8.41s
+-[20:21:03] [TOUR] début tour STOCKFISH (8.41s depuis dernier tour)
+-[20:21:07] [TOUR] fin tour STOCKFISH: 4.22s
+-[20:21:07] [TOUR] début tour HUMAIN (4.22s depuis dernier tour)
+-[20:21:11] [TIMING] await_move: 3.66s — move=f2f3
+-[20:21:38] [TOUR] fin tour HUMAIN: 31.23s
+-[20:21:38] [TOUR] début tour STOCKFISH (31.23s depuis dernier tour)
+-[20:21:42] [TOUR] fin tour STOCKFISH: 4.08s
+-[20:21:42] [TOUR] début tour HUMAIN (4.08s depuis dernier tour)
+-[20:21:47] [TIMING] await_move: 3.60s — move=g2g3
+-[20:21:47] [TOUR] fin tour HUMAIN: 4.67s
+-[20:21:47] [TOUR] début tour STOCKFISH (4.67s depuis dernier tour)
+-[20:21:50] [TOUR] fin tour STOCKFISH: 3.18s
+-[20:21:50] [TOUR] début tour HUMAIN (3.18s depuis dernier tour)
+-[20:22:55] [TIMING] await_move: 30.96s — move=g1e2
+-[20:22:56] [TOUR] fin tour HUMAIN: 65.71s
+-[20:22:56] [TOUR] début tour STOCKFISH (65.71s depuis dernier tour)
+-[20:23:00] [TOUR] fin tour STOCKFISH: 3.82s
+-[20:23:00] [TOUR] début tour HUMAIN (3.82s depuis dernier tour)
+-^C
+-(venv) alain@alain-PC:~/NicLink$ 
+-
+-
+# (diff du fichier suivant)
+diff --git a/TRAVAIL_EN_COURS/fichier usb.txt b/TRAVAIL_EN_COURS/fichier usb.txt
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index 5cd79a3..0000000
+# (avant — fichier suivant)
+--- a/TRAVAIL_EN_COURS/fichier usb.txt	
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (117 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,117 +0,0 @@
+-alain@alain-PC:~$ sudo dmesg -w | grep -i "usb\|error\|reset\|disconnect"
+-[    0.231802] ACPI: bus type USB registered
+-[    0.231824] usbcore: registered new interface driver usbfs
+-[    0.231832] usbcore: registered new interface driver hub
+-[    0.231839] usbcore: registered new device driver usb
+-[    0.279776] pci 0000:00:1a.0: quirk_usb_early_handoff+0x0/0x190 took 15251 usecs
+-[    0.295772] pci 0000:00:1d.0: quirk_usb_early_handoff+0x0/0x190 took 15597 usecs
+-[    0.355148] ehci-pci 0000:00:1a.0: new USB bus registered, assigned bus number 1
+-[    0.365743] ehci-pci 0000:00:1a.0: USB 2.0 started, EHCI 1.00
+-[    0.365817] usb usb1: New USB device found, idVendor=1d6b, idProduct=0002, bcdDevice= 6.17
+-[    0.365821] usb usb1: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+-[    0.365823] usb usb1: Product: EHCI Host Controller
+-[    0.365824] usb usb1: Manufacturer: Linux 6.17.0-20-generic ehci_hcd
+-[    0.365826] usb usb1: SerialNumber: 0000:00:1a.0
+-[    0.365990] hub 1-0:1.0: USB hub found
+-[    0.366331] ehci-pci 0000:00:1d.0: new USB bus registered, assigned bus number 2
+-[    0.376649] ehci-pci 0000:00:1d.0: USB 2.0 started, EHCI 1.00
+-[    0.376740] usb usb2: New USB device found, idVendor=1d6b, idProduct=0002, bcdDevice= 6.17
+-[    0.376744] usb usb2: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+-[    0.376746] usb usb2: Product: EHCI Host Controller
+-[    0.376748] usb usb2: Manufacturer: Linux 6.17.0-20-generic ehci_hcd
+-[    0.376750] usb usb2: SerialNumber: 0000:00:1d.0
+-[    0.376931] hub 2-0:1.0: USB hub found
+-[    0.466618] RAS: Correctable Errors collector initialized.
+-[    0.601653] usb 1-1: new high-speed USB device number 2 using ehci-pci
+-[    0.618648] usb 2-1: new high-speed USB device number 2 using ehci-pci
+-[    0.728969] usb 1-1: New USB device found, idVendor=8087, idProduct=0024, bcdDevice= 0.00
+-[    0.728977] usb 1-1: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+-[    0.736889] hub 1-1:1.0: USB hub found
+-[    0.744090] usb 2-1: New USB device found, idVendor=8087, idProduct=0024, bcdDevice= 0.00
+-[    0.744097] usb 2-1: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+-[    0.751124] hub 2-1:1.0: USB hub found
+-[    1.017667] usb 1-1.1: new full-speed USB device number 3 using ehci-pci
+-[    1.089667] usb 2-1.2: new high-speed USB device number 3 using ehci-pci
+-[    1.105935] usb 1-1.1: New USB device found, idVendor=2d80, idProduct=8003, bcdDevice= 1.00
+-[    1.105945] usb 1-1.1: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+-[    1.105949] usb 1-1.1: Product: Chessnut Air
+-[    1.105952] usb 1-1.1: Manufacturer: Chessnut
+-[    1.105954] usb 1-1.1: SerialNumber: Chessnut
+-[    1.142841] ACPI BIOS Error (bug): Could not resolve symbol [\_SB.PCI0.SAT0.SPT0._GTF.DSSP], AE_NOT_FOUND (20250404/psargs-332)
+-[    1.142861] ACPI Error: Aborting method \_SB.PCI0.SAT0.SPT0._GTF due to previous error (AE_NOT_FOUND) (20250404/psparse-529)
+-[    1.143130] ACPI BIOS Error (bug): Could not resolve symbol [\_SB.PCI0.SAT0.SPT0._GTF.DSSP], AE_NOT_FOUND (20250404/psargs-332)
+-[    1.143148] ACPI Error: Aborting method \_SB.PCI0.SAT0.SPT0._GTF due to previous error (AE_NOT_FOUND) (20250404/psparse-529)
+-[    1.145072] ACPI BIOS Error (bug): Could not resolve symbol [\_SB.PCI0.SAT0.SPT1._GTF.DSSP], AE_NOT_FOUND (20250404/psargs-332)
+-[    1.145090] ACPI Error: Aborting method \_SB.PCI0.SAT0.SPT1._GTF due to previous error (AE_NOT_FOUND) (20250404/psparse-529)
+-[    1.146079] ACPI BIOS Error (bug): Could not resolve symbol [\_SB.PCI0.SAT0.SPT1._GTF.DSSP], AE_NOT_FOUND (20250404/psargs-332)
+-[    1.146096] ACPI Error: Aborting method \_SB.PCI0.SAT0.SPT1._GTF due to previous error (AE_NOT_FOUND) (20250404/psparse-529)
+-[    1.163611] usb 1-1.2: new low-speed USB device number 4 using ehci-pci
+-[    1.202424] usbcore: registered new interface driver usbhid
+-[    1.202429] usbhid: USB HID core driver
+-[    1.208351] input: Chessnut Chessnut Air Keyboard as /devices/pci0000:00/0000:00:1a.0/usb1/1-1/1-1.1/1-1.1:1.0/0003:2D80:8003.0001/input/input2
+-[    1.236693] usb 2-1.2: New USB device found, idVendor=0bc2, idProduct=ab28, bcdDevice= 1.00
+-[    1.236705] usb 2-1.2: New USB device strings: Mfr=2, Product=3, SerialNumber=1
+-[    1.236710] usb 2-1.2: Product: BUP SL
+-[    1.236713] usb 2-1.2: Manufacturer: Seagate
+-[    1.236716] usb 2-1.2: SerialNumber: NA9S4E21
+-[    1.244887] usbcore: registered new interface driver usb-storage
+-[    1.247519] usbcore: registered new interface driver uas
+-[    1.259197] usb 1-1.2: New USB device found, idVendor=046d, idProduct=c31c, bcdDevice=64.00
+-[    1.259206] usb 1-1.2: New USB device strings: Mfr=1, Product=2, SerialNumber=0
+-[    1.259210] usb 1-1.2: Product: USB Keyboard
+-[    1.259213] usb 1-1.2: Manufacturer: Logitech
+-[    1.259867] hid-generic 0003:2D80:8003.0001: input,hiddev0,hidraw0: USB HID v1.11 Keyboard [Chessnut Chessnut Air] on usb-0000:00:1a.0-1.1/input0
+-[    1.264755] input: Logitech USB Keyboard as /devices/pci0000:00/0000:00:1a.0/usb1/1-1/1-1.2/1-1.2:1.0/0003:046D:C31C.0002/input/input4
+-[    1.301662] usb 2-1.5: new full-speed USB device number 4 using ehci-pci
+-[    1.316824] hid-generic 0003:046D:C31C.0002: input,hidraw1: USB HID v1.10 Keyboard [Logitech USB Keyboard] on usb-0000:00:1a.0-1.2/input0
+-[    1.323062] input: Logitech USB Keyboard Consumer Control as /devices/pci0000:00/0000:00:1a.0/usb1/1-1/1-1.2/1-1.2:1.1/0003:046D:C31C.0003/input/input5
+-[    1.373785] input: Logitech USB Keyboard System Control as /devices/pci0000:00/0000:00:1a.0/usb1/1-1/1-1.2/1-1.2:1.1/0003:046D:C31C.0003/input/input6
+-[    1.373907] hid-generic 0003:046D:C31C.0003: input,hidraw2: USB HID v1.10 Device [Logitech USB Keyboard] on usb-0000:00:1a.0-1.2/input1
+-[    1.416103] usb 2-1.5: New USB device found, idVendor=3151, idProduct=3020, bcdDevice= 0.02
+-[    1.416116] usb 2-1.5: New USB device strings: Mfr=1, Product=2, SerialNumber=0
+-[    1.416120] usb 2-1.5: Product: Wireless Device
+-[    1.416131] usb 2-1.5: Manufacturer: YICHIP
+-[    1.424987] input: YICHIP Wireless Device as /devices/pci0000:00/0000:00:1d.0/usb2/2-1/2-1.5/2-1.5:1.0/0003:3151:3020.0004/input/input7
+-[    1.475952] hid-generic 0003:3151:3020.0004: input,hidraw3: USB HID v2.00 Keyboard [YICHIP Wireless Device] on usb-0000:00:1d.0-1.5/input0
+-[    1.490771] input: YICHIP Wireless Device Mouse as /devices/pci0000:00/0000:00:1d.0/usb2/2-1/2-1.5/2-1.5:1.1/0003:3151:3020.0005/input/input8
+-[    1.490946] input: YICHIP Wireless Device System Control as /devices/pci0000:00/0000:00:1d.0/usb2/2-1/2-1.5/2-1.5:1.1/0003:3151:3020.0005/input/input9
+-[    1.541833] input: YICHIP Wireless Device Consumer Control as /devices/pci0000:00/0000:00:1d.0/usb2/2-1/2-1.5/2-1.5:1.1/0003:3151:3020.0005/input/input10
+-[    1.542013] hid-generic 0003:3151:3020.0005: input,hiddev1,hidraw4: USB HID v2.00 Mouse [YICHIP Wireless Device] on usb-0000:00:1d.0-1.5/input1
+-[    1.605698] usb 2-1.6: new full-speed USB device number 5 using ehci-pci
+-[    1.693481] usb 2-1.6: New USB device found, idVendor=0bda, idProduct=a728, bcdDevice= 2.00
+-[    1.693492] usb 2-1.6: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+-[    1.693495] usb 2-1.6: Product: Bluetooth 5.4 Radio
+-[    1.693498] usb 2-1.6: Manufacturer: Realtek
+-[    1.693501] usb 2-1.6: SerialNumber: 00E04C239987
+-[    6.771649] usbcore: registered new interface driver btusb
+-[13040.747317] usb 2-1.6: reset full-speed USB device number 5 using ehci-pci
+-[13040.920944] ACPI BIOS Error (bug): Could not resolve symbol [\_SB.PCI0.SAT0.SPT0._GTF.DSSP], AE_NOT_FOUND (20250404/psargs-332)
+-[13040.920962] ACPI Error: Aborting method \_SB.PCI0.SAT0.SPT0._GTF due to previous error (AE_NOT_FOUND) (20250404/psparse-529)
+-[13040.921195] ACPI BIOS Error (bug): Could not resolve symbol [\_SB.PCI0.SAT0.SPT0._GTF.DSSP], AE_NOT_FOUND (20250404/psargs-332)
+-[13040.921207] ACPI Error: Aborting method \_SB.PCI0.SAT0.SPT0._GTF due to previous error (AE_NOT_FOUND) (20250404/psparse-529)
+-[13040.927368] ACPI BIOS Error (bug): Could not resolve symbol [\_SB.PCI0.SAT0.SPT1._GTF.DSSP], AE_NOT_FOUND (20250404/psargs-332)
+-[13040.927385] ACPI Error: Aborting method \_SB.PCI0.SAT0.SPT1._GTF due to previous error (AE_NOT_FOUND) (20250404/psparse-529)
+-[13040.937895] ACPI BIOS Error (bug): Could not resolve symbol [\_SB.PCI0.SAT0.SPT1._GTF.DSSP], AE_NOT_FOUND (20250404/psargs-332)
+-[13040.937911] ACPI Error: Aborting method \_SB.PCI0.SAT0.SPT1._GTF due to previous error (AE_NOT_FOUND) (20250404/psparse-529)
+-[13046.006314] usb 1-1.1: reset full-speed USB device number 3 using ehci-pci
+-[13051.574863] usb 1-1.1: PM: dpm_run_callback(): usb_dev_resume returns -5
+-[13051.574880] usb 1-1.1: PM: failed to resume async: error -5
+-[13051.577186] usb 1-1.1: USB disconnect, device number 3
+-[13051.648334] usb 1-1.1: new full-speed USB device number 5 using ehci-pci
+-[13051.738838] usb 1-1.1: New USB device found, idVendor=2d80, idProduct=8003, bcdDevice= 1.00
+-[13051.738846] usb 1-1.1: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+-[13051.738848] usb 1-1.1: Product: Chessnut Air
+-[13051.738850] usb 1-1.1: Manufacturer: Chessnut
+-[13051.738852] usb 1-1.1: SerialNumber: Chessnut
+-[13051.741720] usbhid 1-1.1:1.0: can't add hid device: -75
+-[13051.742344] usbhid 1-1.1:1.0: probe with driver usbhid failed with error -75
+-[13226.464804] usb 1-1.1: USB disconnect, device number 5
+-[13227.205652] usb 1-1.1: new full-speed USB device number 6 using ehci-pci
+-[13227.294302] usb 1-1.1: New USB device found, idVendor=2d80, idProduct=8003, bcdDevice= 1.00
+-[13227.294312] usb 1-1.1: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+-[13227.294317] usb 1-1.1: Product: Chessnut Air
+-[13227.294320] usb 1-1.1: Manufacturer: Chessnut
+-[13227.294322] usb 1-1.1: SerialNumber: Chessnut
+-[13227.297550] input: Chessnut Chessnut Air Keyboard as /devices/pci0000:00/0000:00:1a.0/usb1/1-1/1-1.1/1-1.1:1.0/0003:2D80:8003.0006/input/input19
+-[13227.348112] hid-generic 0003:2D80:8003.0006: input,hiddev0,hidraw0: USB HID v1.11 Keyboard [Chessnut Chessnut Air] on usb-0000:00:1a.0-1.1/input0
+-
+# (diff du fichier suivant)
+diff --git a/activate b/activate
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index 7e8ba10..0000000
+# (avant — fichier suivant)
+--- a/activate
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (6 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,6 +0,0 @@
+-#!/usr/bin/env bash
+-
+-cd $(dirname -- "$( readlink -f -- "$0"; )";);
+-
+-. ./.env/venv/bin/activate
+-
+# (diff du fichier suivant)
+diff --git a/bip.py b/bip.py
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100644
+# (index — ignorable)
+index b582517..0000000
+# (avant — fichier suivant)
+--- a/bip.py
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (19 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,19 +0,0 @@
+-import math, wave, struct, tempfile, os
+-
+-f = 440       # fréquence Hz
+-dur = 0.4     # durée secondes
+-sr = 44100    # sample rate
+-
+-samples = [int(32767 * math.sin(2 * math.pi * f * t / sr)) for t in range(int(sr * dur))]
+-data = struct.pack('<' + 'h' * len(samples), *samples)
+-
+-tmp = tempfile.mktemp(suffix='.wav')
+-w = wave.open(tmp, 'w')
+-w.setnchannels(1)
+-w.setsampwidth(2)
+-w.setframerate(sr)
+-w.writeframes(data)
+-w.close()
+-
+-os.system(f'aplay {tmp} 2>/dev/null')
+-os.remove(tmp)
+# (diff du fichier suivant)
+diff --git a/cas-pause-pedagogique.png b/cas-pause-pedagogique.png
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100644
+# (index — ignorable)
+index a70c672..0000000
+Binary files a/cas-pause-pedagogique.png and /dev/null differ
+# (diff du fichier suivant)
+diff --git a/cas_bouton_pause.png b/cas_bouton_pause.png
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100644
+# (index — ignorable)
+index fa5cc5d..0000000
+Binary files a/cas_bouton_pause.png and /dev/null differ
+# (diff du fichier suivant)
+diff --git a/clean.sh b/clean.sh
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index 042a139..0000000
+# (avant — fichier suivant)
+--- a/clean.sh
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (4 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,4 +0,0 @@
+-#!/usr/bin/env bash
+-
+-SCRIPT_DIR=$(cd $(dirname "${BASH_SOURCE[0]}") && pwd)
+-rm -r $SCRIPT_DIR/build/*
+# (diff du fichier suivant)
+diff --git a/lichess b/lichess
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 120000
+# (index — ignorable)
+index d285a9b..0000000
+# (avant — fichier suivant)
+--- a/lichess
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (1 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1 +0,0 @@
+-./nicsoft/lichess
+\ No newline at end of file
+# (diff du fichier suivant)
+diff --git a/lightsout.sh b/lightsout.sh
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index e876590..0000000
+# (avant — fichier suivant)
+--- a/lightsout.sh
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (7 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,7 +0,0 @@
+-#!/usr/bin/env bash
+-# niclink utility script
+-
+-SCRIPT_DIR=$(cd $(dirname "${BASH_SOURCE[0]}") && pwd)
+-
+-. $SCRIPT_DIR/activate
+-python $SCRIPT_DIR/nicsoft/turn_out_all_lights.py
+# (diff du fichier suivant)
+diff --git a/niclink.pth_example b/niclink.pth_example
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index 88eb543..0000000
+# (avant — fichier suivant)
+--- a/niclink.pth_example
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (1 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1 +0,0 @@
+-/home/nrv/dev/NicLink/nicsoft/
+# (diff du fichier suivant)
+diff --git a/niclink_icon.png b/niclink_icon.png
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index d7cbbb7..0000000
+Binary files a/niclink_icon.png and /dev/null differ
+# (diff du fichier suivant)
+diff --git a/openings.pgn b/openings.pgn
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index e69de29..0000000
+# (diff du fichier suivant)
+diff --git a/ouvertures perso/Chigorine1.pgn b/ouvertures perso/Chigorine1.pgn
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100644
+# (index — ignorable)
+index 2e53c62..0000000
+# (avant — fichier suivant)
+--- a/ouvertures perso/Chigorine1.pgn	
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (5 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,5 +0,0 @@
+-[Event "Chigorine — Ligne 1"]
+-[CampSuggere "black"]
+-[InitMoves "d2d4 d7d5 c2c4 "]
+-
+-1. d4 d5 2. c4 Nc6 3. c4xd5 Dxd5 4. Nc3 Dxd4
+# (diff du fichier suivant)
+diff --git a/ouvertures perso/Chigorine2.pgn b/ouvertures perso/Chigorine2.pgn
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100644
+# (index — ignorable)
+index e09d01c..0000000
+# (avant — fichier suivant)
+--- a/ouvertures perso/Chigorine2.pgn	
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (5 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,5 +0,0 @@
+-[Event "Chigorine — Ligne 2"]
+-[CampSuggere "black"]
+-[InitMoves "d2d4 d7d5 c2c4 b8c6"]
+-
+-1. d4 d5 2. c4 Nc6 3. c4xd5 Dxd5 4. e3 e5 5. Nc3 Bb4 6. Bd2 Bxc3 7. c2xc3
+# (diff du fichier suivant)
+diff --git a/ouvertures perso/Chigorine3.pgn b/ouvertures perso/Chigorine3.pgn
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100644
+# (index — ignorable)
+index b080588..0000000
+# (avant — fichier suivant)
+--- a/ouvertures perso/Chigorine3.pgn	
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (5 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,5 +0,0 @@
+-[Event "Chigorine — Ligne 2"]
+-[CampSuggere "black"]
+-[InitMoves "d2d4 d7d5 c2c4 b8c6"]
+-
+-1. d4 d5 2. c4 Nc6 3. c4xd5 Dxd5 4. e3 e5 5. Nc3 Bb4 6. Bd2 Bxc3 7. Bxc3 e5xd4 8. Ne7 Nf6
+# (diff du fichier suivant)
+diff --git a/plateau incorrect.png b/plateau incorrect.png
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index fe48211..0000000
+Binary files a/plateau incorrect.png and /dev/null differ
+# (diff du fichier suivant)
+diff --git a/runLichess.sh b/runLichess.sh
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index fa9fb0d..0000000
+# (avant — fichier suivant)
+--- a/runLichess.sh
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (10 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,10 +0,0 @@
+-#!/usr/bin/env bash
+-
+-echo "NicLink GO!"
+-
+-SCRIPT_DIR=$(cd $(dirname "${BASH_SOURCE[0]}") && pwd)
+-
+-. $SCRIPT_DIR/activate
+-
+-# we are brought to the script dir by activate
+-python -m nicsoft.lichess
+# (diff du fichier suivant)
+diff --git a/setupNicLink.sh b/setupNicLink.sh
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index 60bb9c6..0000000
+# (avant — fichier suivant)
+--- a/setupNicLink.sh
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (36 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,36 +0,0 @@
+-#!/usr/bin/env bash
+-# make a special test_NicLink dir
+-echo "WARN - will fetch python requirements, but Not C++ ones"
+-
+-SCRIPT_DIR=$(cd $(dirname "${BASH_SOURCE[0]}") && pwd)
+-
+-echo "cloning submodules"
+-cd SCRIPT_DIR
+-
+-git submodule update --init --recursive .
+-git pull
+-
+-echo "making python virtual env"
+-python3 -m venv venv 
+-
+-echo "entering the venv"
+-. ${SCRIPT_DIR}/venv/bin/activate
+-
+-echo "ensuring the python package manager is installed"
+-python -m ensurepip --upgrade
+-
+-echo "installing berserk from the github. The one from pip does not work currently"
+-cd ${SCRIPT_DIR}
+-git clone https://github.com/lichess-org/berserk.git/
+-
+-python -m pip install ${SCRIPT_DIR}/berserk
+-
+-
+-cd ${SCRIPT_DIR}/NicLink
+-echo "installing python deps"
+-python -m pip install -r requirements.txt
+-
+-
+-echo "building NicLink"
+-${SCRIPT_DIR}/updateNicLink.sh
+-
+# (diff du fichier suivant)
+diff --git a/standalone_chessclock/.gitignore b/standalone_chessclock/.gitignore
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index a85d78c..0000000
+# (avant — fichier suivant)
+--- a/standalone_chessclock/.gitignore
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (2 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,2 +0,0 @@
+-lichess_token
+-**/*.log
+# (diff du fichier suivant)
+diff --git a/standalone_chessclock/clock_start.sh b/standalone_chessclock/clock_start.sh
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index 5092447..0000000
+# (avant — fichier suivant)
+--- a/standalone_chessclock/clock_start.sh
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (7 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,7 +0,0 @@
+-#!/usr/bin/env bash
+-
+-THIS_DIR=$(cd $(dirname "${BASH_SOURCE[0]}") && pwd)
+-
+-. ~/git/NicLink/.env/venv/bin/activate
+-
+-python $THIS_DIR/standalone_chessclock.py
+# (diff du fichier suivant)
+diff --git a/standalone_chessclock/debug_chess_clock.sh b/standalone_chessclock/debug_chess_clock.sh
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index 4e6524a..0000000
+# (avant — fichier suivant)
+--- a/standalone_chessclock/debug_chess_clock.sh
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (7 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,7 +0,0 @@
+-#!/usr/bin/env bash
+-
+-THIS_DIR=$(cd $(dirname "${BASH_SOURCE[0]}") && pwd)
+-
+-. ~/dev/NicLink/pyenv_up.sh
+-
+-python -m pdb $THIS_DIR/standalone_chessclock.py
+# (diff du fichier suivant)
+diff --git a/standalone_chessclock/standalone_chessclock.py b/standalone_chessclock/standalone_chessclock.py
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index 3b8fabe..0000000
+# (avant — fichier suivant)
+--- a/standalone_chessclock/standalone_chessclock.py
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (661 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,661 +0,0 @@
+-#! /bin/python
+-#  chess_clock is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or ( at your option ) any later version.
+-#
+-#  chess_clock is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+-#
+-#  You should have received a copy of the GNU General Public License along with chess_clock. If not, see <https://www.gnu.org/licenses/>.
+-
+-import logging
+-import os
+-import sys
+-import threading
+-from datetime import datetime, timedelta
+-from threading import Event, Lock, Thread
+-from time import sleep
+-
+-import berserk
+-import readchar
+-import serial
+-from berserk import Client
+-from berserk.exceptions import ResponseError
+-
+-### events ###
+-# is the lcd being used for a game
+-lcd_displaying_game = Event()
+-
+-
+-### exceptions ###
+-class NicLinkGameOver(Exception):
+-    """the game on NicLink is over"""
+-
+-    def __init__(self, message):
+-        self.message = message
+-
+-
+-### logger stuff ###
+-logger = logging.getLogger("chess_clock")
+-
+-consoleHandler = logging.StreamHandler(sys.stdout)
+-
+-logger.setLevel(logging.DEBUG)
+-consoleHandler.setLevel(logging.DEBUG)
+-# logger.setLevel(logging.ERROR) for production
+-# consoleHandler.setLevel(logging.ERROR)
+-
+-formatter = logging.Formatter("%(asctime)s %(levelname)s %(module)s %(message)s")
+-
+-consoleHandler.setFormatter(formatter)
+-logger.addHandler(consoleHandler)
+-
+-# logging to a file
+-fileHandler = logging.FileHandler("ChessClock.log")
+-fileHandler.setLevel(logging.DEBUG)
+-
+-logger.addHandler(fileHandler)
+-
+-
+-def log_handled_exception(exception) -> None:
+-    """log a handled exception"""
+-    global logger
+-    logger.error("Exception handled: %s", exception)
+-
+-
+-"""
+-snip from chess_clock.ino
+-  case '2':
+-    signalGameOver();
+-    break;
+-  case '3':
+-    // show a str on LED read from Serial
+-    printSerialMessage();
+-    break;
+-  case '4':
+-    // start a new game
+-    newGame();
+-    break;
+-  case '5':
+-    // show the splay
+-    niclink_splash();
+-    break;
+-  case '6':
+-    // white one, and the game is over
+-    white_won();
+-    break;
+-  case '7':
+-    // black won the game
+-    black_won();
+-    break;
+-  case '8':
+-    // game is a draw
+-    drawn_game();
+-    break;
+-  case '@':
+-    //say hello
+-    lcd.clear();
+-    lcd.setCursor(1, 0);
+-    lcd.print("Hi there");
+-    break;
+-"""
+-
+-
+-class ChessClock:
+-    """a controlling class to encapsulate and facilitate interaction's
+-    with Arduino chess clock. Starts the game time when this object is
+-    created
+-
+-    Attributes
+-    ----------
+-        logger : logger
+-            self explanitory I think
+-        chess_clock : Serial
+-            the serial port that the niclink(tm) ardino
+-            chess clock is connected to
+-        lcd_length : int
+-            the char lingth of the lcd in chess clock
+-        displayed_wtime : timedelta
+-            the last recived white time delta from lila
+-        displayed_btime : timedelta
+-            the last recived black time delta from lila
+-        move_time : datetime | None
+-            time of the last move
+-        white_to_move : bool
+-            is it whites move?
+-
+-    """
+-
+-    def __init__(
+-        self,
+-        serial_port: str,
+-        baudrate: int,
+-        timeout: float,
+-        berserk_board_client: Client = None,
+-        logger=None,
+-    ):  # , port="/dev/ttyACM0", baudrate=115200, timeout=100.0) -> None:
+-        """initialize connection with ardino, and record start time"""
+-        # the refresh rate of the lcd
+-        self.TIME_REFRESH = 0.5
+-        if logger is not None:
+-            self.logger = logger
+-        else:
+-            raise Exception("no logger")
+-        self.chess_clock = serial.Serial(
+-            port=serial_port, baudrate=baudrate, timeout=timeout
+-        )
+-        self.lcd_length = 16
+-        # times to be displayed on lcd
+-        self.displayed_btime: timedelta = None
+-        self.displayed_wtime: timedelta = None
+-        # the countdown thread var
+-        self.countdown: None | Thread = None
+-        self.move_time: None | datetime = None
+-        # event to signal white to move
+-        self.white_to_move: threading.Event = Event()
+-        # event to signal game over
+-        self.game_over_event: threading.Event = Event()
+-        # event telling if clock is initialized
+-        self.clock_initialized: threading.Event = Event()
+-        # a lock for accessing the time vars
+-        self.time_lock = Lock()
+-        # lcd use lock
+-        self.lcd_lock = Lock()
+-
+-        # time left for the player that moved, at move time
+-        self.time_left_at_move: timedelta = None
+-
+-        if berserk_board_client is None:
+-            raise Exception("No board client")
+-
+-        self.berserk_board_client = berserk_board_client
+-
+-        self.logger.info("ChessClock initialized")
+-
+-    def move_made(self, state: dict) -> None:
+-        """a move was made in the game this chess clock is for.
+-        self.move_time is set.
+-        """
+-        with self.time_lock:
+-            # record the move_time
+-            self.move_time = datetime.now()
+-            self.logger.info("\nrecorded move time: %s\n", self.move_time)
+-            self.displayed_wtime = state["wtime"]
+-            self.displayed_btime = state["btime"]
+-
+-            self.logger.info(
+-                "type(self.displayed_wtime): %s\n", type(self.displayed_wtime)
+-            )
+-            # HACK: the first "wtime" and "btime" are in millis not a timedelta
+-            if isinstance(self.displayed_wtime, int):
+-                self.displayed_wtime = timedelta(milliseconds=self.displayed_wtime)
+-                # if one, then both
+-                self.displayed_btime = timedelta(milliseconds=self.displayed_btime)
+-
+-            # record the time player has left at move time
+-            if self.white_to_move.is_set():
+-                self.time_left_at_move = self.displayed_wtime
+-                # clear event
+-                self.white_to_move.clear()
+-            else:
+-                self.time_left_at_move = self.displayed_btime
+-                # set white_to move
+-                self.white_to_move.set()
+-
+-    def update_lcd(self, wtime: timedelta, btime: timedelta) -> None:
+-        """keep the external timer displaying correct time.
+-        The time stamp shuld be formated with both w and b timestamp
+-        set up to display correctly on a 16 x 2 lcd
+-        """
+-        timestamp = self.create_timestamp(wtime, btime)
+-        self.logger.info(
+-            "\n\nTIMESTAMP: %s white_to_move: %s\n",
+-            timestamp,
+-            self.white_to_move.is_set(),
+-        )
+-        self.send_string(timestamp)
+-
+-    def game_over(self, display_message=True) -> None:
+-        """Case 2: signal game over, w ASCII 2 and stop counting down"""
+-        global lcd_displaying_game
+-        self.logger.info("game_over(...) entered")
+-        self.game_over_event.set()
+-        lcd_displaying_game.clear()
+-        if display_message:
+-            self.chess_clock.write("2".encode("ascii"))
+-
+-        if self.displayed_btime is not None and self.displayed_wtime is not None:
+-            self.logger.info(
+-                "\nChessClock.game_over() entered w current ts: %s\n"
+-                % (self.create_timestamp(self.displayed_wtime, self.displayed_btime))
+-            )
+-        else:
+-            self.logger.warning(
+-                "ChessClock.game_over(): self.displayed_btime or self.displayed_wtime is None"
+-            )
+-        self.logger.info("ChessClock.game_over(...) called")
+-
+-    def send_string(self, message: str) -> None:
+-        """Case 3: send a String to the external chess clock"""
+-        # because there are multiple threads that call this function
+-        with self.lcd_lock:
+-            # tell the clock we want to display a msg
+-            self.chess_clock.write("3".encode("ascii"))
+-            # send the message
+-            self.chess_clock.write(message.encode("ascii"))
+-
+-    def start_new_game(
+-        self,
+-        game_id: str,
+-    ) -> None:
+-        """Case 4: signal clock to start a new game
+-        reset all the game time data.
+-        """
+-        logger.info("\nchess_clock: start_new_game entered: \n")
+-
+-        # clear game_over_event
+-        self.game_over_event.clear()
+-
+-        """Do not display that a new game has been started,
+-        keep the time of the new game up
+-        old: self.chess_clock.write("4".encode("ascii"))
+-        """
+-        # white_to_move is true at begining of game
+-        self.white_to_move.set()
+-
+-        # stream the incoming game events
+-        self.stream = self.berserk_board_client.stream_game_state(game_id)
+-
+-        # handle the game stream
+-        for event in self.stream:
+-            if "type" in event:
+-                self.logger.info(
+-                    "\nevent['type'] in stream_game_state: %s\n full event: %s\n",
+-                    event["type"],
+-                    event,
+-                )
+-
+-            if event["type"] == "gameState":
+-                # HACK:
+-                """HACK: if clock is not yet initialized, do that.
+-                We need an event from the stream to init"""
+-                if not self.clock_initialized.is_set():
+-                    logger.info("clock_not_initialized. event: %s", event)
+-                    self.initialize_clock(event)
+-                # check status of game
+-                if "status" in event:
+-                    if event["status"] == "started":
+-                        # most commonly expected
+-                        self.move_made(event)
+-
+-                    if event["status"] == "resign":
+-                        self.logger.info(
+-                            "\n!!! RESIGN RECIVED !!! (in ChessClock.start_new_game(...)\n"
+-                        )
+-                        if event["winner"] == "white":
+-                            self.white_won()
+-                        else:
+-                            self.black_won()
+-
+-                    elif event["status"] == "mate":
+-                        self.logger.info(
+-                            "\n!!! MATE RECIVED !!! (in ChessClock.start_new_game(...)\n"
+-                        )
+-                        if event["winner"] == "white":
+-                            self.white_won()
+-                        else:
+-                            self.black_won()
+-                    else:
+-                        logger.warning(
+-                            "UNKNOWN 'status': \n\n event['status'] !=  'started': event['status'] is %s.",
+-                            event["status"],
+-                        )
+-                        raise NotImplementedError("UNKNOWN EVENT: event: %s", event)
+-
+-    def show_splash(self) -> None:
+-        """Case 5: show the nl splash"""
+-        self.chess_clock.write("5".encode("ascii"))
+-
+-    def white_won(self) -> None:
+-        """Case 6: show that white won"""
+-        self.chess_clock.write("6".encode("ascii"))
+-        self.game_over(display_message=False)
+-
+-    def black_won(self) -> None:
+-        """Case 7: show that black won"""
+-        self.chess_clock.write("7".encode("ascii"))
+-        self.game_over(display_message=False)
+-
+-    def drawn_game(self) -> None:
+-        """Case 8: show game is drawn"""
+-        self.chess_clock.write("8".encode("ascii"))
+-        self.game_over(display_message=False)
+-
+-    def initialize_clock(self, gameState: dict) -> None:
+-        """initilize the clock. This involves reading the time from lila event
+-        and displaying the game time on the ext clock
+-        @param initial gameState from berserk
+-        """
+-        self.logger.info(
+-            "\nfunction entered:\ninitialize_clock(...) entered w gameState %s",
+-            gameState,
+-        )
+-
+-        if gameState["type"] != "gameState":
+-            raise RuntimeError("clock inited with an gameState that is not gameState")
+-
+-        # make sure countown is exited
+-        if self.countdown is not None:
+-            if self.countdown.is_alive():
+-                raise Exception("ChessClock.countdown() is still alive")
+-        self.logger.info(
+-            "\nChessClock.is_white_to_move: %s\n",
+-            ChessClock.is_white_to_move(gameState),
+-        )
+-        # allow for joining a game in progress. ie: if it's black's move
+-        if ChessClock.is_white_to_move(gameState):
+-            self.time_left_at_move = gameState["wtime"]
+-            self.white_to_move.set()
+-        else:
+-            self.time_left_at_move = gameState["btime"]
+-            self.white_to_move.clear()
+-
+-        # set time left at move
+-        # init lcd by displaying the starting whit and black times
+-        self.update_lcd(gameState["wtime"], gameState["btime"])
+-
+-        if gameState["moves"] != "":
+-            # start timekeeper thread
+-            self.countdown = Thread(target=self.time_keeper, args=(self,), daemon=True)
+-            self.countdown.start()
+-        else:
+-            self.logger.info(
+-                "ChessClock.initialize_clock(...): clock initialized, but not started.\
+-'hasMoved' not True"
+-            )
+-        # signal that clock is initalized
+-        self.clock_initialized.set()
+-
+-    def display_initial_time(self, state) -> None:
+-        with self.time_lock:
+-            # record the move_time
+-            self.logger.info("\ndisplay inital time entered: %s\n")
+-            wtime = state["wtime"]
+-            btime = state["btime"]
+-
+-            self.logger.info(
+-                "type(self.displayed_wtime): %s\n", type(self.displayed_wtime)
+-            )
+-            # HACK: the first "wtime" and "btime" are in millis not a timedelta
+-            if type(self.displayed_wtime) == int:
+-                self.displayed_wtime = timedelta(milliseconds=self.displayed_wtime)
+-                # if one, then both
+-                self.displayed_btime = timedelta(milliseconds=self.displayed_btime)
+-
+-            self.create_timestamp(wtime, btime)
+-
+-    def create_timestamp(self, wtime: timedelta, btime: timedelta) -> str:
+-        """create timestamp with white and black time for display on lcd
+-        @param: wtime timedelta contaning whites time
+-        @param: btime timedelta contaning blacks time
+-        @returns: a 2 X lcd_length string. It will overflow onto the second row
+-        """
+-        # update the last received btime and wtime
+-        with self.time_lock:
+-            self.displayed_wtime = wtime
+-            self.displayed_btime = btime
+-            # ensure ts uses all the space, needed for lcd side
+-            white_time = f"W: { str(wtime) }"
+-            if len(white_time) > self.lcd_length:
+-                white_time = white_time[: self.lcd_length]
+-            else:
+-                while len(white_time) < self.lcd_length:
+-                    white_time += " "
+-
+-            black_time = f"B: { str(btime) }"
+-            if len(black_time) > self.lcd_length:
+-                black_time = black_time[: self.lcd_length]
+-            else:
+-                while len(black_time) < self.lcd_length:
+-                    black_time += " "
+-
+-            timestamp = f"{white_time}{black_time}"
+-            self.logger.info(
+-                "timestamp created: %s, from timedeltas wtime: %s, and btime: %s",
+-                timestamp,
+-                wtime,
+-                btime,
+-            )
+-            return timestamp
+-
+-    @staticmethod
+-    def did_flag(player_time: timedelta) -> bool:
+-        """check if a timedelta is 0 total_seconds or less. ie: they flaged
+-        @param: player_time (timedelta) - timedelta of how much time a player has
+-        @returns: (bool) if they flaged
+-        """
+-        global logger
+-        logger.info("did_flag(player_time) with player time %s", player_time)
+-        if type(player_time) is timedelta:
+-            if player_time.total_seconds() <= 0:
+-                return True
+-        else:
+-            logger.warning(
+-                "ChessClock.did_flag(player_time): player_time is not a timedelta"
+-            )
+-
+-        return False
+-
+-    @staticmethod
+-    def is_white_to_move(gameState) -> bool:
+-        """set white to move based on a set of " " seperated moves.
+-        If move list is even it is white to move, else Black
+-        @gameState: berserk lila gameState
+-        @returns: if it is whites move
+-        """
+-        global logger
+-        logger.info("is_white_to_move(gameState) entered gameState: %s", gameState)
+-        # if no moves, white to move
+-        if "moves" not in gameState:
+-            return True
+-        else:
+-            moves = gameState["moves"]
+-            return len(moves.split()) % 2 != 0
+-
+-    # TODO: make only update right time
+-    @staticmethod
+-    def time_keeper(chess_clock) -> None:
+-        """keep the time on the lcd correct. using the last time a move was made
+-        @param: chess_clock (ChessClock) - a ChessClock
+-        @raises:
+-            NicLinkGameOver:
+-                - if game_over_event is set
+-                - if white or black flags
+-        """
+-        global logger
+-
+-        while True:
+-            # if the game is over, kill the time_keeper
+-            if chess_clock.game_over_event.is_set():
+-                logger.warning("game_over_event is set")
+-                raise NicLinkGameOver(
+-                    """time_keeper(...) exiting.
+-chess_clock.game_over_event.is_set()"""
+-                )
+-            if chess_clock.move_time is None:
+-                logger.warning("chess_clock.move_time is None")
+-                sleep(chess_clock.TIME_REFRESH)
+-                continue
+-            if chess_clock.time_left_at_move is None:
+-                logger.warning("chess_clock.time_left_at_move is None")
+-                sleep(chess_clock.TIME_REFRESH)
+-                continue
+-            if chess_clock.displayed_btime is None:
+-                logger.warning("chess_clock.displayed_btime is None")
+-                sleep(chess_clock.TIME_REFRESH)
+-                continue
+-            if chess_clock.displayed_wtime is None:
+-                logger.warning("chess_clock.displayed_wtime is None")
+-                sleep(chess_clock.TIME_REFRESH)
+-                continue
+-
+-            # if it is white to move
+-            if chess_clock.white_to_move.is_set():
+-                # breakpoint()
+-                # create a new timedelta with the updated wtime
+-                new_wtime = chess_clock.time_left_at_move - (
+-                    datetime.now() - chess_clock.move_time
+-                )
+-                # check for flag for white
+-                if ChessClock.did_flag(new_wtime):
+-                    chess_clock.white_won()
+-                    # kill the thread
+-                    raise NicLinkGameOver("white flaged")
+-                # update the clock
+-                chess_clock.update_lcd(new_wtime, chess_clock.displayed_btime)
+-            # else black to move
+-            else:
+-                # breakpoint()
+-                # create a new timedelta object w updated b time
+-                new_btime = chess_clock.time_left_at_move - (
+-                    datetime.now() - chess_clock.move_time
+-                )
+-
+-                # check if black has flaged
+-                if ChessClock.did_flag(chess_clock.displayed_btime):
+-                    chess_clock.black_won()
+-                    # kill the thread
+-                    raise NicLinkGameOver("black flaged")
+-                # update the clock
+-                chess_clock.update_lcd(chess_clock.displayed_wtime, new_btime)
+-
+-            sleep(chess_clock.TIME_REFRESH)
+-
+-
+-def handle_game_start(
+-    game_start: dict, berserk_client: Client, chess_clock: ChessClock
+-) -> None:
+-    """handle game start event.
+-    @param game_start - berserk event
+-    @raises: RuntimeError if the chess clock is still handleing a game"""
+-    global logger, lcd_handling_game
+-
+-    game_data = game_start["game"]
+-    # no clock for correspondence
+-    if game_data["speed"] == "correspondence":
+-        logger.info("SKIPPING correspondence game w/ id %s \n", game_data["id"])
+-        return
+-
+-    # clear game_over_event
+-    chess_clock.game_over_event.clear()
+-    # check for correspondance
+-    logger.info("\nhandle_game_start(...) called with game_start: %s", game_start)
+-
+-    # start the chess clock for this game
+-    if not lcd_displaying_game.is_set():
+-        chess_clock.start_new_game(game_data["id"])
+-    else:
+-        raise RuntimeError("lcd displaying game currently")
+-
+-
+-def test_chessclock(chess_clock):
+-    chess_clock.black_won()
+-    readchar.readchar()
+-
+-
+-def main() -> None:
+-    global logger
+-    PORT = "/dev/ttyACM0"
+-    BR = 115200  # baudrate for Serial connection
+-    REFRESH_DELAY = 100.0  # refresh delay for chess_clock
+-    SCRIPT_DIR = os.path.dirname(__file__)
+-    TOKEN_FILE = os.path.join(SCRIPT_DIR, "lichess_token/token")
+-
+-    try:
+-        logger.info("reading token from %s", TOKEN_FILE)
+-        with open(TOKEN_FILE) as f:
+-            token = f.read().strip()
+-
+-    except FileNotFoundError:
+-        print(f"ERROR: cannot find token file")
+-        sys.exit(-1)
+-    except PermissionError:
+-        print(f"ERROR: permission denied on token file")
+-        sys.exit(-1)
+-
+-    try:
+-        session: Session = berserk.TokenSession(token)
+-    except:
+-        e = sys.exc_info()[0]
+-        log_handled_exception(e)
+-        print(f"cannot create session: {e}")
+-        logger.info("cannot create session", e)
+-        sys.exit(-1)
+-
+-    try:
+-        berserk_client: Client = berserk.Client(session)
+-    except KeyboardInterrupt as err:
+-        log_handled_exception(err)
+-        print("KeyboardInterrupt: bye")
+-        sys.exit(0)
+-    except:
+-        e = sys.exc_info()[0]
+-        error_txt = f"cannot create lichess client: {e}"
+-        logger.info(error_txt)
+-        print(error_txt)
+-        sys.exit(-1)
+-
+-    # get username
+-    try:
+-        account_info = berserk_client.account.get()
+-        username = account_info["username"]
+-        print(f"\nUSERNAME: { username }\n")
+-    except KeyboardInterrupt:
+-        print("KeyboardInterrupt: bye")
+-        sys.exit(0)
+-    except:
+-        e = sys.exc_info()[0]
+-        logger.info("cannot get lichess acount info: %s", e)
+-        print(f"cannot get lichess acount info: {e}")
+-        sys.exit(-1)
+-
+-    chess_clock = ChessClock(
+-        PORT,
+-        BR,
+-        REFRESH_DELAY,
+-        berserk_board_client=berserk_client.board,
+-        logger=logger,
+-    )
+-
+-    test_chessclock(chess_clock)
+-    # main program loop
+-    while True:
+-        try:
+-            logger.debug("\n==== event loop ====\n")
+-            print("=== Waiting for lichess event ===")
+-            for event in berserk_client.board.stream_incoming_events():
+-                if event["type"] == "challenge":
+-                    logger.info("challenge received: %s", event)
+-                    print("\n==== Challenge received ====\n")
+-                    print(event)
+-                elif event["type"] == "gameStart":
+-                    logger.info("\n'gameStart' received from stream in main()")
+-                    # a game is starting, it is handled by a function
+-                    handle_game_start(event, berserk_client.board, chess_clock)
+-                elif event["type"] == "gameFull":
+-                    logger.info("\ngameFull received\n")
+-                    if event["status"] == "started":
+-                        print("GAME FULL received")
+-                        raise NotImplementedError("gamefull event: %s", event)
+-
+-        except ResponseError as e:
+-            print(f"ERROR: Invalid server response: {e}")
+-            logger.info("Invalid server response: %s", e)
+-            if "Too Many Requests for url" in str(e):
+-                sleep(150)
+-            else:
+-                # kill the program
+-                raise RuntimeError("UNKNOWN ResponseError %s", e)
+-        # sleep for some time b/f pulling endpoint again
+-        sleep(100)
+-
+-
+-if __name__ == "__main__":
+-    main()
+# (diff du fichier suivant)
+diff --git a/start_chessnut.sh b/start_chessnut.sh
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index a2acd15..0000000
+# (avant — fichier suivant)
+--- a/start_chessnut.sh
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (7 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,7 +0,0 @@
+-#!/bin/bash
+-
+-cd ~/NicLink || exit
+-
+-source venv/bin/activate
+-
+-python -m nicsoft.play_stockfish
+# (diff du fichier suivant)
+diff --git a/start_niclink.sh b/start_niclink.sh
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index 2fbd4c4..0000000
+# (avant — fichier suivant)
+--- a/start_niclink.sh
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (5 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,5 +0,0 @@
+-#!/bin/bash
+-sudo systemctl stop ModemManager
+-cd ~/NicLink
+-source venv/bin/activate
+-python -m nicsoft.play_menu
+# (diff du fichier suivant)
+diff --git a/testNicLink.sh b/testNicLink.sh
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index f691eb1..0000000
+# (avant — fichier suivant)
+--- a/testNicLink.sh
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (10 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,10 +0,0 @@
+-#!/usr/bin/env bash
+-
+-SCRIPT_DIR=$( dirname $( readlink -m $( type -p ${0} )))
+-
+-cd $SCRIPT_DIR
+-
+-# enter the python venv
+-source ./activate
+-
+-python ./nicsoft/test/__main__.py
+# (diff du fichier suivant)
+diff --git a/things_learned.md b/things_learned.md
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index 5461410..0000000
+# (avant — fichier suivant)
+--- a/things_learned.md
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (22 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,22 +0,0 @@
+-# things I have learned about chessnut:
+-
+-    ```cpp
+-    chessLink -> switchUploadMode();
+-    ```
+-
+-    - is not required to turn on LED's or make beep. I think it is for uploading games to
+-      the internal memory
+-
+-## use with gnu/linux:
+-
+-    see READ.md, you have to use a udev rule in order to use the chessboard.
+-
+-## contact me
+-
+-    [nicolasvaagen@gmail.com](nicolasvaagen@gmail.com)
+-
+-# resources
+-
+-https://github.com/rmarabini/chessnutair
+-
+-> Big shoutout to rmarabini for doing the exccelent bluetoth work, a makeing it free as in freedom
+# (diff du fichier suivant)
+diff --git a/updateNicLink.sh b/updateNicLink.sh
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index 68eb1fe..0000000
+# (avant — fichier suivant)
+--- a/updateNicLink.sh
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (25 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,25 +0,0 @@
+-#!/usr/bin/env bash
+-
+-THIS_DIR=$(cd $(dirname "${BASH_SOURCE[0]}") && pwd)
+-
+-NUM_THREADS=$(grep -c ^processor /proc/cpuinfo)  # use all the cpu 
+-
+-
+-# make a build dir if non exists
+-mkdir -p $THIS_DIR/build
+-# enter build dir
+-cd $THIS_DIR/build
+-
+-# clean
+-../clean.sh
+-
+-# cmake
+-cmake ../src 
+-
+-# build a new
+-make -j $NUM_THREADS
+-
+-# move into the niclink module
+-cp -f _nic*.so ${THIS_DIR}/nicsoft/niclink
+-
+-echo "Moved executable to {git_root}/nicsoft/niclink/_niclinkCPYNONSENSE.so"
+# (diff du fichier suivant)
+diff --git a/update_stable.sh b/update_stable.sh
+# ── Ce fichier est supprimé par ce commit.
+deleted file mode 100755
+# (index — ignorable)
+index 6f2e359..0000000
+# (avant — fichier suivant)
+--- a/update_stable.sh
+# (après — fichier suivant)
++++ /dev/null
+# ── Zone modifiée : ligne 1 (3 ligne(s)) dans l'ancienne version → ligne 0 (0 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1,3 +0,0 @@
+-#!/bin/bash
+-rsync -a --exclude=venv ~/NicLink/ ~/NicLink_stable/
+-echo "NicLink_stable mis à jour."

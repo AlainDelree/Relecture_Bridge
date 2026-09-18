@@ -1,0 +1,23 @@
+92db1a5
+
+commit 92db1a5
+Author: Alain Delree <alain.delree@gmail.com>
+Date:   Thu Aug 20 23:58:36 2026 +0200
+
+    Met à jour ETAT.md : builds CCW sur PC fixe validés (issue #51)
+
+diff --git a/ETAT.md b/ETAT.md
+index 7791c58..6a86ab2 100644
+--- a/ETAT.md
++++ b/ETAT.md
+@@ -23,7 +23,7 @@
+ 7. Lancer Scrabble
+ 
+ ## Points en suspens
+-- Builds CCW pas encore testés sur le nouveau PC fixe Windows (Samba,
+-  remplace la VM VirtualBox). Audit confirmé : aucun script de build actif
+-  ne référence plus les anciens chemins VirtualBox.
++- Builds CCW sur le nouveau PC fixe Windows (Samba, remplace la VM
++  VirtualBox) validés le 20 août 2026 : chaîne PyInstaller + ISCC
++  fonctionnelle, Actualise-Setup-v9.exe produit sans erreur.
+ - verifier_installation.py existe comme script standalone (pas dans un dépôt)

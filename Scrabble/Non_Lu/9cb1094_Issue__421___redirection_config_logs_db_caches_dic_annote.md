@@ -1,0 +1,246 @@
+9cb1094
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 9cb1094
+# ── Qui a fait ce commit.
+Author: CCL agent <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Sun Aug 30 16:33:55 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Issue #421 : redirection config/logs/db/caches dictionnaire vers C:\Scrabble
+    
+    RACINE_DONNEES_UTILISATEUR (config.py) sépare désormais les données
+    utilisateur inscriptibles (config.json, logs/, data/parties.db,
+    personnalisations et caches .pkl du dictionnaire) de RACINE_PROJET,
+    réservée aux ressources en lecture seule livrées avec l'app (dictionnaires
+    sources ODS/Hunspell, définitions, vocabulaire IA). En mode gelé, elle
+    pointe vers C:\Scrabble (créé automatiquement, RuntimeError explicite si
+    la création échoue) ; en mode dev/tests, elle reste RACINE_PROJET
+    (comportement inchangé).
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/src/scrabble/config.py b/src/scrabble/config.py
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 93e5d9d..c6275f4 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/src/scrabble/config.py
+# ── Version APRÈS ce commit.
++++ b/src/scrabble/config.py
+# ── Zone modifiée : ligne 24 (11 ligne(s)) dans l'ancienne version → ligne 24 (32 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -24,11 +24,32 @@ from typing import Any
+ # bundle) : parents[2] pointerait alors hors du dossier de l'exécutable.
+ # ``sys._MEIPASS`` (mode --onedir : le dossier de l'exe lui-même, persistant
+ # d'un lancement à l'autre) est donc utilisé à la place quand l'app est gelée.
++#
++# ``RACINE_PROJET`` ne sert plus qu'aux ressources en lecture seule livrées
++# avec l'app (dictionnaires sources ODS/Hunspell, définitions...) : en mode
++# gelé, elle pointe vers le dossier d'installation (``Program Files\Scrabble``
++# typiquement), non inscriptible sans droits admin (issue #421). Les données
++# utilisateur (config, logs, parties, personnalisations/caches du dictionnaire)
++# doivent donc passer par ``RACINE_DONNEES_UTILISATEUR`` ci-dessous, qui pointe
++# vers un dossier dédié inscriptible sans droits admin (``C:\Scrabble``, racine
++# ``C:\`` non protégée comme ``Program Files``) une fois l'app gelée, et vers
++# ``RACINE_PROJET`` en mode non gelé (dev/tests, comportement inchangé).
+ if getattr(sys, "frozen", False):
+     RACINE_PROJET = Path(sys._MEIPASS)  # type: ignore[attr-defined]
++    RACINE_DONNEES_UTILISATEUR = Path(r"C:\Scrabble")
++    try:
++        RACINE_DONNEES_UTILISATEUR.mkdir(parents=True, exist_ok=True)
++    except OSError as exc:
++        raise RuntimeError(
++            f"Impossible de créer le dossier de données {RACINE_DONNEES_UTILISATEUR} "
++            "(config, sauvegardes de parties, dictionnaire personnalisé...). "
++            "Vérifiez qu'une politique de sécurité ne bloque pas l'écriture à la "
++            "racine de C:\\."
++        ) from exc
+ else:
+     RACINE_PROJET = Path(__file__).resolve().parents[2]
+-CHEMIN_CONFIG = RACINE_PROJET / "config.json"
++    RACINE_DONNEES_UTILISATEUR = RACINE_PROJET
++CHEMIN_CONFIG = RACINE_DONNEES_UTILISATEUR / "config.json"
+ 
+ # Valeurs par défaut sûres, utilisées quand le fichier est absent/corrompu.
+ CONFIG_DEFAUT: dict[str, Any] = {
+# (diff du fichier suivant)
+diff --git a/src/scrabble/dictionnaire/dictionnaire.py b/src/scrabble/dictionnaire/dictionnaire.py
+# (index — ignorable)
+index 5386e8d..d3ca5c8 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/dictionnaire/dictionnaire.py
+# (après — fichier suivant)
++++ b/src/scrabble/dictionnaire/dictionnaire.py
+# ── Zone modifiée : ligne 67 (14 ligne(s)) dans l'ancienne version → ligne 67 (24 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -67,14 +67,24 @@ from pathlib import Path
+ from typing import Any, Iterable
+ 
+ from scrabble import journal
+-from scrabble.config import RACINE_PROJET, charger_config
++from scrabble.config import RACINE_DONNEES_UTILISATEUR, RACINE_PROJET, charger_config
+ 
+ # --------------------------------------------------------------------------- #
+ # Emplacements des fichiers
+ # --------------------------------------------------------------------------- #
+ 
++# Sources en lecture seule livrées avec l'app (ODS8/Hunspell déplié,
++# définitions, vocabulaire IA...) : jamais écrites à l'exécution, donc laissées
++# sous ``RACINE_PROJET`` (dossier d'installation en mode gelé, issue #421).
+ DOSSIER_DICO = RACINE_PROJET / "data" / "dictionnaire"
+ 
++# Personnalisations et caches propres à l'utilisatrice (ajouts/retraits
++# manuels, Tries sérialisés en .pkl) : ces fichiers sont écrits à l'exécution,
++# donc placés sous ``RACINE_DONNEES_UTILISATEUR`` (issue #421), inscriptible
++# sans droits admin — distinct de ``DOSSIER_DICO`` pour ne jamais tenter
++# d'écrire dans le dossier d'installation.
++DOSSIER_DICO_UTILISATEUR = RACINE_DONNEES_UTILISATEUR / "data" / "dictionnaire"
++
+ CHEMIN_ODS = (
+     DOSSIER_DICO / "French-Scrabble-ODS8-main" / "French ODS dictionary.txt"
+ )
+# ── Zone modifiée : ligne 88 (12 ligne(s)) dans l'ancienne version → ligne 98 (12 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -88,12 +98,12 @@ BASE_HUNSPELL = (
+ # d'agrégation) ; ``chemins_modifs`` sélectionne la paire de la source demandée.
+ CHEMINS_MODIFS: dict[str, tuple[Path, Path]] = {
+     "ods": (
+-        DOSSIER_DICO / "mots_ajoutes_ods.txt",
+-        DOSSIER_DICO / "mots_retires_ods.txt",
++        DOSSIER_DICO_UTILISATEUR / "mots_ajoutes_ods.txt",
++        DOSSIER_DICO_UTILISATEUR / "mots_retires_ods.txt",
+     ),
+     "hunspell": (
+-        DOSSIER_DICO / "mots_ajoutes_hunspell.txt",
+-        DOSSIER_DICO / "mots_retires_hunspell.txt",
++        DOSSIER_DICO_UTILISATEUR / "mots_ajoutes_hunspell.txt",
++        DOSSIER_DICO_UTILISATEUR / "mots_retires_hunspell.txt",
+     ),
+ }
+ # Statut « classique du jeu » (issue #204). Contrairement aux personnalisations
+# ── Zone modifiée : ligne 105 (8 ligne(s)) dans l'ancienne version → ligne 115 (8 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -105,8 +115,8 @@ CHEMINS_MODIFS: dict[str, tuple[Path, Path]] = {
+ # normalisation. La liste candidate initiale (~531 mots) est produite par
+ # ``scripts/generer_classiques.py`` et amorce ``classiques_ajoutes.txt``.
+ CHEMINS_CLASSIQUES: tuple[Path, Path] = (
+-    DOSSIER_DICO / "classiques_ajoutes.txt",
+-    DOSSIER_DICO / "classiques_retires.txt",
++    DOSSIER_DICO_UTILISATEUR / "classiques_ajoutes.txt",
++    DOSSIER_DICO_UTILISATEUR / "classiques_retires.txt",
+ )
+ 
+ # Vocabulaire « humain » de l'IA (issue #205) : liste des mots courants produite
+# ── Zone modifiée : ligne 146 (7 ligne(s)) dans l'ancienne version → ligne 156 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -146,7 +156,7 @@ FICHIERS_VOCABULAIRE_PALIER: dict[str, Path] = {
+ # résolvent vers :func:`obtenir_trie` et réutilisent le cache du Trie complet
+ # existant (:data:`CHEMIN_CACHE`), sans notion de palier.
+ FICHIERS_CACHE_IA_PALIER: dict[str, Path] = {
+-    palier: DOSSIER_DICO / f"trie_ia_cache_{palier}.pkl"
++    palier: DOSSIER_DICO_UTILISATEUR / f"trie_ia_cache_{palier}.pkl"
+     for palier in FICHIERS_VOCABULAIRE_PALIER
+ }
+ 
+# ── Zone modifiée : ligne 181 (7 ligne(s)) dans l'ancienne version → ligne 191 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -181,7 +191,7 @@ def paliers_disponibles(
+ # (``ConfigPartie.mode_belgicisme``) — voir :func:`charger_belgicismes`.
+ CHEMIN_BELGICISMES = DOSSIER_DICO / "belgicismes_a_revoir.csv"
+ 
+-CHEMIN_CACHE = DOSSIER_DICO / "trie_cache.pkl"
++CHEMIN_CACHE = DOSSIER_DICO_UTILISATEUR / "trie_cache.pkl"
+ # Cache disque du Trie restreint de l'IA (issue #206), distinct du cache du Trie
+ # complet. Invalidé par mtime des mêmes sources que le Trie complet, plus
+ # ``mots_courants.txt`` et la paire ``classiques_ajoutes/retires.txt``.
+# ── Zone modifiée : ligne 193 (7 ligne(s)) dans l'ancienne version → ligne 203 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -193,7 +203,7 @@ CHEMIN_CACHE = DOSSIER_DICO / "trie_cache.pkl"
+ # ``obtenir_trie_ia(source, mode_belgicisme=...)`` sans notion de palier). Le
+ # lot C, quand il branchera plusieurs paliers, utilisera
+ # :data:`FICHIERS_CACHE_IA_PALIER` pour les chemins propres à chaque palier.
+-CHEMIN_CACHE_IA = DOSSIER_DICO / "trie_ia_cache.pkl"
++CHEMIN_CACHE_IA = DOSSIER_DICO_UTILISATEUR / "trie_ia_cache.pkl"
+ # Index mot → définition(s) restreint aux mots de l'ODS8 (issue #15). Ce fichier
+ # est volumineux et gitignoré : construit hors-ligne par
+ # ``scripts/construire_definitions.py``. Son absence est tolérée (dict vide).
+# (diff du fichier suivant)
+diff --git a/src/scrabble/journal.py b/src/scrabble/journal.py
+# (index — ignorable)
+index cac2b5e..3bf46d8 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/journal.py
+# (après — fichier suivant)
++++ b/src/scrabble/journal.py
+# ── Zone modifiée : ligne 52 (10 ligne(s)) dans l'ancienne version → ligne 52 (12 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -52,10 +52,12 @@ from pathlib import Path
+ from types import TracebackType
+ from typing import Any
+ 
+-from scrabble.config import RACINE_PROJET
++from scrabble.config import RACINE_DONNEES_UTILISATEUR
+ 
+-#: Dossier des journaux, à côté de ``data/`` et gitignoré comme lui.
+-DOSSIER_LOGS = RACINE_PROJET / "logs"
++#: Dossier des journaux, à côté de ``data/`` et gitignoré comme lui. Sous
++#: ``RACINE_DONNEES_UTILISATEUR`` (issue #421) : des logs, comme la config ou
++#: les parties sauvegardées, doivent rester inscriptibles sans droits admin.
++DOSSIER_LOGS = RACINE_DONNEES_UTILISATEUR / "logs"
+ 
+ #: Nom de l'index de fréquence des erreurs (dans le dossier des journaux).
+ NOM_INDEX = "index_erreurs.json"
+# (diff du fichier suivant)
+diff --git a/src/scrabble/persistance/stockage.py b/src/scrabble/persistance/stockage.py
+# (index — ignorable)
+index 27e7e6a..b2f1c5a 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/persistance/stockage.py
+# (après — fichier suivant)
++++ b/src/scrabble/persistance/stockage.py
+# ── Zone modifiée : ligne 53 (7 ligne(s)) dans l'ancienne version → ligne 53 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -53,7 +53,7 @@ from dataclasses import dataclass
+ from pathlib import Path
+ from typing import Iterator
+ 
+-from scrabble.config import RACINE_PROJET
++from scrabble.config import RACINE_DONNEES_UTILISATEUR
+ from scrabble.moteur.ia import Niveau
+ from scrabble.moteur.partie import (
+     ACTION_COUP,
+# ── Zone modifiée : ligne 68 (8 ligne(s)) dans l'ancienne version → ligne 68 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -68,8 +68,9 @@ from scrabble.moteur.score import DetailMot, DetailScore
+ from scrabble.moteur.validation import DictionnaireMots
+ from scrabble.regles.plateau import TypeCase
+ 
+-#: Emplacement par défaut de la base (dans ``data/``, gitignoré).
+-CHEMIN_DEFAUT = RACINE_PROJET / "data" / "parties.db"
++#: Emplacement par défaut de la base (dans ``data/``, gitignoré), sous
++#: ``RACINE_DONNEES_UTILISATEUR`` (issue #421) : inscriptible sans droits admin.
++CHEMIN_DEFAUT = RACINE_DONNEES_UTILISATEUR / "data" / "parties.db"
+ 
+ #: Valeurs de la colonne ``parties.statut``.
+ STATUT_EN_COURS = "en_cours"
+# (diff du fichier suivant)
+diff --git a/tests/test_dictionnaire.py b/tests/test_dictionnaire.py
+# (index — ignorable)
+index ef63112..b9427e9 100644
+# (avant — fichier suivant)
+--- a/tests/test_dictionnaire.py
+# (après — fichier suivant)
++++ b/tests/test_dictionnaire.py
+# ── Zone modifiée : ligne 21 (6 ligne(s)) dans l'ancienne version → ligne 21 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -21,6 +21,7 @@ import scrabble.dictionnaire.dictionnaire as d
+ from scrabble.dictionnaire.dictionnaire import (
+     CHEMINS_MODIFS,
+     DOSSIER_DICO,
++    DOSSIER_DICO_UTILISATEUR,
+     FICHIERS_CACHE_IA_PALIER,
+     FICHIERS_VOCABULAIRE_PALIER,
+     Dictionnaire,
+# ── Zone modifiée : ligne 100 (7 ligne(s)) dans l'ancienne version → ligne 101 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -100,7 +101,9 @@ def test_fichiers_cache_ia_palier_meme_cles_que_vocabulaire_et_chemins_distincts
+     assert "champion_du_monde" not in FICHIERS_CACHE_IA_PALIER
+     noms = set()
+     for palier, chemin in FICHIERS_CACHE_IA_PALIER.items():
+-        assert chemin.parent == DOSSIER_DICO
++        # Cache écrit à l'exécution : sous DOSSIER_DICO_UTILISATEUR, pas
++        # DOSSIER_DICO (sources en lecture seule livrées avec l'app, issue #421).
++        assert chemin.parent == DOSSIER_DICO_UTILISATEUR
+         assert chemin.name == f"trie_ia_cache_{palier}.pkl"
+         noms.add(chemin.name)
+     assert len(noms) == 4  # aucun doublon de nom de fichier entre paliers

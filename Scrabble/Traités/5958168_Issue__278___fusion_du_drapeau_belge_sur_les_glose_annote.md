@@ -1,0 +1,215 @@
+5958168
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 5958168
+# ── Qui a fait ce commit.
+Author: CCL agent <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Sat Jul 25 23:26:24 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Issue #278 : fusion du drapeau belge sur les gloses dupliquées avec le standard
+    
+    Au lieu de filtrer une glose belge dont le texte correspond déjà mot pour
+    mot à une glose standard (issue #276, cas académique/bleuette), la glose
+    standard existante reçoit désormais aussi_belge=True. Le texte n'est
+    jamais dupliqué mais le drapeau .drapeau-mini reste visible sur toute
+    définition d'origine belge, partagée ou non.
+    
+    - dictionnaire.py : definitions_annotees() indexe les gloses standards
+      par clé de dédup pour marquer aussi_belge au lieu d'ignorer.
+    - jeu.js : afficherDefinitionBrouillon() affiche le drapeau si
+      origine === 'belge' OU glose.aussi_belge === true.
+    - Tests mis à jour (cas académique en Python pur et via verifier_mot_
+      dictionnaire, + test de dédup insensible casse/espaces/ponctuation).
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/src/scrabble/dictionnaire/dictionnaire.py b/src/scrabble/dictionnaire/dictionnaire.py
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index fcf779b..5b217b8 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/src/scrabble/dictionnaire/dictionnaire.py
+# ── Version APRÈS ce commit.
++++ b/src/scrabble/dictionnaire/dictionnaire.py
+# ── Zone modifiée : ligne 356 (26 ligne(s)) dans l'ancienne version → ligne 356 (32 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -356,26 +356,32 @@ def definitions_annotees(
+     chemin_definitions: Path = CHEMIN_DEFINITIONS,
+     chemin_belges: Path = CHEMIN_BELGICISMES,
+ ) -> list[dict[str, str]] | None:
+-    """Fusionne gloses standards et gloses belges d'un mot (loupe, issue #276).
++    """Fusionne gloses standards et gloses belges d'un mot (loupe, issues #276/#278).
+ 
+-    Retourne une liste de ``{"texte": ..., "origine": "standard"|"belge"}`` :
++    Retourne une liste de ``{"texte": ..., "origine": "standard"|"belge", ...}`` :
+     les gloses standards d'abord (via :func:`definition_mot`), puis les gloses
+-    belges (via :func:`charger_definitions_belges`) qui ne dupliquent pas déjà
+-    une glose standard présente (comparaison normalisée insensible à la
+-    casse/aux espaces/à la ponctuation finale — voir :func:`_cle_dedup_glose`,
+-    cas ``académique`` dont les deux gloses belges existent déjà mot pour mot
+-    dans le Wiktionnaire filtré). Renvoie ``None`` si le mot n'a ni définition
+-    standard ni définition belge (même contrat que :func:`definition_mot`).
++    belges (via :func:`charger_definitions_belges`) dont le texte ne correspond
++    à aucune glose standard déjà présente (comparaison normalisée insensible à
++    la casse/aux espaces/à la ponctuation finale — voir :func:`_cle_dedup_glose`).
++    Quand une glose belge correspond mot pour mot à une glose standard déjà
++    listée (cas ``académique`` : les deux gloses belges existent déjà dans le
++    Wiktionnaire filtré), le texte n'est jamais dupliqué — la glose standard
++    existante reçoit plutôt ``"aussi_belge": True`` pour continuer à porter le
++    drapeau (issue #278 : le drapeau doit rester visible même sur une définition
++    dupliquée). Renvoie ``None`` si le mot n'a ni définition standard ni
++    définition belge (même contrat que :func:`definition_mot`).
+     """
+     norme = normaliser_mot(mot)
+     if not norme:
+         return None
+     standards = definition_mot(norme, chemin_definitions) or []
+-    cles_standards = {_cle_dedup_glose(glose) for glose in standards}
+-    belges = charger_definitions_belges(chemin_belges).get(desaccentuer(norme), [])
+     annotees = [{"texte": glose, "origine": "standard"} for glose in standards]
++    index_par_cle = {_cle_dedup_glose(glose): i for i, glose in enumerate(standards)}
++    belges = charger_definitions_belges(chemin_belges).get(desaccentuer(norme), [])
+     for glose in belges:
+-        if _cle_dedup_glose(glose) in cles_standards:
++        index_standard = index_par_cle.get(_cle_dedup_glose(glose))
++        if index_standard is not None:
++            annotees[index_standard]["aussi_belge"] = True
+             continue
+         annotees.append({"texte": glose, "origine": "belge"})
+     if not annotees:
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/web/jeu.js b/src/scrabble/ui/web/jeu.js
+# (index — ignorable)
+index 77ec591..a05bc08 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/web/jeu.js
+# (après — fichier suivant)
++++ b/src/scrabble/ui/web/jeu.js
+# ── Zone modifiée : ligne 1600 (7 ligne(s)) dans l'ancienne version → ligne 1600 (10 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1600,7 +1600,10 @@ document.addEventListener('DOMContentLoaded', async () => {
+     // si ``definition`` reste un tableau de chaînes dans un cas limite), soit
+     // un objet ``{texte, origine}`` — les gloses d'origine belge affichent une
+     // pastille-drapeau ``.drapeau-mini`` en préfixe, en permanence, quel que
+-    // soit le mode Belgicisme de la partie en cours.
++    // soit le mode Belgicisme de la partie en cours. Depuis l'issue #278, une
++    // glose standard dont le texte est identique à une glose belge (cas
++    // ``académique``) porte aussi le drapeau via ``aussi_belge: true``, sans
++    // jamais dupliquer le texte.
+     function afficherDefinitionBrouillon(definition) {
+         if (!definitionBrouillon) return;
+         definitionBrouillon.innerHTML = '';
+# ── Zone modifiée : ligne 1611 (8 ligne(s)) dans l'ancienne version → ligne 1614 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1611,8 +1614,9 @@ document.addEventListener('DOMContentLoaded', async () => {
+                 const estObjet = glose && typeof glose === 'object';
+                 const texte = estObjet ? glose.texte : glose;
+                 const origine = estObjet ? glose.origine : 'standard';
++                const estBelge = origine === 'belge' || (estObjet && glose.aussi_belge === true);
+                 const li = document.createElement('li');
+-                if (origine === 'belge') {
++                if (estBelge) {
+                     const drapeau = document.createElement('span');
+                     drapeau.className = 'drapeau-mini';
+                     drapeau.title = 'Définition belge';
+# (diff du fichier suivant)
+diff --git a/tests/test_dictionnaire.py b/tests/test_dictionnaire.py
+# (index — ignorable)
+index d7a7e52..d5cfb29 100644
+# (avant — fichier suivant)
+--- a/tests/test_dictionnaire.py
+# (après — fichier suivant)
++++ b/tests/test_dictionnaire.py
+# ── Zone modifiée : ligne 742 (9 ligne(s)) dans l'ancienne version → ligne 742 (10 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -742,9 +742,10 @@ def test_definitions_annotees_mot_avec_glose_belge_non_dupliquee(tmp_path):
+ 
+ 
+ def test_definitions_annotees_academique_deduplique_sans_doublon(tmp_path):
+-    """Cas ``académique`` (issue #276) : les deux gloses belges existent déjà
+-    mot pour mot dans le Wiktionnaire filtré — aucun doublon, aucune glose
+-    belge ajoutée, pas de drapeau sur les gloses partagées."""
++    """Cas ``académique`` (issues #276/#278) : les deux gloses belges existent
++    déjà mot pour mot dans le Wiktionnaire filtré — aucun doublon de texte,
++    mais les gloses standards partagées portent ``aussi_belge`` pour que le
++    drapeau reste visible."""
+     chemin_defs = tmp_path / "definitions.json"
+     chemin_defs.write_text(
+         json.dumps(
+# ── Zone modifiée : ligne 768 (14 ligne(s)) dans l'ancienne version → ligne 769 (20 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -768,14 +769,20 @@ def test_definitions_annotees_academique_deduplique_sans_doublon(tmp_path):
+ 
+     assert annotees == [
+         {"texte": "Qui se rapporte aux académies.", "origine": "standard"},
+-        {"texte": "Universitaire.", "origine": "standard"},
+-        {"texte": "Relatif à un retard toléré.", "origine": "standard"},
++        {"texte": "Universitaire.", "origine": "standard", "aussi_belge": True},
++        {
++            "texte": "Relatif à un retard toléré.",
++            "origine": "standard",
++            "aussi_belge": True,
++        },
+     ]
+     assert all(glose["origine"] == "standard" for glose in annotees)
+ 
+ 
+ def test_definitions_annotees_dedup_insensible_casse_espaces_ponctuation(tmp_path):
+-    """La déduplication ignore casse, espaces superflus et ponctuation finale."""
++    """La déduplication de texte ignore casse, espaces superflus et ponctuation
++    finale (issue #278 : pas de doublon, mais le drapeau reste porté par la
++    glose standard via ``aussi_belge``)."""
+     chemin_defs = tmp_path / "definitions.json"
+     chemin_defs.write_text(json.dumps({"MOT": ["Une   glose.  "]}), encoding="utf-8")
+     chemin_belges = tmp_path / "belgicismes.csv"
+# ── Zone modifiée : ligne 783 (7 ligne(s)) dans l'ancienne version → ligne 790 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -783,7 +790,9 @@ def test_definitions_annotees_dedup_insensible_casse_espaces_ponctuation(tmp_pat
+ 
+     annotees = definitions_annotees("mot", chemin_defs, chemin_belges)
+ 
+-    assert annotees == [{"texte": "Une   glose.  ", "origine": "standard"}]
++    assert annotees == [
++        {"texte": "Une   glose.  ", "origine": "standard", "aussi_belge": True}
++    ]
+ 
+ 
+ def test_definitions_annotees_mot_sans_definition_belge_comportement_inchange(tmp_path):
+# (diff du fichier suivant)
+diff --git a/tests/test_jeu_brouillon.py b/tests/test_jeu_brouillon.py
+# (index — ignorable)
+index 35ed93d..57b756f 100644
+# (avant — fichier suivant)
+--- a/tests/test_jeu_brouillon.py
+# (après — fichier suivant)
++++ b/tests/test_jeu_brouillon.py
+# ── Zone modifiée : ligne 154 (8 ligne(s)) dans l'ancienne version → ligne 154 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -154,8 +154,9 @@ class TestVerifierMotDictionnaire:
+         assert res["definition"] == [{"texte": "Loquet de porte.", "origine": "belge"}]
+ 
+     def test_definition_academique_deduplique_sans_doublon(self, tmp_path):
+-        # Cas académique (issue #276) : les deux gloses belges sont déjà mot
+-        # pour mot dans le Wiktionnaire filtré — aucun doublon affiché.
++        # Cas académique (issues #276/#278) : les deux gloses belges sont déjà
++        # mot pour mot dans le Wiktionnaire filtré — aucun doublon de texte,
++        # mais les gloses standards partagées portent aussi_belge (drapeau).
+         fichier_defs = tmp_path / "definitions.json"
+         fichier_defs.write_text(
+             json.dumps(
+# ── Zone modifiée : ligne 184 (10 ligne(s)) dans l'ancienne version → ligne 185 (19 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -184,10 +185,19 @@ class TestVerifierMotDictionnaire:
+         assert res["valide"] is True
+         assert res["definition"] == [
+             {"texte": "Qui se rapporte aux académies.", "origine": "standard"},
+-            {"texte": "Universitaire.", "origine": "standard"},
+-            {"texte": "Relatif à un retard toléré.", "origine": "standard"},
++            {
++                "texte": "Universitaire.",
++                "origine": "standard",
++                "aussi_belge": True,
++            },
++            {
++                "texte": "Relatif à un retard toléré.",
++                "origine": "standard",
++                "aussi_belge": True,
++            },
+         ]
+         assert all(glose["origine"] == "standard" for glose in res["definition"])
++        assert sum(1 for g in res["definition"] if g.get("aussi_belge")) == 2
+ 
+     def test_definition_mot_belge_sans_equivalent_standard(self, tmp_path):
+         # « sketter » : aucune glose standard, uniquement des gloses belges.

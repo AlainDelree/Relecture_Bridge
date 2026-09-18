@@ -1,0 +1,174 @@
+f65795b
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit f65795b
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Sun Aug 23 21:23:01 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Extrait onclick/style inline de #screen-labo vers data-action + CSS — accordéon Position virtuelle + retour (issue #240 partie 4/4)
+    
+    - Entête accordéon -> réutilise le case data-action="labo_toggle_section" (data-section="labo-sec-pos"),
+      créé en #238
+    - document.getElementById('labo-pgn-input').click() -> nouveau case dédié data-action="labo_trigger_pgn_input"
+    - ouvrirAidePanier() -> réutilise directement le case data-action="aide_panier" déjà créé en #231
+    - basketLoadToLabo() -> nouveau case data-action="basket_load_to_labo"
+    - laboPgnPrev()/laboPgnNext() -> case unique data-action="labo_pgn_nav" paramétré par data-direction
+      (2 boutons consolidés, sur le modèle de expl_nav de #232)
+    - laboCopyToBoard() -> nouveau case data-action="labo_copy_to_board"
+    - sendAction({type:'back_menu'}) -> réutilise le case data-action="back_menu" déjà existant
+    - 22 style inline -> classes CSS (.labo-pos-body/-row/-file-input, .labo-pgn-nav-body/-info/-san/-nav-btns/-nav-btn,
+      .labo-btn-copy-style, .labo-back-row/-btn-back ; réutilise .labo-acc-card/-header/-title/-arrow et
+      .labo-btn-mb0 déjà créés en #238) ; nouvelles classes génériques .basket-select/-sel-label/-sel-arrow/
+      -sel-list/-sel-list-down et .basket-load-btn (composant classeur partagé Labo/Analyse/Outils)
+    - 5 style="display:none;" conservés car fonctionnellement nécessaires : lecture/écriture directe de
+      .style.display par laboToggleSection, _renderBasketSelects/_initBasketSelects (classeur) et le
+      toggle du bouton "Source virtuelle → Plateau"
+    
+    Suite pytest complète (78 passed, 1 skipped) au vert.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/nicsoft/web/static/app.js b/nicsoft/web/static/app.js
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index a4e2f8f..c807367 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/nicsoft/web/static/app.js
+# ── Version APRÈS ce commit.
++++ b/nicsoft/web/static/app.js
+# ── Zone modifiée : ligne 211 (6 ligne(s)) dans l'ancienne version → ligne 211 (18 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -211,6 +211,18 @@ document.addEventListener("click", (e) => {
+     case "labo_reset":
+       laboReset();
+       break;
++    case "labo_trigger_pgn_input":
++      document.getElementById("labo-pgn-input").click();
++      break;
++    case "basket_load_to_labo":
++      basketLoadToLabo();
++      break;
++    case "labo_pgn_nav":
++      if (el.dataset.direction === "prev") laboPgnPrev(); else laboPgnNext();
++      break;
++    case "labo_copy_to_board":
++      laboCopyToBoard();
++      break;
+   }
+ });
+ 
+# (diff du fichier suivant)
+diff --git a/nicsoft/web/static/css/main.css b/nicsoft/web/static/css/main.css
+# (index — ignorable)
+index b5c276a..9bf7bdd 100644
+# (avant — fichier suivant)
+--- a/nicsoft/web/static/css/main.css
+# (après — fichier suivant)
++++ b/nicsoft/web/static/css/main.css
+# ── Zone modifiée : ligne 871 (6 ligne(s)) dans l'ancienne version → ligne 871 (27 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -871,6 +871,27 @@
+     .labo-analyse-checkbox { width: 14px; height: 14px; cursor: pointer; accent-color: #e94560; }
+     .labo-analyse-activee { font-size: 0.8rem; color: #445; }
+ 
++    /* Écran Labo — Position virtuelle + retour (issue #240 partie 4/4) */
++    .labo-pos-body { padding: 0 14px 12px; flex-direction: column; gap: 7px; }
++    .labo-pos-file-input { display: none; }
++    .labo-pos-row { display: flex; gap: 6px; align-items: stretch; }
++    .labo-pgn-nav-body { flex-direction: column; gap: 5px; }
++    .labo-pgn-info { font-size: 0.75rem; color: #3a5a7a; text-align: center; }
++    .labo-pgn-san { text-align: center; font-size: 1.1rem; font-weight: bold; color: #1a2a3a; min-height: 1.4rem; }
++    .labo-pgn-nav-btns { display: flex; gap: 6px; }
++    .labo-pgn-nav-btn { flex: 1; margin-bottom: 0; padding: 5px; font-size: 0.82rem; }
++    .labo-btn-copy-style { margin-bottom: 0; background: #9ab8d8; color: #1a2a3a; border: 1px solid #2a5a8a; }
++    .labo-back-row { padding: 4px 0 8px; }
++    .labo-btn-back { background: #c2d4e8; color: #1a2a3a; border: 1px solid #a0b8d0; margin-bottom: 0; }
++
++    /* Sélecteur de classeur (basket-select) — réutilisé par Labo/Analyse/Outils */
++    .basket-select { flex: 1; position: relative; height: 34px; box-sizing: border-box; background: #a0b8d0; border: 1px solid #333; border-radius: 4px; padding: 4px 8px; font-size: 0.82rem; display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; }
++    .basket-sel-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #556; }
++    .basket-sel-arrow { font-size: 0.6rem; margin-left: 4px; color: #1a2a3a; flex-shrink: 0; }
++    .basket-sel-list { position: absolute; left: 0; right: 0; background: #1a2a3a; border: 1px solid #a0b8d0; z-index: 200; max-height: 180px; overflow-y: auto; }
++    .basket-sel-list-down { top: 100%; border-top: none; border-radius: 0 0 4px 4px; }
++    .basket-load-btn { margin-bottom: 0; padding: 0 12px; white-space: nowrap; height: 34px; box-sizing: border-box; }
++
+     .coord-rank {
+       display: flex;
+       flex-direction: column;
+# (diff du fichier suivant)
+diff --git a/nicsoft/web/templates/index.html b/nicsoft/web/templates/index.html
+# (index — ignorable)
+index 926b731..3eea206 100644
+# (avant — fichier suivant)
+--- a/nicsoft/web/templates/index.html
+# (après — fichier suivant)
++++ b/nicsoft/web/templates/index.html
+# ── Zone modifiée : ligne 1123 (41 ligne(s)) dans l'ancienne version → ligne 1123 (40 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1123,41 +1123,40 @@
+     </div>
+ 
+     <!-- ── Position virtuelle (fermé par défaut) ── -->
+-    <div class="card" style="padding:0;">
+-      <div onclick="laboToggleSection('labo-sec-pos')"
+-        style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; cursor:pointer;">
+-        <h2 style="margin-bottom:0;" data-i18n="labo.h2.position_virtuelle">POSITION VIRTUELLE</h2>
+-        <span id="labo-sec-pos-arrow" style="color:#3a5a7a; font-size:0.8rem;">▼</span>
+-      </div>
+-      <div id="labo-sec-pos" style="padding:0 14px 12px; display:none; flex-direction:column; gap:7px;">
+-        <input type="file" id="labo-pgn-input" accept=".pgn" style="display:none" onchange="laboLoadPgn(event)">
+-        <button class="btn btn-best" style="margin-bottom:0;" onclick="document.getElementById('labo-pgn-input').click()" data-i18n="labo.btn.importer_pgn">📂 Importer PGN</button>
+-        <div style="display:flex; gap:6px; align-items:stretch;">
+-          <span class="aide-panier-icone" onclick="ouvrirAidePanier()" data-i18n-title="aide.panier.icone_title" title="Aide sur le classeur">?</span>
+-          <div id="basket-select-labo" class="basket-select" data-value="" style="flex:1; position:relative; height:34px; box-sizing:border-box; background:#a0b8d0; border:1px solid #333; border-radius:4px; padding:4px 8px; font-size:0.82rem; display:flex; align-items:center; justify-content:space-between; cursor:pointer; user-select:none;">
+-            <span class="basket-sel-label" data-i18n="common.corbeille_vide" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#556;">— classeur vide —</span>
+-            <span style="font-size:0.6rem; margin-left:4px; color:#1a2a3a; flex-shrink:0;">▼</span>
+-            <div class="basket-sel-list" style="display:none; position:absolute; top:100%; left:0; right:0; background:#1a2a3a; border:1px solid #a0b8d0; border-top:none; border-radius:0 0 4px 4px; z-index:200; max-height:180px; overflow-y:auto;"></div>
++    <div class="card labo-acc-card">
++      <div class="labo-acc-header" data-action="labo_toggle_section" data-section="labo-sec-pos">
++        <h2 class="labo-acc-title" data-i18n="labo.h2.position_virtuelle">POSITION VIRTUELLE</h2>
++        <span id="labo-sec-pos-arrow" class="labo-acc-arrow">▼</span>
++      </div>
++      <div id="labo-sec-pos" class="labo-pos-body" style="display:none;">
++        <input type="file" id="labo-pgn-input" accept=".pgn" class="labo-pos-file-input" onchange="laboLoadPgn(event)">
++        <button class="btn btn-best labo-btn-mb0" data-action="labo_trigger_pgn_input" data-i18n="labo.btn.importer_pgn">📂 Importer PGN</button>
++        <div class="labo-pos-row">
++          <span class="aide-panier-icone" data-action="aide_panier" data-i18n-title="aide.panier.icone_title" title="Aide sur le classeur">?</span>
++          <div id="basket-select-labo" class="basket-select" data-value="">
++            <span class="basket-sel-label" data-i18n="common.corbeille_vide">— classeur vide —</span>
++            <span class="basket-sel-arrow">▼</span>
++            <div class="basket-sel-list basket-sel-list-down" style="display:none;"></div>
+           </div>
+-          <button class="btn basket-load-btn" style="margin-bottom:0; padding:0 12px; white-space:nowrap; height:34px; box-sizing:border-box;" disabled onclick="basketLoadToLabo()" data-i18n="common.charger">🗂️ Charger</button>
++          <button class="btn basket-load-btn" disabled data-action="basket_load_to_labo" data-i18n="common.charger">🗂️ Charger</button>
+         </div>
+-        <div id="labo-pgn-nav" style="display:none; flex-direction:column; gap:5px;">
+-          <div id="labo-pgn-info" style="font-size:0.75rem; color:#3a5a7a; text-align:center;"></div>
+-          <div id="labo-pgn-san" style="text-align:center; font-size:1.1rem; font-weight:bold; color:#1a2a3a; min-height:1.4rem;"></div>
+-          <div style="display:flex; gap:6px;">
+-            <button class="btn btn-continuer" style="flex:1; margin-bottom:0; padding:5px; font-size:0.82rem;" onclick="laboPgnPrev()" data-i18n="labo.pgn.precedent">← Précédent</button>
+-            <button class="btn btn-reprendre" style="flex:1; margin-bottom:0; padding:5px; font-size:0.82rem;" onclick="laboPgnNext()" data-i18n="labo.pgn.suivant">Suivant →</button>
++        <div id="labo-pgn-nav" class="labo-pgn-nav-body" style="display:none;">
++          <div id="labo-pgn-info" class="labo-pgn-info"></div>
++          <div id="labo-pgn-san" class="labo-pgn-san"></div>
++          <div class="labo-pgn-nav-btns">
++            <button class="btn btn-continuer labo-pgn-nav-btn" data-action="labo_pgn_nav" data-direction="prev" data-i18n="labo.pgn.precedent">← Précédent</button>
++            <button class="btn btn-reprendre labo-pgn-nav-btn" data-action="labo_pgn_nav" data-direction="next" data-i18n="labo.pgn.suivant">Suivant →</button>
+           </div>
+         </div>
+-        <button class="btn" id="labo-btn-copy" style="margin-bottom:0; background:#9ab8d8; color:#1a2a3a; border:1px solid #2a5a8a; display:none;"
+-          onclick="laboCopyToBoard()" data-i18n="labo.btn.copier_virtuel">📋 Source virtuelle → Plateau</button>
++        <button class="btn labo-btn-copy-style" id="labo-btn-copy" style="display:none;"
++          data-action="labo_copy_to_board" data-i18n="labo.btn.copier_virtuel">📋 Source virtuelle → Plateau</button>
+ 
+       </div>
+     </div>
+ 
+     <!-- Retour -->
+-    <div style="padding:4px 0 8px;">
+-      <button class="btn" style="background:#c2d4e8; color:#1a2a3a; border:1px solid #a0b8d0; margin-bottom:0;" onclick="sendAction({type:'back_menu'})" data-i18n="common.retour_menu">← Retour au menu</button>
++    <div class="labo-back-row">
++      <button class="btn labo-btn-back" data-action="back_menu" data-i18n="common.retour_menu">← Retour au menu</button>
+     </div>
+ 
+   </div>

@@ -1,0 +1,212 @@
+8d054b0
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 8d054b0
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Sun Aug 23 20:40:33 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Extrait onclick/style inline de #screen-config (titre/joueur/pause/pied de page) vers data-action + CSS (issue #234)
+    
+    Partie 1/3 du découpage de #screen-config. selectColor('white'/'black'/'random')
+    consolidé en case "select_color" paramétré par data-color ; bouton Démarrer →
+    case "start_game" ; bouton Retour réutilise le case "back" existant (#228).
+    Styles inline fusionnés dans la règle #screen-config existante (overflow:hidden)
+    et dans de nouvelles classes cfg-ped-* (titlebar/title/scroll/grid/cards/footer/
+    boutons), sur le modèle cfg-hh-* de #227. Test e2e test_retour_depuis_config
+    migré du sélecteur onclick vers data-action.
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/nicsoft/tests/e2e/test_smoke_e2e.py b/nicsoft/tests/e2e/test_smoke_e2e.py
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index cc795f0..008a989 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/nicsoft/tests/e2e/test_smoke_e2e.py
+# ── Version APRÈS ce commit.
++++ b/nicsoft/tests/e2e/test_smoke_e2e.py
+# ── Zone modifiée : ligne 51 (9 ligne(s)) dans l'ancienne version → ligne 51 (10 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -51,9 +51,10 @@ def test_retour_depuis_config(at_menu):
+     """Config pédagogique → Retour → menu."""
+     at_menu.locator(".menu-card-primary .menu-card-head").click()
+     at_menu.wait_for_selector("#screen-config", state="visible", timeout=5000)
+-    # Ciblage par attribut onclick plutôt que par texte traduit (issue #208) —
+-    # le texte du bouton dépend de la locale (FR "Retour" / EN "Back").
+-    at_menu.locator("#screen-config button[onclick*=\"type:'back'\"]").click()
++    # Ciblage par attribut data-action plutôt que par texte traduit (issue #208,
++    # migré vers data-action en #234) — le texte du bouton dépend de la locale
++    # (FR "Retour" / EN "Back").
++    at_menu.locator("#screen-config button[data-action=\"back\"]").click()
+     at_menu.wait_for_selector("#screen-menu", state="visible", timeout=5000)
+     assert at_menu.locator("#screen-menu").is_visible()
+ 
+# (diff du fichier suivant)
+diff --git a/nicsoft/web/static/app.js b/nicsoft/web/static/app.js
+# (index — ignorable)
+index 5c56cfd..1390a45 100644
+# (avant — fichier suivant)
+--- a/nicsoft/web/static/app.js
+# (après — fichier suivant)
++++ b/nicsoft/web/static/app.js
+# ── Zone modifiée : ligne 97 (9 ligne(s)) dans l'ancienne version → ligne 97 (15 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -97,9 +97,15 @@ document.addEventListener("click", (e) => {
+     case "exercice_back":
+       sendAction({ type: "exercice_back" });
+       break;
++    case "select_color":
++      selectColor(el.dataset.color);
++      break;
+     case "select_color_hh":
+       selectColorHH(el.dataset.color);
+       break;
++    case "start_game":
++      startGame();
++      break;
+     case "start_game_hh":
+       startGameHH();
+       break;
+# (diff du fichier suivant)
+diff --git a/nicsoft/web/static/css/main.css b/nicsoft/web/static/css/main.css
+# (index — ignorable)
+index ad94df7..3ba1002 100644
+# (avant — fichier suivant)
+--- a/nicsoft/web/static/css/main.css
+# (après — fichier suivant)
++++ b/nicsoft/web/static/css/main.css
+# ── Zone modifiée : ligne 142 (6 ligne(s)) dans l'ancienne version → ligne 142 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -142,6 +142,7 @@
+       justify-content: flex-start;
+       padding: 0;
+       gap: 0;
++      overflow: hidden;
+       height: calc(100vh - 52px); /* 52px = hauteur header */
+       max-height: calc(100vh - 52px);
+     }
+# ── Zone modifiée : ligne 459 (6 ligne(s)) dans l'ancienne version → ligne 460 (52 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -459,6 +460,52 @@
+     .cfg-input::placeholder { color: #3a5a7a; opacity: 1; }
+     .cfg-input:focus { outline: none; border-color: #e94560; }
+ 
++    .cfg-ped-titlebar {
++      width: 100%;
++      background: #c2d4e8;
++      border-bottom: 1px solid #a0b8d0;
++      padding: 12px 32px;
++      flex-shrink: 0;
++    }
++    .cfg-ped-title { margin-bottom: 0; }
++    .cfg-ped-scroll {
++      flex: 1;
++      overflow-y: auto;
++      min-height: 0;
++      width: 100%;
++      padding: 16px 32px;
++      display: flex;
++      flex-direction: column;
++      gap: 12px;
++      align-items: center;
++    }
++    .cfg-ped-grid {
++      display: grid;
++      grid-template-columns: 1fr 1fr;
++      grid-template-rows: auto auto;
++      gap: 12px;
++      width: 100%;
++      max-width: 760px;
++      align-items: start;
++    }
++    .cfg-ped-card-joueur { padding: 14px 16px; grid-column: 1; grid-row: 1; }
++    .cfg-ped-card-joueur .cfg-input { margin-bottom: 12px; }
++    .cfg-ped-card-joueur .color-btns { margin-bottom: 0; }
++    .cfg-ped-card-pause  { padding: 14px 16px; grid-column: 1; grid-row: 2; }
++    .cfg-ped-card-pause .cfg-input { margin-bottom: 0; }
++    .cfg-ped-footer {
++      width: 100%;
++      background: #c2d4e8;
++      border-top: 1px solid #a0b8d0;
++      padding: 12px 32px;
++      flex-shrink: 0;
++      display: flex;
++      gap: 12px;
++      justify-content: center;
++    }
++    .cfg-ped-btn-back  { width: 160px; margin-bottom: 0; }
++    .cfg-ped-btn-start { width: 260px; margin-bottom: 0; font-size: 1rem; }
++
+     .color-btns { display: flex; gap: 8px; margin-bottom: 16px; }
+     .color-btn {
+       flex: 1;
+# (diff du fichier suivant)
+diff --git a/nicsoft/web/templates/index.html b/nicsoft/web/templates/index.html
+# (index — ignorable)
+index 06000bd..735d1a9 100644
+# (avant — fichier suivant)
+--- a/nicsoft/web/templates/index.html
+# (après — fichier suivant)
++++ b/nicsoft/web/templates/index.html
+# ── Zone modifiée : ligne 205 (36 ligne(s)) dans l'ancienne version → ligne 205 (36 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -205,36 +205,36 @@
+ </div>
+ 
+ <!-- ── Écran config ── -->
+-<div id="screen-config" style="justify-content:flex-start; padding:0; overflow:hidden;">
++<div id="screen-config">
+ 
+   <!-- Barre de titre fixe -->
+-  <div style="width:100%; background:#c2d4e8; border-bottom:1px solid #a0b8d0; padding:12px 32px; flex-shrink:0;">
+-    <div class="config-title" style="margin-bottom:0;" data-i18n="config.titre.pedagogique">🎓 Mode Pédagogique</div>
++  <div class="cfg-ped-titlebar">
++    <div class="config-title cfg-ped-title" data-i18n="config.titre.pedagogique">🎓 Mode Pédagogique</div>
+   </div>
+ 
+   <!-- Zone scrollable — hauteur contrainte entre titre et boutons -->
+-  <div style="flex:1; overflow-y:auto; min-height:0; width:100%; padding:16px 32px; display:flex; flex-direction:column; gap:12px; align-items:center;">
++  <div class="cfg-ped-scroll">
+ 
+     <!-- Grille 2 colonnes, 2 lignes — placement explicite -->
+-    <div style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:auto auto; gap:12px; width:100%; max-width:760px; align-items:start;">
++    <div class="cfg-ped-grid">
+ 
+       <!-- Ligne 1, Col 1 : Joueur -->
+-      <div class="card" style="padding:14px 16px; grid-column:1; grid-row:1;">
++      <div class="card cfg-ped-card-joueur">
+         <h2 data-i18n="config.h2.joueur">Joueur</h2>
+         <label class="cfg-label" data-i18n="config.label.nom">Nom</label>
+-        <input id="cfg-player" class="cfg-input" type="text" data-i18n-placeholder="config.placeholder.nom" placeholder="Votre nom" style="margin-bottom:12px;">
++        <input id="cfg-player" class="cfg-input" type="text" data-i18n-placeholder="config.placeholder.nom" placeholder="Votre nom">
+         <label class="cfg-label" data-i18n="config.label.couleur">Couleur</label>
+-        <div class="color-btns" style="margin-bottom:0;">
+-          <button class="color-btn selected" id="cfg-white"  onclick="selectColor('white')"  data-i18n="config.color.blancs">♔ Blancs</button>
+-          <button class="color-btn"          id="cfg-black"  onclick="selectColor('black')"  data-i18n="config.color.noirs">♚ Noirs</button>
+-          <button class="color-btn"          id="cfg-random" onclick="selectColor('random')" data-i18n="config.color.aleatoire">🎲 Aléatoire</button>
++        <div class="color-btns">
++          <button class="color-btn selected" id="cfg-white"  data-action="select_color" data-color="white"  data-i18n="config.color.blancs">♔ Blancs</button>
++          <button class="color-btn"          id="cfg-black"  data-action="select_color" data-color="black"  data-i18n="config.color.noirs">♚ Noirs</button>
++          <button class="color-btn"          id="cfg-random" data-action="select_color" data-color="random" data-i18n="config.color.aleatoire">🎲 Aléatoire</button>
+         </div>
+       </div>
+ 
+       <!-- Ligne 2, Col 1 : Pause pédagogique -->
+-      <div class="card" style="padding:14px 16px; grid-column:1; grid-row:2;">
++      <div class="card cfg-ped-card-pause">
+         <h2 data-i18n="config.h2.pause_ped">Pause pédagogique</h2>
+-        <select id="cfg-pause" class="cfg-input" style="margin-bottom:0;">
++        <select id="cfg-pause" class="cfg-input">
+           <option value="toujours" data-i18n="config.pause.toujours">Toujours</option>
+           <option value="imprecision" data-i18n="config.pause.imprecision">Imprécision + Erreur + Gaffe</option>
+           <option value="erreur" data-i18n="config.pause.erreur">Erreur + Gaffe</option>
+# ── Zone modifiée : ligne 351 (9 ligne(s)) dans l'ancienne version → ligne 351 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -351,9 +351,9 @@
+   </div><!-- fin zone scrollable -->
+ 
+   <!-- Barre de boutons fixe en bas -->
+-  <div style="width:100%; background:#c2d4e8; border-top:1px solid #a0b8d0; padding:12px 32px; flex-shrink:0; display:flex; gap:12px; justify-content:center;">
+-    <button class="btn btn-continuer" onclick="sendAction({type:'back'})" style="width:160px; margin-bottom:0;" data-i18n="common.retour">← Retour</button>
+-    <button id="btn-start-peda" class="btn btn-reprendre" onclick="startGame()" style="width:260px; margin-bottom:0; font-size:1rem;" data-i18n="common.demarrer">▶ Démarrer la partie</button>
++  <div class="cfg-ped-footer">
++    <button class="btn btn-continuer cfg-ped-btn-back" data-action="back" data-i18n="common.retour">← Retour</button>
++    <button id="btn-start-peda" class="btn btn-reprendre cfg-ped-btn-start" data-action="start_game" data-i18n="common.demarrer">▶ Démarrer la partie</button>
+   </div>
+ 
+ </div>

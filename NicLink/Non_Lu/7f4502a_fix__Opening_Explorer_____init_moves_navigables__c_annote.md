@@ -1,0 +1,268 @@
+7f4502a
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 7f4502a
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Fri Aug 14 17:10:55 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    fix: Opening Explorer — init_moves navigables, chat conditionnel, espeak-ng bootstrap (issue #143)
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/bootstrap_linux.sh b/bootstrap_linux.sh
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 121222a..67da792 100755
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/bootstrap_linux.sh
+# ── Version APRÈS ce commit.
++++ b/bootstrap_linux.sh
+# ── Zone modifiée : ligne 48 (7 ligne(s)) dans l'ancienne version → ligne 48 (18 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -48,7 +48,18 @@ echo "Installation des dépendances..."
+ "$INSTALL_DIR/venv/bin/pip" install --upgrade pip --quiet
+ "$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt" --quiet
+ 
+-# 4. Règles udev Chessnut (optionnel — demande sudo)
++# 4. espeak-ng (moteur TTS système requis par pyttsx3 pour la synthèse vocale)
++if ! command -v espeak-ng &>/dev/null; then
++    echo "Installation d'espeak-ng (synthèse vocale)..."
++    if sudo -n true 2>/dev/null; then
++        sudo apt-get install -y espeak-ng
++    else
++        echo "AVERTISSEMENT : droits sudo requis pour installer espeak-ng."
++        echo "Exécutez manuellement : sudo apt-get install espeak-ng"
++    fi
++fi
++
++# 5. Règles udev Chessnut (optionnel — demande sudo)
+ UDEV_RULE='SUBSYSTEM=="usb", ATTRS{idVendor}=="2d80", MODE="0666", GROUP="plugdev", TAG+="uaccess"'
+ UDEV_FILE="/etc/udev/rules.d/99-chessnut-alchess.rules"
+ 
+# ── Zone modifiée : ligne 65 (7 ligne(s)) dans l'ancienne version → ligne 76 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -65,7 +76,7 @@ else
+     echo "  sudo udevadm control --reload-rules && sudo udevadm trigger"
+ fi
+ 
+-# 5. Créer le lanceur .desktop sur le bureau
++# 6. Créer le lanceur .desktop sur le bureau
+ mkdir -p "$HOME/Desktop"
+ cat > "$DESKTOP_FILE" << DESK
+ [Desktop Entry]
+# (diff du fichier suivant)
+diff --git a/nicsoft/modes/opening_explorer/explorer_session.py b/nicsoft/modes/opening_explorer/explorer_session.py
+# (index — ignorable)
+index d2aa08d..71d1d13 100644
+# (avant — fichier suivant)
+--- a/nicsoft/modes/opening_explorer/explorer_session.py
+# (après — fichier suivant)
++++ b/nicsoft/modes/opening_explorer/explorer_session.py
+# ── Zone modifiée : ligne 25 (41 ligne(s)) dans l'ancienne version → ligne 25 (57 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -25,41 +25,57 @@ class ExplorerSession:
+         self.board   = chess.Board()
+         self.source  = None
+         self.line_id = ""
+-        # Coups joués après les init_moves — (chess.Move, san) — pile pour prev_move().
+-        # Les init_moves eux-mêmes ne sont jamais dépilés (position plancher de la navigation).
++        # Tous les coups joués depuis la position de départ réelle —
++        # (chess.Move, san) — pile pour prev_move(). Inclut les init_moves,
++        # qui sont donc entièrement navigables (aucun plancher).
+         self._history: list = []
++        # Init_moves pré-calculés à load() sous forme (chess.Move, san),
++        # appliqués un par un par next_move() comme le reste de la ligne.
++        self._init_moves_list: list = []
+ 
+     def load(self, source, line_id: str = "") -> dict:
+-        """Charge une source, rejoue ses init_moves (sans pause), émet l'état initial."""
++        """Charge une source : le board reste en position de départ, les
++        init_moves sont pré-calculés (SAN inclus) mais appliqués coup par
++        coup via next_move(), pour rester navigables comme le reste de la
++        ligne."""
+         self.source   = source
+         self.line_id  = line_id
+         self.board    = chess.Board()
+         self._history = []
++        self._init_moves_list = []
++        scratch = chess.Board()
+         for uci in getattr(source, "init_moves", []):
+             try:
+                 move = chess.Move.from_uci(uci)
+             except Exception:
+                 continue
+-            if move in self.board.legal_moves:
+-                self.board.push(move)
++            if move not in scratch.legal_moves:
++                break
++            san = san_ep(scratch, move)
++            scratch.push(move)
++            self._init_moves_list.append((move, san))
+         self._update_board_display()
+         return self.get_state()
+ 
+     def next_move(self) -> dict:
+-        """Applique le prochain coup de la source. No-op si la ligne est terminée."""
++        """Applique le prochain coup — d'abord les init_moves pré-stockés,
++        puis les coups de la source. No-op si la ligne est terminée."""
+         if not self.has_more():
+             return self.get_state()
+-        move = self.source.get_main_move(self.board)
+-        if move is None:
+-            return self.get_state()
+-        san = san_ep(self.board, move)
++        if len(self._history) < len(self._init_moves_list):
++            move, san = self._init_moves_list[len(self._history)]
++        else:
++            move = self.source.get_main_move(self.board)
++            if move is None:
++                return self.get_state()
++            san = san_ep(self.board, move)
+         self.board.push(move)
+         self._history.append((move, san))
+         self._update_board_display()
+         return self.get_state()
+ 
+     def prev_move(self) -> dict:
+-        """Dépile le dernier coup joué. No-op si déjà à la position post-init."""
++        """Dépile le dernier coup joué. No-op si déjà à la position de départ."""
+         if self.is_at_start():
+             return self.get_state()
+         self._history.pop()
+# ── Zone modifiée : ligne 71 (6 ligne(s)) dans l'ancienne version → ligne 87 (8 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -71,6 +87,8 @@ class ExplorerSession:
+         return len(self._history) == 0
+ 
+     def has_more(self) -> bool:
++        if len(self._history) < len(self._init_moves_list):
++            return True
+         return self.source is not None and self.source.has_more(self.board)
+ 
+     def get_state(self) -> dict:
+# (diff du fichier suivant)
+diff --git a/nicsoft/web/static/app.js b/nicsoft/web/static/app.js
+# (index — ignorable)
+index e355e90..8f841ab 100644
+# (avant — fichier suivant)
+--- a/nicsoft/web/static/app.js
+# (après — fichier suivant)
++++ b/nicsoft/web/static/app.js
+# ── Zone modifiée : ligne 6015 (6 ligne(s)) dans l'ancienne version → ligne 6015 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -6015,6 +6015,9 @@ socket.on("config_data", (data) => {
+   if (ttsOn)    ttsOn.checked  = !!data.tts_enabled;
+   if (ttsRate)  ttsRate.value  = data.tts_rate || 150;
+   if (ttsRateVal) ttsRateVal.textContent = data.tts_rate || 150;
++
++  _explHasApiKey = !!(data.llm_api_key && data.llm_api_key.trim());
++  explUpdateChatAvailability();
+ });
+ 
+ function parametresSave() {
+# ── Zone modifiée : ligne 6046 (6 ligne(s)) dans l'ancienne version → ligne 6049 (20 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -6046,6 +6049,20 @@ let _explAtStart     = true;
+ let _explEndOfLine   = false;
+ let _explFlipped     = false;  // true = noirs en bas
+ let _explFlippedBuilt = null;
++let _explHasApiKey   = false;
++
++function explUpdateChatAvailability() {
++  const input   = document.getElementById("explorer-chat-input");
++  const sendBtn = document.getElementById("explorer-chat-send-btn");
++  if (input) {
++    input.disabled = !_explHasApiKey;
++    input.dataset.i18nPlaceholder = _explHasApiKey
++      ? "opening_explorer.chat.placeholder"
++      : "opening_explorer.chat.no_api";
++    input.placeholder = t(input.dataset.i18nPlaceholder);
++  }
++  if (sendBtn) sendBtn.disabled = !_explHasApiKey;
++}
+ 
+ socket.on("app_state", (data) => {
+   const selEl  = document.getElementById("screen-opening-explorer-select");
+# ── Zone modifiée : ligne 6054 (6 ligne(s)) dans l'ancienne version → ligne 6071 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -6054,6 +6071,7 @@ socket.on("app_state", (data) => {
+   if (playEl) playEl.style.display = "none";
+   if (data.state === "opening_explorer") {
+     explShowSelect();
++    socket.emit("config_get", {});
+   }
+ });
+ 
+# ── Zone modifiée : ligne 6207 (6 ligne(s)) dans l'ancienne version → ligne 6225 (8 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -6207,6 +6225,8 @@ socket.on("explorer_state", (data) => {
+   const nextBtn = document.getElementById("expl-btn-next");
+   if (prevBtn) prevBtn.disabled = _explAtStart;
+   if (nextBtn) nextBtn.disabled = _explEndOfLine;
++
++  explUpdateChatAvailability();
+ });
+ 
+ // Échiquier Opening Explorer — lecture seule, coups joués par les deux sources.
+# (diff du fichier suivant)
+diff --git a/nicsoft/web/static/i18n/de.json b/nicsoft/web/static/i18n/de.json
+# (index — ignorable)
+index 7609b92..1eb6599 100644
+# (avant — fichier suivant)
+--- a/nicsoft/web/static/i18n/de.json
+# (après — fichier suivant)
++++ b/nicsoft/web/static/i18n/de.json
+# ── Zone modifiée : ligne 252 (6 ligne(s)) dans l'ancienne version → ligne 252 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -252,6 +252,7 @@
+   "opening_explorer.erreur_chargement": "Diese Eröffnung konnte nicht geladen werden.",
+   "opening_explorer.chat.placeholder": "Stellen Sie eine Frage...",
+   "opening_explorer.chat.envoyer": "Senden",
++  "opening_explorer.chat.no_api": "Konfigurieren Sie einen API-Schlüssel in den Einstellungen",
+   "outils.titre": "🛠️ Übungs-Tools",
+   "outils.import_pgn.titre": "📥 Meine PGN-Linien importieren",
+   "outils.import_pgn.desc": "Eine oder mehrere .pgn-Dateien in Ihre persönlichen Übungen importieren (<em>mes_lignes.json</em>).",
+# (diff du fichier suivant)
+diff --git a/nicsoft/web/static/i18n/en.json b/nicsoft/web/static/i18n/en.json
+# (index — ignorable)
+index 98f6d74..c0d6777 100644
+# (avant — fichier suivant)
+--- a/nicsoft/web/static/i18n/en.json
+# (après — fichier suivant)
++++ b/nicsoft/web/static/i18n/en.json
+# ── Zone modifiée : ligne 252 (6 ligne(s)) dans l'ancienne version → ligne 252 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -252,6 +252,7 @@
+   "opening_explorer.erreur_chargement": "Unable to load this opening.",
+   "opening_explorer.chat.placeholder": "Ask a question...",
+   "opening_explorer.chat.envoyer": "Send",
++  "opening_explorer.chat.no_api": "Configure an API key in Settings to enable chat",
+   "outils.titre": "🛠️ Exercise Tools",
+   "outils.import_pgn.titre": "📥 Import my PGN lines",
+   "outils.import_pgn.desc": "Select one or more .pgn files to import into your personal exercises (<em>mes_lignes.json</em>).",
+# (diff du fichier suivant)
+diff --git a/nicsoft/web/static/i18n/fr.json b/nicsoft/web/static/i18n/fr.json
+# (index — ignorable)
+index 4895226..bebe9e9 100644
+# (avant — fichier suivant)
+--- a/nicsoft/web/static/i18n/fr.json
+# (après — fichier suivant)
++++ b/nicsoft/web/static/i18n/fr.json
+# ── Zone modifiée : ligne 252 (6 ligne(s)) dans l'ancienne version → ligne 252 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -252,6 +252,7 @@
+   "opening_explorer.erreur_chargement": "Impossible de charger cette ouverture.",
+   "opening_explorer.chat.placeholder": "Posez une question...",
+   "opening_explorer.chat.envoyer": "Envoyer",
++  "opening_explorer.chat.no_api": "Configurez une clé API dans Paramètres pour activer le chat",
+   "outils.titre": "🛠️ Outils Exercices",
+   "outils.import_pgn.titre": "📥 Importer mes lignes PGN",
+   "outils.import_pgn.desc": "Sélectionnez un ou plusieurs fichiers .pgn pour les importer dans vos exercices personnels (<em>mes_lignes.json</em>).",
+# (diff du fichier suivant)
+diff --git a/nicsoft/web/templates/index.html b/nicsoft/web/templates/index.html
+# (index — ignorable)
+index f464751..b61cdcb 100644
+# (avant — fichier suivant)
+--- a/nicsoft/web/templates/index.html
+# (après — fichier suivant)
++++ b/nicsoft/web/templates/index.html
+# ── Zone modifiée : ligne 1675 (7 ligne(s)) dans l'ancienne version → ligne 1675 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1675,7 +1675,7 @@
+       <div id="explorer-chat-history" style="font-size:0.82rem; color:#3a5a7a; max-height:200px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;"></div>
+       <div style="display:flex; gap:6px;">
+         <input type="text" id="explorer-chat-input" style="flex:1; padding:6px 10px; border:1px solid #a0b8d0; border-radius:6px; font-size:0.85rem;" placeholder="Posez une question..." data-i18n-placeholder="opening_explorer.chat.placeholder">
+-        <button class="btn btn-continuer" style="margin:0; padding:6px 12px; font-size:0.82rem;" onclick="explChatSend()" data-i18n="opening_explorer.chat.envoyer">Envoyer</button>
++        <button id="explorer-chat-send-btn" class="btn btn-continuer" style="margin:0; padding:6px 12px; font-size:0.82rem;" onclick="explChatSend()" data-i18n="opening_explorer.chat.envoyer">Envoyer</button>
+       </div>
+     </div>
+ 

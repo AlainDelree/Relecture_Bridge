@@ -1,0 +1,20 @@
+c78e5c9
+
+commit c78e5c9
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Sat Jul 25 03:49:45 2026 +0200
+
+    Exclut expiree=true du calcul du badge estimer_duree (issue #223)
+
+diff --git a/app/issues.py b/app/issues.py
+index d75b1f1..76146c4 100644
+--- a/app/issues.py
++++ b/app/issues.py
+@@ -722,6 +722,7 @@ def estimer_duree(historique: list, projet: str, type_issue: str, mode: str) ->
+         and r.get("type") == type_issue
+         and r.get("mode") == mode
+         and isinstance(r.get("duree"), (int, float))
++        and r.get("expiree") is not True
+     ]
+     n = len(durees)
+     if n == 0:

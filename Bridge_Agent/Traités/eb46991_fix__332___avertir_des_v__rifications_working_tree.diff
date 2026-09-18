@@ -1,0 +1,132 @@
+eb46991
+
+commit eb46991
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Sun Aug 2 18:19:27 2026 +0200
+
+    fix #332 : avertir des vérifications working tree quand l'issue interrompue écrivait
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index b2f5594..9eedffd 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -9,6 +9,31 @@ milliers de caractères sur une seule ligne logique, coûteux à relire et
+ 
+ Convention d'ajout : voir §10 de `BRIDGE_AGENT_DOC.md`.
+ 
++## 2 août 2026 — issue #332
++
++Le bouton « ⛔ Interrompre cette issue » (#323) tue par SIGKILL sans
++prévenir que, si l'issue écrivait, le working tree du projet peut rester
++PARTIEL (fichier à moitié écrit, backup présent sans le fix) — rien n'est
++perdu ni poussé, mais l'état n'est pas nettoyé automatiquement et il faut
++l'inspecter avant de relancer quoi que ce soit dessus.
++
++- `static/js/app.js` — `interrompreIssue` : nouvelle `modeEcritureDepuisLabels`
++  (mêmes labels que le pastillage `prefixeIssue`, ligne ~606, étendue à
++  `mode_scratch`) détecte si l'issue écrivait (`mode_write` → 'ecriture',
++  `mode_scratch` → 'lecture_active', aucun des deux → lecture seule, pas
++  d'avertissement). Nouvelle `avertissementWorkingTree` formule le message
++  (texte différent pour écriture pleine et pour lecture active — nuance :
++  le garde-fou de restauration #327 tourne APRÈS claude, donc peut ne pas
++  s'être exécuté avant un kill en pleine lecture active).
++- Confirmation AVANT le kill (`confirm()`) : enrichie avec l'avertissement
++  quand l'issue écrit — dernier moment pour renoncer. Comportement
++  inchangé pour une issue en lecture seule.
++- Modal de résultat APRÈS (`ouvrirModalInterrompre`, `modal-interrompre-rappel`) :
++  reçoit désormais l'avertissement en paramètre et l'ajoute au rappel
++  existant (relance manuelle du watcher) — `git status` dans le projet,
++  annuler/repartir du commit `avant-XXX`, ne pas relancer d'issue sur ce
++  projet avant working tree propre.
++
+ ## 2 août 2026 — issue #330
+ 
+ Documentation du champ d'en-tête `MODE`, jusqu'ici absent de
+diff --git a/static/js/app.js b/static/js/app.js
+index 6297c81..110d9a9 100644
+--- a/static/js/app.js
++++ b/static/js/app.js
+@@ -2732,6 +2732,36 @@ function labelsIssueDepuisCache(nom, numero) {
+   return [];
+ }
+ 
++// Détecte si l'issue interrompue ÉCRIVAIT dans le working tree du projet, à
++// partir des mêmes labels que prefixeIssue() (mode_write, ligne ~606) —
++// étendu à mode_scratch (lecture active, #327). Renvoie 'ecriture',
++// 'lecture_active' ou null (lecture seule : pas de working tree modifié,
++// donc aucun avertissement à afficher — issue #332).
++function modeEcritureDepuisLabels(labels) {
++  const noms = (labels || []).map(l => (l || '').toLowerCase());
++  if (noms.includes('mode_write'))   return 'ecriture';
++  if (noms.includes('mode_scratch')) return 'lecture_active';
++  return null;
++}
++
++// Message d'avertissement working tree, ajouté à la confirmation AVANT le
++// kill et/ou au rappel de la modal de résultat APRÈS (issue #332) — mêmes
++// faits, formulé une seule fois pour ne pas diverger entre les deux emplois.
++function avertissementWorkingTree(modeEcr, nom) {
++  if (modeEcr === 'ecriture') {
++    return "le kill peut tomber en pleine écriture : le working tree de « " + nom + " » "
++         + 'peut rester PARTIEL (fichier à moitié écrit, backup sans le fix). '
++         + 'Vérifiez `git status` dans ~/' + nom + ' avant de relancer une issue sur ce projet '
++         + '(annulez si besoin, ou repartez du commit avant-XXX).';
++  }
++  if (modeEcr === 'lecture_active') {
++    return 'le garde-fou de restauration (#327) tourne APRÈS claude — un kill peut tomber avant, '
++         + 'donc le working tree de « ' + nom + ' » a pu ne PAS être restauré. '
++         + 'Un `git status` de vérification dans ~/' + nom + ' est recommandé avant de relancer.';
++  }
++  return '';
++}
++
+ async function interrompreIssue(nom, numero) {
+   const depot = depotDuProjet(nom);
+   if (!depot) {
+@@ -2740,12 +2770,16 @@ async function interrompreIssue(nom, numero) {
+   }
+   const labels  = labelsIssueDepuisCache(nom, numero);
+   const windows = labels.map(l => l.toLowerCase()).includes('for-windows');
++  const modeEcr = modeEcritureDepuisLabels(labels);
++  const avertTree = avertissementWorkingTree(modeEcr, nom);
+   if (!confirm("Interrompre le traitement de l'issue #" + numero
+              + (windows ? ' (CCW / Windows)' : ' (CCL / Linux)') + " ?\n\n"
+              + 'Le watcher ' + (windows ? 'CCW-Watcher' : 'du projet')
+              + ' sera ARRÊTÉ (les autres issues en file restent ouvertes sur GitHub, '
+              + 'mais en attente tant que le watcher n\'est pas relancé MANUELLEMENT). '
+-             + "L'issue sera marquée needs-human — elle ne sera PAS fermée. Continuer ?")) return;
++             + "L'issue sera marquée needs-human — elle ne sera PAS fermée."
++             + (avertTree ? '\n\n⚠️ Cette issue écrit dans le projet : ' + avertTree : '')
++             + ' Continuer ?')) return;
+ 
+   let resultat;
+   try {
+@@ -2763,7 +2797,7 @@ async function interrompreIssue(nom, numero) {
+     alert('Erreur : ' + (resultat.erreur || "échec de l'interruption."));
+     return;
+   }
+-  ouvrirModalInterrompre(resultat);
++  ouvrirModalInterrompre(resultat, avertTree);
+ 
+   // Recharge la liste (l'issue porte désormais needs-human) puis réaffiche.
+   const numStr = String(numero);
+@@ -2786,7 +2820,7 @@ const LIBELLES_STATUT_INTERROMPRE = {
+ };
+ const BADGES_ETAPE_INTERROMPRE = {succes: '✅', rien_a_faire: '➖', echec: '❌'};
+ 
+-function ouvrirModalInterrompre(resultat) {
++function ouvrirModalInterrompre(resultat, avertTree) {
+   const overlay = document.getElementById('modal-interrompre');
+   const titre   = document.getElementById('modal-interrompre-titre');
+   const liste   = document.getElementById('modal-interrompre-liste');
+@@ -2816,6 +2850,10 @@ function ouvrirModalInterrompre(resultat) {
+   } else if (resultat.statut_global === 'succes_partiel') {
+     rappelTexte += ' ⚠ Certaines étapes ont échoué (détail ci-dessus) — vérifiez avant de relancer.';
+   }
++  if (avertTree) {
++    rappelTexte += ' ⚠️ Cette issue écrivait dans le projet : ' + avertTree
++                 + ' Ne relancez aucune issue sur ce projet avant working tree propre.';
++  }
+   rappel.textContent = rappelTexte;
+ 
+   overlay.classList.add('actif');

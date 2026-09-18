@@ -1,0 +1,945 @@
+8badb73
+
+commit 8badb73
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Tue Aug 25 11:36:47 2026 +0200
+
+    fix #483 : watcher issues_inbox centralisé + onglet Résultats inbox
+    
+    Nouveau flux de création d'issues sans passage par le formulaire web :
+    scripts/watcher_issues_inbox.py scrute issues_inbox/, parse et valide
+    l'en-tête, crée l'issue via gh issue create, journalise dans
+    logs/issues_inbox.log (rotation à 50 lignes), déplace les fichiers
+    invalides vers issues_inbox/rejected/. app/issues_inbox.py expose l'état
+    (route /issues-inbox/etat) au nouvel onglet « Résultats inbox » de
+    new_issue.py, alarme pilotée uniquement par l'état de rejected/.
+    Documentation ajoutée en BRIDGE_AGENT_DOC.md §20 + CHANGELOG.md.
+
+diff --git a/.gitignore b/.gitignore
+index b8749fe..d361111 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -11,3 +11,6 @@ provisioning/windows/autounattend.local.xml
+ # Bibliothèque de templates d'issues récurrentes par projet (issue #284) :
+ # état de formulaire local, pas du code — jamais committé.
+ configs/templates_*.json
++# Dossier inbox du watcher_issues_inbox (issue #483) : fichiers .txt déposés
++# par Claude Chat / traités par le watcher — état transitoire, pas du code.
++issues_inbox/
+diff --git a/BRIDGE_AGENT_DOC.md b/BRIDGE_AGENT_DOC.md
+index f84a878..7ed5aad 100644
+--- a/BRIDGE_AGENT_DOC.md
++++ b/BRIDGE_AGENT_DOC.md
+@@ -443,8 +443,11 @@ méthode par défaut recommandée.
+     tunnel.py         — tunnel Cloudflare (mode externe)
+     vues.py           — routes Flask et rendu des pages
+     etat.py           — état partagé de l'application
++    issues_inbox.py   — état de l'onglet « Résultats inbox » (§20, issue #483)
+   templates/          — gabarits HTML (Jinja2)
+   static/             — CSS, JS, assets statiques
++  issues_inbox/       — gitignoré : dépôt de fichiers .txt d'issues à créer (§20)
++    rejected/         — issues malformées, à corriger manuellement (§20)
+   consignes/          — consignes injectées dans le prompt CCL par watcher.py (§12.1)
+     globales.md       — NON-optionnel : rappels de sécurité, TOUTE issue
+     type_chef.md      — optionnel : consignes du TYPE « chef »
+@@ -2279,7 +2282,129 @@ issues de la même combinaison s'il le juge utile.
+ 
+ ---
+ 
+-*Dernière mise à jour : 18 août 2026 — §16 « Agent Windows CCW » (issue
++## 20. Watcher `issues_inbox` centralisé (issue #483)
++
++### 20.1 Objectif
++
++Jusqu'ici, une issue générée par Claude Chat devait être copiée-collée à la
++main dans l'onglet **« Nouvelle issue »** de `new_issue.py` (§3). Le watcher
++**`scripts/watcher_issues_inbox.py`** automatise ce geste : Claude Chat (ou
++Alain en CLI) dépose un fichier `.txt` dans **`~/Bridge_Agent/issues_inbox/`**,
++le watcher le détecte, le valide, crée l'issue via `gh issue create` et
++nettoie — sans repasser par le formulaire web.
++
++### 20.2 Structure disque
++
++- **`issues_inbox/`** (gitignoré, créé automatiquement au premier lancement
++  du watcher s'il n'existe pas) : fichiers `.txt` en attente, nommage libre
++  (le watcher ne se fie qu'au contenu, pas au nom de fichier).
++- **`issues_inbox/rejected/`** : fichiers rejetés (en-tête malformé, projet
++  inconnu, échec de `gh issue create`...), renommés
++  `<nom-original>__REJETE-<slug-du-motif>.txt` pour que le motif soit visible
++  sans ouvrir le fichier. Laissés en place pour correction manuelle — le
++  watcher ne les retraite jamais automatiquement.
++
++### 20.3 Format attendu du fichier
++
++Même format qu'une issue produite par Claude Chat pour le formulaire web
++(§3) : un en-tête `| CHAMP | Valeur |` optionnel suivi d'une ligne
++`#Titre: ...` puis le corps. Champs d'en-tête reconnus, tous optionnels sauf
++`PROJET` :
++
++| Champ     | Rôle                                                                |
++|-----------|----------------------------------------------------------------------|
++| `PROJET`  | **Obligatoire** — doit correspondre à `configs/<PROJET>.conf`        |
++| `TIMEOUT` | Nombre (secondes, suffixe `s` toléré) — sinon défaut du projet       |
++| `MODELE`  | Doit être une valeur reconnue (`claude-sonnet-5`, etc.) si fourni    |
++| `MODE`    | Reconnu de façon tolérante (§5) — absent/non reconnu → `lecture`     |
++| `LABELS`  | Labels GitHub additionnels, séparés par des virgules                 |
++
++Le fichier est reparsé avec les mêmes regex que `static/js/app.js` (détection
++de champ d'en-tête à la frappe côté formulaire web), pour ne jamais diverger
++du format déjà produit par Claude Chat.
++
++### 20.4 Validation avant création
++
++Un fichier est rejeté (déplacé vers `rejected/`, jamais créé sur GitHub) si :
++`PROJET` absent/vide, `configs/<PROJET>.conf` introuvable ou invalide,
++`#Titre:` absent/vide, `MODELE` fourni mais non reconnu, ou `TIMEOUT` fourni
++mais non numérique. Un échec de `gh issue create` (réseau, dépôt inaccessible,
++timeout de 30s...) provoque le même sort, avec le message d'erreur de `gh`
++en détail.
++
++### 20.5 Journalisation (rotation par nombre de lignes)
++
++Chaque traitement (réussi ou rejeté) ajoute une ligne à
++**`logs/issues_inbox.log`** :
++`<horodatage> | <projet> | OK|REJECTED | <titre> [— <détail si rejet>]`.
++Rotation propre à ce watcher, **distincte** de la rotation par taille des
++autres watchers (§13) : dès que le fichier dépasse **`MAX_LOG_LINES`**
++(défaut 50), les lignes les plus anciennes sont supprimées — pas de fichier
++`.1`/`.2`, un seul fichier plat borné en permanence à 50 lignes.
++
++### 20.6 Concurrence
++
++Avant de traiter un fichier `.txt`, le watcher vérifie que sa date de
++dernière modification remonte à **au moins 1 seconde** — sinon il le laisse
++pour le cycle de polling suivant, pour ne jamais lire un fichier encore en
++cours d'écriture (dépôt via un outil qui écrit progressivement).
++
++### 20.7 Config (optionnelle)
++
++`configs/watcher_issues_inbox.conf` — clés `NOM`, `REP_TRAVAIL`,
++`POLLING_INTERVAL` (défaut 5s), `MAX_LOG_LINES` (défaut 50), `INBOX_DIR`,
++`REJECTED_DIR`, `GH_TOKEN`. Toutes optionnelles : le watcher tourne avec des
++défauts sensés (dossiers sous `~/Bridge_Agent`) même sans ce fichier.
++**Ce `.conf` n'est pas créé automatiquement par CCL** — garde-fou §11 (CCL ne
++modifie/crée jamais `configs/*.conf`) : c'est à Alain de le créer à la main
++s'il veut surcharger les défauts.
++
++Lancement : `python3 scripts/watcher_issues_inbox.py` (boucle continue),
++`--config <chemin>` pour un `.conf` alternatif, `--once` pour un seul cycle
++(tests). Peut être supervisé en systemd/NSSM comme les autres watchers (§13),
++en dehors du cycle de vie de `watcher.py` (générique, par projet) puisqu'il
++ne traite pas des issues GitHub existantes mais alimente leur création.
++
++### 20.8 Onglet « Résultats inbox » de `new_issue.py`
++
++Nouvel onglet dans l'interface web, alimenté par la route
++**`GET /issues-inbox/etat`** (`app/issues_inbox.py`, pure lecture disque —
++aucun appel `gh`, aucune dépendance à un watcher en cours d'exécution) :
++
++- **Alarme** pilotée **uniquement** par l'état du dossier
++  `issues_inbox/rejected/` — non vide → badge 🚨 clignotant sur l'onglet
++  lui-même (visible même hors de cette vue) + bandeau rouge dans le panneau ;
++  vide → aucun indicateur. Volontairement **pas** de parsing de log pour cette
++  décision (§ Tâche demandée de l'issue #483) : l'état du dossier est la
++  seule source de vérité, plus simple et plus fiable qu'un état dérivé du log.
++- **Zone détail** : tableau des fichiers présents dans `rejected/` (nom +
++  date de dépôt), et un historique **purement informatif** des dernières
++  lignes de `logs/issues_inbox.log` — celui-ci n'influence jamais l'alarme.
++- **Rafraîchissement** : `rafraichirInbox()` (`static/js/app.js`) tourne en
++  polling continu (7s) indépendamment de l'onglet actif, pour que le badge
++  reste à jour même quand un autre onglet est ouvert ; bouton « Rafraîchir »
++  pour un rafraîchissement immédiat.
++
++### 20.9 Workflow utilisateur final
++
++1. Claude Chat (ou Alain) dépose un fichier `.txt` dans `issues_inbox/`.
++2. Le watcher le détecte au cycle de polling suivant, crée l'issue GitHub
++   (mêmes labels/en-tête que le formulaire web), supprime le fichier, journalise.
++3. Alain voit le statut dans l'onglet « Résultats inbox » de `new_issue.py`.
++4. Un fichier rejeté reste visible dans `issues_inbox/rejected/` — alarme
++   allumée tant qu'il n'est pas corrigé/supprimé à la main.
++
++---
++
++*Dernière mise à jour : 25 août 2026 — §10/§20 « Watcher `issues_inbox`
++centralisé » (issue #483) : nouveau flux de création d'issues sans passage
++par le formulaire web — `scripts/watcher_issues_inbox.py` scrute
++`issues_inbox/`, valide et crée via `gh issue create`, journalise dans
++`logs/issues_inbox.log` (rotation à 50 lignes) ; fichiers rejetés déplacés
++vers `issues_inbox/rejected/`. Nouvel onglet « Résultats inbox » dans
++`new_issue.py` (`app/issues_inbox.py`, route `/issues-inbox/etat`), alarme
++visuelle pilotée uniquement par l'état (vide/non-vide) de `rejected/`.
++Précédemment — 18 août 2026 — §16 « Agent Windows CCW » (issue
+ #446) : mise à jour pour le passage de CCW d'une VM VirtualBox à un **PC
+ fixe physique dédié** (Pentium G2020). Introduction reformulée en
+ conséquence. Paramètres corrigés partout dans le §16 : `REP_TRAVAIL =
+@@ -2304,14 +2429,6 @@ une issue unique est elle aussi présentée dans un bloc de code, afin
+ qu'Alain puisse utiliser le bouton copier du bloc. §11 « Conventions de
+ code » : le bullet « Issues » précise désormais que le corps est toujours
+ présenté dans un bloc de code, qu'il s'agisse d'une issue seule ou d'un
+-lot.
+-Précédemment — §6 « Champs spéciaux dans le corps de l'issue » : nouveau
+-champ `RESEAU` documenté (issue #435, `oui`/`non`, lu par
+-`_detecter_tag_reseau`, optionnel). §19.6 : les deux limitations
+-« `tag_reseau` n'est peuplé nulle part » et « incohérence inerte sur échec
+-définitif » sont levées — `_detecter_tag_reseau(body)` lit désormais le
+-champ `RESEAU`, et `lire_timeout_suggere()` reçoit `body` pour choisir
+-`F_reseau`/`F_local` selon le tag réel de l'issue en échec, au lieu de
+-toujours retomber sur `F_local` (voir §19.7).*
++lot.*
+ 
+ Historique complet : voir [`CHANGELOG.md`](CHANGELOG.md).
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index c18d6f2..4ce5746 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -9,6 +9,51 @@ milliers de caractères sur une seule ligne logique, coûteux à relire et
+ 
+ Convention d'ajout : voir §10 de `BRIDGE_AGENT_DOC.md`.
+ 
++## 25 août 2026 — issue #483
++
++Watcher `issues_inbox` centralisé + onglet « Résultats inbox » : nouveau
++flux de création d'issues sans passage par le formulaire web. La
++volumétrie d'issues créées à la main (copier-coller depuis Claude Chat
++dans `new_issue.py`) montait et demandait des allers-retours ; ce watcher
++automatise le dépôt → création → nettoyage.
++- `scripts/watcher_issues_inbox.py` (nouveau) : scrute
++  `~/Bridge_Agent/issues_inbox/` en continu (polling, 5s par défaut),
++  parse l'en-tête de chaque fichier `.txt` (`PROJET`, `TIMEOUT`, `MODELE`,
++  `MODE`, `LABELS`, `#Titre:` — mêmes regex que `static/js/app.js`), valide
++  (`PROJET` existe dans `configs/`, titre non vide, `MODELE`/`TIMEOUT`
++  bien formés si fournis), crée l'issue via `gh issue create` (même
++  format de body/labels que `app/issues.py`), supprime le fichier traité.
++  Fichier invalide ou échec de `gh` → déplacé vers `issues_inbox/rejected/`
++  (suffixe `__REJETE-<motif>`), jamais retraité automatiquement. Ignore un
++  fichier modifié il y a moins d'1s (protection contre une lecture en
++  cours d'écriture). Dossiers `issues_inbox/` et `issues_inbox/rejected/`
++  créés automatiquement au premier lancement. Config optionnelle
++  `configs/watcher_issues_inbox.conf` (non créée par CCL — garde-fou §11 :
++  CCL ne modifie/crée jamais `configs/*.conf`, à créer à la main par Alain
++  s'il veut surcharger les défauts).
++- Journalisation : `logs/issues_inbox.log`, une ligne par traitement
++  (`<horodatage> | <projet> | OK|REJECTED | <titre>`), rotation par
++  **nombre de lignes** (défaut 50 — distincte de la rotation par taille
++  des autres watchers).
++- `app/issues_inbox.py` (nouveau) : route `GET /issues-inbox/etat`, pure
++  lecture disque (aucun appel `gh`) — renvoie l'état de `rejected/`
++  (déclenche l'alarme) et les dernières lignes du log (historique
++  informatif, sans effet sur l'alarme).
++- `templates/index.html` / `static/js/app.js` / `static/css/style.css` :
++  nouvel onglet « Résultats inbox », badge 🚨 clignotant sur l'onglet
++  piloté **uniquement** par la présence de fichiers dans
++  `issues_inbox/rejected/` (jamais par un parsing de log), tableau des
++  fichiers rejetés (nom + date), historique de log affiché à titre
++  informatif, rafraîchissement en polling continu (7s, indépendant de
++  l'onglet actif) + bouton « Rafraîchir ».
++- `.gitignore` : ajout de `issues_inbox/` (état transitoire, pas du code).
++- `BRIDGE_AGENT_DOC.md` : nouveau §20 « Watcher `issues_inbox` centralisé »
++  (structure disque, format de fichier, validation, journalisation,
++  concurrence, config, onglet web, workflow utilisateur final) ; §10
++  (structure du dépôt) complété avec `app/issues_inbox.py` et
++  `issues_inbox/`. Pied de page mis à jour (glissement des trois dernières
++  entrées d'un cran, la plus ancienne — #435 — sort du pied de page).
++
+ ## 13 août 2026 — issue #443
+ 
+ DOC — extension de la convention de présentation des issues (issue #153)
+diff --git a/app/__init__.py b/app/__init__.py
+index 40766e4..12f1625 100644
+--- a/app/__init__.py
++++ b/app/__init__.py
+@@ -78,6 +78,7 @@ def _enregistrer_routes(app: Flask) -> None:
+     from app.interruption import route_interrompre, route_relancer
+     from app.cycle_vie import heartbeat, events, quitter
+     from app.fin_issue import notifier_fin_issue, stream_fin_issue
++    from app.issues_inbox import etat_inbox
+     from app.diag_heartbeat import visibilite as diag_visibilite   # DIAGNOSTIC TEMPORAIRE — issue #157, à retirer
+     from app.vues import index
+ 
+@@ -130,4 +131,6 @@ def _enregistrer_routes(app: Flask) -> None:
+     # comme /heartbeat.
+     app.add_url_rule("/notifier-fin-issue", "notifier_fin_issue", notifier_fin_issue, methods=["POST"])
+     app.add_url_rule("/stream", "stream_fin_issue", login_requis(stream_fin_issue))
++    # ─── Onglet « Résultats inbox » (issue #483) : état du watcher_issues_inbox ─
++    app.add_url_rule("/issues-inbox/etat", "etat_inbox", login_requis(etat_inbox))
+     app.add_url_rule("/diag-visibilite", "diag_visibilite", diag_visibilite, methods=["POST"])   # DIAGNOSTIC TEMPORAIRE — issue #157, à retirer
+diff --git a/app/issues_inbox.py b/app/issues_inbox.py
+new file mode 100644
+index 0000000..e58a257
+--- /dev/null
++++ b/app/issues_inbox.py
+@@ -0,0 +1,69 @@
++"""État de l'onglet « Résultats inbox » (issue #483).
++
++Lit l'état du watcher_issues_inbox (scripts/watcher_issues_inbox.py) UNIQUEMENT
++depuis le disque — aucun appel gh, aucune dépendance au watcher étant en cours
++d'exécution ou non. L'alarme visuelle de l'onglet est pilotée exclusivement par
++la présence de fichiers dans issues_inbox/rejected/ (pas de parsing de log, cf.
++tâche demandée de l'issue #483) ; l'historique des succès/rejets est une simple
++lecture informative de logs/issues_inbox.log, sans effet sur l'alarme.
++"""
++
++import sys
++from pathlib import Path
++
++from flask import jsonify
++
++DOSSIER_SCRIPT = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(DOSSIER_SCRIPT / "scripts"))
++
++from watcher_issues_inbox import charger_config_inbox, DEFAUT_CHEMIN_CONFIG  # noqa: E402
++
++# Nombre de lignes d'historique renvoyées à l'onglet (le fichier lui-même est
++# déjà borné à MAX_LOG_LINES par le watcher — cf. ConfigInbox.max_log_lines).
++LIGNES_HISTORIQUE_AFFICHEES = 50
++
++
++def _config():
++    """Relit configs/watcher_issues_inbox.conf à chaque appel (comme
++    app/projets.py::get_config) — reflète toujours l'état réel du fichier,
++    y compris s'il a été créé/modifié à la main par Alain après le démarrage
++    du serveur. Absent : défauts sensés (voir ConfigInbox)."""
++    return charger_config_inbox(DEFAUT_CHEMIN_CONFIG)
++
++
++def etat_inbox():
++    """Retourne :
++      - alarme     : True si issues_inbox/rejected/ contient au moins un fichier
++      - rejetes    : [{nom, date}] triés du plus récent au plus ancien
++      - historique : dernières lignes de logs/issues_inbox.log (plus récente
++                     en premier), purement informatif
++    """
++    cfg = _config()
++
++    rejetes = []
++    if cfg.rejected_dir.is_dir():
++        for chemin in cfg.rejected_dir.iterdir():
++            if not chemin.is_file():
++                continue
++            try:
++                horodatage = chemin.stat().st_mtime
++            except OSError:
++                continue
++            rejetes.append({"nom": chemin.name, "date": horodatage})
++    rejetes.sort(key=lambda r: r["date"], reverse=True)
++
++    historique = []
++    if cfg.fichier_log.exists():
++        try:
++            lignes = cfg.fichier_log.read_text(encoding="utf-8").splitlines()
++            historique = list(reversed(lignes[-LIGNES_HISTORIQUE_AFFICHEES:]))
++        except OSError:
++            historique = []
++
++    return jsonify(
++        alarme=len(rejetes) > 0,
++        rejetes=rejetes,
++        historique=historique,
++        inbox_dir=str(cfg.inbox_dir),
++        rejected_dir=str(cfg.rejected_dir),
++    )
+diff --git a/scripts/watcher_issues_inbox.py b/scripts/watcher_issues_inbox.py
+new file mode 100644
+index 0000000..0a5aee6
+--- /dev/null
++++ b/scripts/watcher_issues_inbox.py
+@@ -0,0 +1,443 @@
++#!/usr/bin/env python3
++"""
++watcher_issues_inbox.py — Watcher centralisé du dossier issues_inbox/ (issue #483).
++
++Scrute en continu ~/Bridge_Agent/issues_inbox/ : chaque fichier .txt déposé
++(par Claude Chat ou manuellement) est parsé, validé, puis transformé en issue
++GitHub via `gh issue create` — même format d'en-tête et de labels que
++app/issues.py (construire_body/construire_labels), pour rester cohérent avec
++le flux du formulaire web. Le fichier traité est supprimé après création
++réussie ; un fichier invalide (PROJET inconnu, titre vide, etc.) est déplacé
++vers issues_inbox/rejected/ avec le détail de l'erreur en suffixe de nom.
++
++Usage :
++    python3 scripts/watcher_issues_inbox.py
++    python3 scripts/watcher_issues_inbox.py --config configs/watcher_issues_inbox.conf
++    python3 scripts/watcher_issues_inbox.py --once   # un seul cycle (tests)
++
++Config (configs/watcher_issues_inbox.conf, optionnelle — voir charger_config_inbox
++ci-dessous) : NOM, REP_TRAVAIL, POLLING_INTERVAL, MAX_LOG_LINES, INBOX_DIR,
++REJECTED_DIR, GH_TOKEN. Toutes les clés sont optionnelles ; en son absence, le
++watcher tourne avec des défauts sensés (dossiers sous ~/Bridge_Agent). Ce
++fichier .conf n'est PAS créé automatiquement par CCL — garde-fou §11 de
++BRIDGE_AGENT_DOC.md (CCL ne modifie/crée jamais configs/*.conf) : c'est à
++Alain de le créer à la main s'il veut surcharger les défauts.
++"""
++
++import argparse
++import logging
++import os
++import re
++import subprocess
++import sys
++import tempfile
++import time
++import unicodedata
++from dataclasses import dataclass
++from datetime import datetime
++from pathlib import Path
++
++DOSSIER_SCRIPT = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(DOSSIER_SCRIPT))
++
++from watcher import charger_config, lire_conf, est_titre_chef  # noqa: E402
++
++log = logging.getLogger("watcher_issues_inbox")
++
++# ─── Config ─────────────────────────────────────────────────────────────────
++
++DEFAUT_CHEMIN_CONFIG = DOSSIER_SCRIPT / "configs" / "watcher_issues_inbox.conf"
++
++
++@dataclass
++class ConfigInbox:
++    nom: str              = "watcher_issues_inbox"
++    rep_travail: Path     = DOSSIER_SCRIPT
++    polling_interval: int = 5
++    max_log_lines: int    = 50
++    inbox_dir: Path       = DOSSIER_SCRIPT / "issues_inbox"
++    rejected_dir: Path    = DOSSIER_SCRIPT / "issues_inbox" / "rejected"
++    gh_token: str         = ""
++
++    @property
++    def fichier_log(self) -> Path:
++        return DOSSIER_SCRIPT / "logs" / "issues_inbox.log"
++
++
++def charger_config_inbox(chemin: Path) -> ConfigInbox:
++    """Charge configs/watcher_issues_inbox.conf s'il existe ; sinon retourne les
++    défauts. Toutes les clés sont optionnelles (contrairement à charger_config()
++    des projets) : ce watcher est utilisable dès l'installation, sans .conf."""
++    if not chemin.exists():
++        return ConfigInbox()
++
++    brut = lire_conf(chemin)
++    rep_travail = Path(brut.get("REP_TRAVAIL") or str(DOSSIER_SCRIPT)).expanduser()
++    inbox_dir = Path(brut.get("INBOX_DIR") or str(rep_travail / "issues_inbox")).expanduser()
++    rejected_dir = Path(brut.get("REJECTED_DIR") or str(inbox_dir / "rejected")).expanduser()
++
++    def entier(cle: str, defaut: int) -> int:
++        val = (brut.get(cle) or "").strip()
++        return int(val) if val.isdigit() else defaut
++
++    return ConfigInbox(
++        nom              = brut.get("NOM") or "watcher_issues_inbox",
++        rep_travail      = rep_travail,
++        polling_interval = entier("POLLING_INTERVAL", 5),
++        max_log_lines    = entier("MAX_LOG_LINES", 50),
++        inbox_dir        = inbox_dir,
++        rejected_dir     = rejected_dir,
++        gh_token         = brut.get("GH_TOKEN") or "",
++    )
++
++
++# ─── Parsing d'en-tête (miroir Python de lireChampEntete/retirerLigneEntete de
++# static/js/app.js — même regex, pour ne jamais diverger du format produit par
++# Claude Chat / reconnu par le formulaire web) ──────────────────────────────
++
++def _regex_champ(champ: str) -> re.Pattern:
++    return re.compile(rf"^\s*\|\s*{champ}\s*\|([^|]*)\|", re.IGNORECASE | re.MULTILINE)
++
++
++def lire_champ_entete(corps: str, champ: str) -> str | None:
++    m = _regex_champ(champ).search(corps or "")
++    if not m:
++        return None
++    valeur = m.group(1).strip()
++    return valeur or None
++
++
++def retirer_ligne_entete(corps: str, champ: str) -> str:
++    m = _regex_champ(champ).search(corps or "")
++    if not m:
++        return corps
++    debut = m.start()
++    fin = corps.find("\n", debut)
++    fin = len(corps) if fin == -1 else fin
++    if fin < len(corps) and corps[fin] == "\n":
++        return corps[:debut] + corps[fin + 1:]
++    if debut > 0 and corps[debut - 1] == "\n":
++        return corps[:debut - 1] + corps[fin:]
++    return corps[:debut] + corps[fin:]
++
++
++TITRE_RE = re.compile(r"^#Titre:\s*(.*)$", re.IGNORECASE | re.MULTILINE)
++
++CHAMPS_ENTETE = ("PROJET", "TIMEOUT", "MODELE", "MODE", "LABELS")
++
++
++def extraire_champs(contenu: str) -> dict:
++    """Extrait les champs d'en-tête optionnels, le #Titre: et le corps restant
++    (en-tête + ligne #Titre retirés, comme le fait le formulaire web à la
++    frappe — cf. detecterProjetDansCorps/detecterTimeoutDansCorps/
++    detecterModeDansCorps de static/js/app.js)."""
++    valeurs = {champ: lire_champ_entete(contenu, champ) for champ in CHAMPS_ENTETE}
++
++    reste = contenu
++    for champ in CHAMPS_ENTETE:
++        reste = retirer_ligne_entete(reste, champ)
++
++    m = TITRE_RE.search(reste)
++    titre = m.group(1).strip() if m else ""
++    if m:
++        debut = m.start()
++        fin = reste.find("\n", debut)
++        fin = len(reste) if fin == -1 else fin + 1
++        reste = reste[:debut] + reste[fin:]
++
++    return {
++        "projet":       (valeurs["PROJET"] or "").strip(),
++        "timeout_brut": valeurs["TIMEOUT"],
++        "modele":       (valeurs["MODELE"] or "").strip(),
++        "mode_brut":    valeurs["MODE"],
++        "labels_brut":  valeurs["LABELS"],
++        "titre":        titre,
++        "corps":        reste.strip("\n"),
++    }
++
++
++# ─── Mode (miroir de app.js::reconnaitreModeTexte / app/issues.py::MODES) ──
++# Reconnaissance tolérante — jamais un motif de rejet en soi (§6 du DOC :
++# défaut LECTURE si absent/non reconnu), seulement §3 du DOC demande de la
++# « reconnaître », pas de la valider strictement.
++MODE_SYNONYMES = (
++    ("ecriture",       ("écriture", "ecriture", "write", "mode_write")),
++    ("lecture_active", ("lecture active", "scratch", "mode_scratch")),
++    ("lecture",        ("lecture seule", "lecture", "read", "mode_read")),
++)
++MODES = {
++    "lecture":        ("lecture", None),
++    "lecture_active": ("lecture active", "mode_scratch"),
++    "ecriture":       ("écriture", "mode_write"),
++}
++
++
++def _sans_accents(texte: str) -> str:
++    decompose = unicodedata.normalize("NFKD", texte or "")
++    return "".join(c for c in decompose if not unicodedata.combining(c))
++
++
++def reconnaitre_mode(brut: str | None) -> str:
++    if not brut:
++        return "lecture"
++    normalise = _sans_accents(brut.strip().lower())
++    for valeur, motifs in MODE_SYNONYMES:
++        for motif in motifs:
++            if _sans_accents(motif.lower()) in normalise:
++                return valeur
++    return "lecture"
++
++
++MODELES_VALIDES = {"claude-sonnet-5", "claude-opus-4-8", "claude-haiku-4-5", "claude-fable-5"}
++
++
++# ─── Validation ─────────────────────────────────────────────────────────────
++
++def valider(champs: dict):
++    """Retourne (True, "", cfg_projet) si le fichier est exploitable, sinon
++    (False, détail_erreur, None)."""
++    if not champs["projet"]:
++        return False, "en-tête malformé : champ PROJET manquant ou vide.", None
++
++    chemin_conf = DOSSIER_SCRIPT / "configs" / f"{champs['projet']}.conf"
++    if not chemin_conf.exists():
++        return False, f"projet inconnu : « {champs['projet']} » (configs/{champs['projet']}.conf introuvable).", None
++    try:
++        cfg_projet = charger_config(chemin_conf)
++    except SystemExit as e:
++        return False, f"config du projet « {champs['projet']} » invalide : {e}", None
++
++    if not champs["titre"]:
++        return False, "titre manquant (ligne « #Titre: » absente ou vide).", None
++
++    if champs["modele"] and champs["modele"] not in MODELES_VALIDES:
++        return False, (f"MODELE inconnu : « {champs['modele']} » "
++                        f"(valeurs acceptées : {', '.join(sorted(MODELES_VALIDES))})."), None
++
++    if champs["timeout_brut"]:
++        valeur = champs["timeout_brut"].strip().lower().rstrip("s")
++        if not valeur.isdigit():
++            return False, f"TIMEOUT invalide : « {champs['timeout_brut']} » (doit être un nombre).", None
++
++    return True, "", cfg_projet
++
++
++# ─── Construction body/labels (miroir de app/issues.py::construire_body /
++# construire_labels, pour produire des issues indiscernables de celles créées
++# via le formulaire web) ────────────────────────────────────────────────────
++
++LABELS_RE = re.compile(r"^\s*\|\s*LABELS\s*\|([^|]*)\|", re.IGNORECASE | re.MULTILINE)
++
++
++def construire_labels(champs: dict) -> str:
++    extras = [lab.strip() for lab in (champs["labels_brut"] or "").split(",") if lab.strip()]
++    labels = ["bridge"]
++    if "for-windows" not in extras:
++        labels.append("for-linux")
++    _, label_mode = MODES[reconnaitre_mode(champs["mode_brut"])]
++    if label_mode:
++        labels.append(label_mode)
++    for extra in extras:
++        if extra not in labels:
++            labels.append(extra)
++    return ",".join(labels)
++
++
++def construire_body(champs: dict, cfg_projet) -> str:
++    mode_valeur = reconnaitre_mode(champs["mode_brut"])
++    mode_label, _ = MODES[mode_valeur]
++
++    chef = est_titre_chef(champs["titre"])
++    if champs["timeout_brut"]:
++        timeout = int(champs["timeout_brut"].strip().lower().rstrip("s"))
++        if chef:
++            timeout = max(timeout, cfg_projet.timeout_chef)
++    else:
++        timeout = cfg_projet.timeout_chef if chef else cfg_projet.timeout_claude
++
++    lignes = [
++        "## En-tête\n",
++        "| Champ    | Valeur |",
++        "|----------|--------|",
++        "| SOURCE   | CC |",
++        "| DEST     | CCL |",
++        "| RETOUR   | CC |",
++        f"| MODE     | {mode_label} |",
++        "| PRIORITE | normale |",
++        f"| TIMEOUT  | {timeout}s |",
++        f"| PROJET   | {cfg_projet.nom} |",
++    ]
++    if champs["modele"]:
++        lignes.append(f"| MODELE   | {champs['modele']} |")
++
++    entete = "\n".join(lignes)
++    parties = [p for p in (entete, champs["corps"]) if p]
++    return "\n\n".join(parties)
++
++
++# ─── Journalisation (rotation par NOMBRE DE LIGNES — max_log_lines, distincte
++# de la rotation par taille des watchers de projet, cf. issue #483) ────────
++
++def _ecrire_ligne_log(cfg: ConfigInbox, projet: str, statut: str, texte: str) -> None:
++    horodatage = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
++    ligne = f"{horodatage} | {projet} | {statut} | {texte}"
++
++    cfg.fichier_log.parent.mkdir(parents=True, exist_ok=True)
++    lignes = []
++    if cfg.fichier_log.exists():
++        lignes = cfg.fichier_log.read_text(encoding="utf-8").splitlines()
++    lignes.append(ligne)
++    if len(lignes) > cfg.max_log_lines:
++        lignes = lignes[-cfg.max_log_lines:]
++    cfg.fichier_log.write_text("\n".join(lignes) + "\n", encoding="utf-8")
++
++
++# ─── Rejet ──────────────────────────────────────────────────────────────────
++
++def _slug(texte: str, longueur_max: int = 40) -> str:
++    normalise = _sans_accents(texte or "").lower()
++    slug = re.sub(r"[^a-z0-9]+", "-", normalise).strip("-")
++    return slug[:longueur_max] or "erreur"
++
++
++def _rejeter(cfg: ConfigInbox, chemin: Path, titre: str, projet: str, detail: str) -> None:
++    cfg.rejected_dir.mkdir(parents=True, exist_ok=True)
++    nom_cible = f"{chemin.stem}__REJETE-{_slug(detail)}{chemin.suffix}"
++    cible = cfg.rejected_dir / nom_cible
++    i = 1
++    while cible.exists():
++        cible = cfg.rejected_dir / f"{chemin.stem}__REJETE-{_slug(detail)}-{i}{chemin.suffix}"
++        i += 1
++    try:
++        chemin.rename(cible)
++    except OSError as e:
++        log.error(f"Impossible de déplacer {chemin.name} vers rejected/ : {e}")
++        return
++
++    texte = f"{titre} — {detail}" if titre else detail
++    _ecrire_ligne_log(cfg, projet or "(unknown)", "REJECTED", texte)
++    log.warning(f"Rejeté : {chemin.name} → {cible.name} ({detail})")
++
++
++# ─── Création de l'issue via gh (miroir de app/issues.py::envoyer) ─────────
++
++def _creer_issue(cfg: ConfigInbox, cfg_projet, titre: str, labels: str, body: str):
++    # GH_TOKEN n'est surchargé que si explicitement fourni dans le .conf — sinon
++    # `gh` utilise son authentification habituelle (session `gh auth login` ou
++    # GH_TOKEN déjà exporté dans l'environnement du process, comme new_issue.py).
++    env = dict(os.environ, GH_TOKEN=cfg.gh_token) if cfg.gh_token else None
++    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8") as f:
++        f.write(body)
++        chemin_body = f.name
++    try:
++        res = subprocess.run(
++            ["gh", "issue", "create",
++             "--repo",  cfg_projet.depot,
++             "--title", titre,
++             "--label", labels,
++             "--body-file", chemin_body],
++            capture_output=True, text=True, timeout=30, env=env,
++        )
++        if res.returncode == 0:
++            return True, res.stdout.strip()
++        return False, res.stderr.strip() or "erreur inconnue de gh."
++    except subprocess.TimeoutExpired:
++        return False, "timeout (gh n'a pas répondu en 30s)."
++    except FileNotFoundError:
++        return False, "gh introuvable dans le PATH."
++    except Exception as e:
++        return False, str(e)
++    finally:
++        Path(chemin_body).unlink(missing_ok=True)
++
++
++# ─── Traitement d'un fichier ────────────────────────────────────────────────
++
++def _fichier_pret(chemin: Path) -> bool:
++    """Faux si le fichier a été modifié il y a moins d'1s (encore en cours
++    d'écriture) — repris au cycle de polling suivant."""
++    try:
++        return (time.time() - chemin.stat().st_mtime) >= 1.0
++    except OSError:
++        return False
++
++
++def traiter_fichier(cfg: ConfigInbox, chemin: Path) -> None:
++    try:
++        contenu = chemin.read_text(encoding="utf-8")
++    except OSError as e:
++        _rejeter(cfg, chemin, "", "", f"lecture impossible : {e}")
++        return
++
++    champs = extraire_champs(contenu)
++    ok, detail, cfg_projet = valider(champs)
++    if not ok:
++        _rejeter(cfg, chemin, champs["titre"], champs["projet"], detail)
++        return
++
++    labels = construire_labels(champs)
++    body = construire_body(champs, cfg_projet)
++    succes, resultat = _creer_issue(cfg, cfg_projet, champs["titre"], labels, body)
++    if not succes:
++        _rejeter(cfg, chemin, champs["titre"], champs["projet"],
++                  f"gh issue create a échoué : {resultat}")
++        return
++
++    try:
++        chemin.unlink()
++    except OSError as e:
++        log.warning(f"Issue créée ({resultat}) mais suppression de {chemin.name} échouée : {e}")
++
++    _ecrire_ligne_log(cfg, champs["projet"], "OK", champs["titre"])
++    log.info(f"Créée : {chemin.name} → {resultat}")
++
++
++def traiter_dossier(cfg: ConfigInbox) -> None:
++    if not cfg.inbox_dir.is_dir():
++        return
++    for chemin in sorted(cfg.inbox_dir.glob("*.txt")):
++        if not chemin.is_file() or not _fichier_pret(chemin):
++            continue
++        try:
++            traiter_fichier(cfg, chemin)
++        except Exception as e:
++            log.error(f"Erreur inattendue en traitant {chemin.name} : {e}")
++
++
++# ─── Boucle principale ──────────────────────────────────────────────────────
++
++def configurer_logs() -> None:
++    logging.basicConfig(
++        level=logging.INFO,
++        format="%(asctime)s [%(levelname)s] %(message)s",
++        handlers=[logging.StreamHandler(sys.stdout)],
++    )
++
++
++def boucle(cfg: ConfigInbox, once: bool = False) -> None:
++    cfg.inbox_dir.mkdir(parents=True, exist_ok=True)
++    cfg.rejected_dir.mkdir(parents=True, exist_ok=True)
++    log.info(f"watcher_issues_inbox démarré — {cfg.inbox_dir} "
++              f"(intervalle {cfg.polling_interval}s, log max {cfg.max_log_lines} lignes)")
++    while True:
++        traiter_dossier(cfg)
++        if once:
++            return
++        time.sleep(cfg.polling_interval)
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser(description="Watcher issues_inbox — bridge_agent (issue #483)")
++    parser.add_argument("--config", default=str(DEFAUT_CHEMIN_CONFIG),
++                        help="Chemin du .conf (optionnel — défauts sensés sinon)")
++    parser.add_argument("--once", action="store_true",
++                        help="Un seul cycle de traitement puis quitte (tests)")
++    args = parser.parse_args()
++
++    configurer_logs()
++    cfg = charger_config_inbox(Path(args.config))
++    boucle(cfg, once=args.once)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/static/css/style.css b/static/css/style.css
+index 4c6b0f1..f16d104 100644
+--- a/static/css/style.css
++++ b/static/css/style.css
+@@ -454,3 +454,17 @@ button.danger-plein:hover{background:#8f2626}
+ .etape-interrompre.etape-echec{color:#a32d2d}
+ .etape-interrompre.etape-rien_a_faire{color:#888}
+ .etape-interrompre.etape-succes{color:#22803a}
++/* Onglet « Résultats inbox » (issue #483) : alarme pilotée UNIQUEMENT par
++   l'état (vide/non-vide) de issues_inbox/rejected/ — badge clignotant sur
++   l'onglet lui-même (visible même hors de cette vue) + bandeau dans le panneau. */
++@keyframes clignoter-alarme{0%,100%{opacity:1}50%{opacity:.25}}
++.badge-alarme-inbox{display:inline-block;margin-left:4px;font-size:13px;
++  animation:clignoter-alarme 1.1s ease-in-out infinite}
++.alarme-inbox{padding:12px 14px;border-radius:6px;font-size:13px;
++  margin-bottom:14px;background:#f8d7da;color:#721c24;
++  border:1px solid #f5c6cb;font-weight:600;
++  animation:clignoter-alarme 1.6s ease-in-out infinite}
++.inbox-historique{max-height:320px;overflow-y:auto;font-family:monospace;
++  font-size:12px;white-space:pre-wrap;background:#f8f8f5;
++  border:1px solid #e0dfda;border-radius:6px;padding:10px 12px;color:#444}
++#corps-inbox-rejetes td{padding:6px 0;font-size:13px;border-bottom:1px solid #f0efe9}
+diff --git a/static/js/app.js b/static/js/app.js
+index e878c3f..54e0e3a 100644
+--- a/static/js/app.js
++++ b/static/js/app.js
+@@ -69,7 +69,7 @@ function appliquerAccentProjet(nom) {
+ }
+ 
+ function basculerOnglet(nom) {
+-  const noms = ['creation', 'resultats', 'journal', 'config', 'watchers', 'ccw'];
++  const noms = ['creation', 'resultats', 'inbox', 'journal', 'config', 'watchers', 'ccw'];
+   document.querySelectorAll('.onglet').forEach((o, i) =>
+     o.classList.toggle('actif', noms[i] === nom));
+   noms.forEach(n =>
+@@ -92,6 +92,10 @@ function basculerOnglet(nom) {
+   // (chaque requête déclenche des appels SSH coûteux — l'utilisateur
+   // rafraîchit à la demande via les boutons dédiés).
+   if (nom === 'ccw') ccwOuvrirOnglet();
++  // Onglet « Résultats inbox » (issue #483) : rafraîchissement immédiat à
++  // l'ouverture — le polling continu (rafraichirInbox, tout en bas de ce
++  // fichier) garde le badge de l'onglet à jour même hors de cette vue.
++  if (nom === 'inbox') rafraichirInbox();
+ }
+ 
+ // reinitialiserTimeout : un changement de projet MANUEL (sélecteur, chargement
+@@ -4924,6 +4928,55 @@ async function lancerWatcher() {
+ })();
+ setInterval(verifierStatut, 5000);
+ 
++// ─── Onglet « Résultats inbox » (issue #483) ──────────────────────────────
++// État du watcher_issues_inbox (scripts/watcher_issues_inbox.py), lu depuis
++// /issues-inbox/etat (aucun appel gh — pure lecture disque côté serveur).
++// L'alarme (badge sur l'onglet + bandeau) est pilotée UNIQUEMENT par l'état
++// (vide/non-vide) de issues_inbox/rejected/, jamais par l'historique de log —
++// ce polling tourne en continu, indépendamment de l'onglet actif, pour que le
++// badge reste à jour même quand un autre onglet est ouvert.
++function formaterDateInbox(epochSecondes) {
++  try {
++    return new Date(epochSecondes * 1000).toLocaleString('fr-FR');
++  } catch(e) {
++    return '';
++  }
++}
++
++async function rafraichirInbox() {
++  try {
++    const rep = await fetch('/issues-inbox/etat');
++    if (!rep.ok) return;
++    const data = await rep.json();
++
++    const badge = document.getElementById('badge-alarme-inbox');
++    const bandeau = document.getElementById('alarme-inbox');
++    const sansAlarme = document.getElementById('inbox-sans-alarme');
++    if (badge)      badge.style.display = data.alarme ? '' : 'none';
++    if (bandeau)     bandeau.style.display = data.alarme ? 'block' : 'none';
++    if (sansAlarme)  sansAlarme.style.display = data.alarme ? 'none' : 'block';
++
++    const corps = document.getElementById('corps-inbox-rejetes');
++    if (corps) {
++      corps.innerHTML = (data.rejetes || []).map(r =>
++        '<tr><td>' + escapeHtml(r.nom) + '</td><td>' + formaterDateInbox(r.date) + '</td></tr>'
++      ).join('') || '<tr><td colspan="2" style="color:#999;padding:6px 0">Aucun fichier rejeté.</td></tr>';
++    }
++
++    const historique = document.getElementById('inbox-historique');
++    if (historique) {
++      historique.textContent = (data.historique && data.historique.length)
++        ? data.historique.join('\n')
++        : '(aucun historique pour le moment)';
++    }
++  } catch(e) {
++    // Best-effort, silencieux : le badge garde son dernier état connu plutôt
++    // qu'une erreur bruyante sur un simple polling d'arrière-plan.
++  }
++}
++rafraichirInbox();
++setInterval(rafraichirInbox, 7000);
++
+ // ─── Cycle de vie : onglet ↔ serveur ──────────────────────────────────────
+ // Deux liens : (1) heartbeat navigateur → serveur, qui laisse le serveur se
+ // couper tout seul quand l'onglet est fermé ; (2) canal SSE serveur → onglet,
+diff --git a/templates/index.html b/templates/index.html
+index b86edf8..d2fe6e9 100644
+--- a/templates/index.html
++++ b/templates/index.html
+@@ -73,6 +73,9 @@
+   <div class="onglets">
+     <div class="onglet actif" onclick="basculerOnglet('creation')">Nouvelle issue</div>
+     <div class="onglet" onclick="basculerOnglet('resultats')">Résultats</div>
++    <div class="onglet" onclick="basculerOnglet('inbox')">Résultats inbox
++      <span id="badge-alarme-inbox" class="badge-alarme-inbox" style="display:none" title="Des fichiers issues_inbox/rejected/ attendent une correction manuelle">🚨</span>
++    </div>
+     <div class="onglet" onclick="basculerOnglet('journal')">Journal watcher</div>
+     <div class="onglet" onclick="basculerOnglet('config')">Configuration</div>
+     <div class="onglet" onclick="basculerOnglet('watchers')">Watchers</div>
+@@ -286,6 +289,38 @@
+ 
+   </div>
+ 
++  <!-- ─── Onglet « Résultats inbox » (issue #483) : état du watcher
++       issues_inbox/ — alarme pilotée UNIQUEMENT par la présence de fichiers
++       dans issues_inbox/rejected/ (pas de parsing de log), rafraîchie
++       périodiquement par rafraichirInbox() (static/js/app.js) via
++       /issues-inbox/etat, indépendamment de l'onglet actif (le badge sur
++       l'onglet lui-même doit rester à jour même hors de cette vue). -->
++  <div id="panneau-inbox" class="panneau">
++    <div id="alarme-inbox" class="alarme-inbox" style="display:none">
++      🚨 Des issues déposées dans <code>issues_inbox/</code> ont été rejetées —
++      correction manuelle requise dans <code>issues_inbox/rejected/</code>.
++    </div>
++    <div id="inbox-sans-alarme" class="message succes" style="display:block">✅ Aucun fichier en attente de correction dans <code>issues_inbox/rejected/</code>.</div>
++
++    <div class="titre-section">Fichiers rejetés</div>
++    <table style="width:100%;border-collapse:collapse" id="tableau-inbox-rejetes">
++      <thead>
++        <tr style="border-bottom:1px solid #eee">
++          <th style="text-align:left;font-size:12px;color:#666;font-weight:500;padding:8px 0">Fichier</th>
++          <th style="text-align:left;font-size:12px;color:#666;font-weight:500;padding:8px 0;width:200px">Déposé le</th>
++        </tr>
++      </thead>
++      <tbody id="corps-inbox-rejetes"></tbody>
++    </table>
++
++    <div class="titre-section" style="margin-top:18px">Historique (logs/issues_inbox.log)</div>
++    <div id="inbox-historique" class="inbox-historique"></div>
++
++    <div style="display:flex;justify-content:flex-end;margin-top:12px">
++      <button onclick="rafraichirInbox()">Rafraîchir</button>
++    </div>
++  </div>
++
+   <!-- ─── Onglet 2 : gestion des watchers ──────────────────────────────── -->
+   <div id="panneau-watchers" class="panneau">
+     <table style="width:100%;border-collapse:collapse" id="tableau-watchers">

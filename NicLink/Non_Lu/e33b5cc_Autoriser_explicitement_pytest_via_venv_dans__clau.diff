@@ -1,0 +1,26 @@
+e33b5cc
+
+commit e33b5cc
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Sat Aug 22 09:46:26 2026 +0200
+
+    Autoriser explicitement pytest via venv dans .claude/settings.json (issue #207)
+    
+    Ajoute une règle Bash(venv/bin/python -m pytest *) ciblée en permissions.allow
+    pour que les sessions bridge non-interactives puissent exécuter la suite de
+    tests sans prompt d'approbation bloquant, sans élargir les permissions
+    au-delà de ce cas précis.
+
+diff --git a/.claude/settings.json b/.claude/settings.json
+new file mode 100644
+index 0000000..2d396e6
+--- /dev/null
++++ b/.claude/settings.json
+@@ -0,0 +1,7 @@
++{
++  "permissions": {
++    "allow": [
++      "Bash(venv/bin/python -m pytest *)"
++    ]
++  }
++}

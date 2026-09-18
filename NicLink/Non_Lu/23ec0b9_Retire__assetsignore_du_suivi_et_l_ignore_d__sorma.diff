@@ -1,0 +1,25 @@
+23ec0b9
+
+commit 23ec0b9
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Sun Aug 23 21:26:02 2026 +0200
+
+    Retire .assetsignore du suivi et l'ignore désormais (2e occurrence accidentelle, cf. issue #233) — évite une récidive future
+
+diff --git a/.assetsignore b/.assetsignore
+deleted file mode 100644
+index c9a2fd3..0000000
+--- a/.assetsignore
++++ /dev/null
+@@ -1 +0,0 @@
+-.wrangler/tmp/**
+diff --git a/.gitignore b/.gitignore
+index 5849dc0..b47a4fd 100755
+--- a/.gitignore
++++ b/.gitignore
+@@ -52,3 +52,5 @@ logs/
+ 
+ # Parties (données perso / noms de tiers)
+ games/
++.assetsignore
++.wrangler/

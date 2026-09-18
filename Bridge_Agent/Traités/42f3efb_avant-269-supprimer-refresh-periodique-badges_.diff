@@ -1,0 +1,20 @@
+42f3efb
+
+commit 42f3efb
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Wed Jul 29 04:56:04 2026 +0200
+
+    avant-269-supprimer-refresh-periodique-badges
+
+diff --git a/static/js/app.js b/static/js/app.js
+index c455cb9..98ae8cd 100644
+--- a/static/js/app.js
++++ b/static/js/app.js
+@@ -1271,6 +1271,7 @@ function formaterDuree(s) {
+ // Récupère, pour tous les projets, les débuts de traitement + timeouts des
+ // issues ouvertes, puis rafraîchit immédiatement les badges.
+ async function chargerTimingIssues() {
++  console.error('[DEBUG-269-TRACE]', new Error().stack);
+   const noms = nomsProjetsDisponibles();
+   // On repart de l'état COURANT, pas d'un map vide (issue #190). Avant, chaque
+   // appel reconstruisait le map à partir de zéro : dès qu'un fetch

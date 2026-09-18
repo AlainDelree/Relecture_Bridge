@@ -1,0 +1,110 @@
+a5b1dca
+
+commit a5b1dca
+Author: Athanatos123 <79310036+AlainDelree@users.noreply.github.com>
+Date:   Sat Sep 12 16:11:06 2026 +0200
+
+    avant-533-griser-bouton-tester-son-sans-selection
+
+diff --git a/static/css/style.css b/static/css/style.css
+index 68f9403..0dba545 100644
+--- a/static/css/style.css
++++ b/static/css/style.css
+@@ -326,6 +326,8 @@ button.danger:hover{background:#f8d7da}
+ .pl-btn-mini{flex-shrink:0;padding:3px 9px;font-size:12px;border:1px solid #ccc;
+   border-radius:6px;background:#f8f8f5;color:#1a1a18;cursor:pointer}
+ .pl-btn-mini:hover{background:#eee}
++.pl-btn-mini:disabled{background:#f0f0ed;color:#999;cursor:not-allowed}
++.pl-btn-mini:disabled:hover{background:#f0f0ed}
+ .pl-btn-vm{margin:6px 0 2px}
+ /* Résumé « en cours/en file » sous chaque watcher CCL (issue #381). */
+ .pl-sous-projet{font-size:11px;color:#999;margin:-2px 0 6px;padding-left:1px}
+diff --git a/static/js/app.js b/static/js/app.js
+index 9a74abd..7c23d05 100644
+--- a/static/js/app.js
++++ b/static/js/app.js
+@@ -2179,6 +2179,18 @@ function refleterSonActif(son) {
+   if (optCloche) optCloche.classList.toggle('actif', son === 'cloche');
+ }
+ 
++// Grise le bouton « Tester le son » tant qu'aucune ligne n'est sélectionnée
++// (projetCourant null) : sinon testerSonActif() jouerait une tonalité neutre
++// qui ne correspond à aucune notification réelle (issue #533, suite à #532).
++// Appelée à l'initialisation (disabled déjà posé dans le HTML) et à chaque
++// changement de sélection (selectionnerLigne/selectionnerPremiereVisible).
++function majBoutonTesterSonActif() {
++  const btn = document.getElementById('pl-btn-tester-son');
++  if (!btn) return;
++  btn.disabled = !projetCourant;
++  btn.title = projetCourant ? '' : 'Aucune ligne sélectionnée';
++}
++
+ // Écrit le choix dans son_actif.txt au clic — effectif au bip suivant, sans
+ // rechargement de page (traitement_fin.py relit le fichier à chaque bip).
+ async function choisirSonActif(son) {
+@@ -2198,10 +2210,11 @@ async function choisirSonActif(son) {
+ // tonalité du projet actif (projetCourant, celui de la ligne sélectionnée
+ // dans la liste des issues — voir sa déclaration plus haut), pour que ce test
+ // reflète fidèlement le son entendu à la clôture d'une issue de ce projet
+-// (issue #532). Neutre si aucune ligne n'est sélectionnée (projetCourant
+-// null) : le backend applique alors le même repli (même principe que
+-// testerBip() pour la tonalité par projet, issue #526).
++// (issue #532). Le bouton est disabled tant que projetCourant est null
++// (majBoutonTesterSonActif, issue #533) ; ce garde-fou est une redondance
++// défensive au cas où l'appel serait déclenché autrement qu'au clic.
+ async function testerSonActif() {
++  if (!projetCourant) return;
+   try {
+     await fetch('/tester-son', {
+       method: 'POST',
+@@ -2584,6 +2597,7 @@ function selectionnerPremiereVisible() {
+     numeroCourant = null;
+     document.getElementById('zone-issue').innerHTML =
+       '<div class="issue-vide">Aucune issue à afficher</div>';
++    majBoutonTesterSonActif();
+   }
+ }
+ 
+@@ -2823,12 +2837,14 @@ function selectionnerLigne(nom, numero) {
+     projetCourant = null;
+     numeroCourant = null;
+     zone.innerHTML = '<div class="issue-vide">Aucune issue à afficher</div>';
++    majBoutonTesterSonActif();
+     rafraichirPanneauLateralResultats();
+     return;
+   }
+   projetCourant = nom;
+   numeroCourant = numero;
+   zone.innerHTML = '<div class="issue-vide">Double-cliquez une issue pour afficher son détail.</div>';
++  majBoutonTesterSonActif();
+   rafraichirPanneauLateralResultats();
+ }
+ 
+diff --git a/templates/index.html b/templates/index.html
+index 733af1c..5e2a923 100644
+--- a/templates/index.html
++++ b/templates/index.html
+@@ -283,7 +283,13 @@
+            PAS reconstruit à chaque cycle de rafraichirPanneauLateralResultats
+            (contrairement aux autres zones ci-dessous) : rien ne le ferait
+            diverger de l'état réel puisque cette zone est la seule à écrire
+-           dans son_actif.txt depuis l'interface.
++           dans son_actif.txt depuis l'interface. Le bouton #pl-btn-tester-son
++           joue la tonalité du projet actif (projetCourant, issue #532) : il
++           est disabled par défaut (attribut posé dans ce HTML) et
++           réactivé/regrisé par majBoutonTesterSonActif() (static/js/app.js)
++           à chaque changement de sélection, tant qu'aucune ligne n'est
++           sélectionnée (issue #533) — un son neutre ne correspondrait à
++           aucune notification réelle.
+          - #pl-zone-extras : zone réservée aux futurs boutons (issue #380),
+            occupée depuis l'issue #485 par le contrôle du watcher spool
+            (issues_inbox) — rendrePanneauLateralExtras() (static/js/app.js).
+@@ -299,7 +305,7 @@
+             <button type="button" class="pl-son-opt" id="pl-son-opt-plat" onclick="choisirSonActif('plat')">Plat</button>
+             <button type="button" class="pl-son-opt" id="pl-son-opt-cloche" onclick="choisirSonActif('cloche')">Cloche</button>
+           </span>
+-          <button type="button" class="pl-btn-mini" onclick="testerSonActif()">Tester le son</button>
++          <button type="button" class="pl-btn-mini" id="pl-btn-tester-son" onclick="testerSonActif()" disabled title="Aucune ligne sélectionnée">Tester le son</button>
+         </div>
+       </div>
+       <!-- Zone réservée aux futurs boutons (issue #380) : vide intentionnellement. -->

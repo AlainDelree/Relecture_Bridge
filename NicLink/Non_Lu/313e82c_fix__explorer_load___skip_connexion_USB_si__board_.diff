@@ -1,0 +1,24 @@
+313e82c
+
+commit 313e82c
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Sat Aug 15 19:52:12 2026 +0200
+
+    fix: explorer_load() skip connexion USB si _board_status == error (issue #162, suite #161)
+
+diff --git a/nicsoft/core/game_manager.py b/nicsoft/core/game_manager.py
+index 3542629..75154bd 100644
+--- a/nicsoft/core/game_manager.py
++++ b/nicsoft/core/game_manager.py
+@@ -1117,6 +1117,11 @@ def explorer_load(source_type: str, opening_id: str, variant_index=None) -> dict
+         source = PolyglotSource(ouverture, book_path)
+ 
+     used_virtual = _virtual_mode
++    if not used_virtual:
++        from nicsoft.web import server as web_server
++        if getattr(web_server, "_board_status", None) == "error":
++            logger.info("[EXPLORER] Plateau en erreur au démarrage, accès direct en mode virtuel.")
++            used_virtual = True
+     try:
+         nl_inst = create_board(virtual=used_virtual, logger_name="NicLink_explorer")
+     except (Exception, SystemExit) as e:

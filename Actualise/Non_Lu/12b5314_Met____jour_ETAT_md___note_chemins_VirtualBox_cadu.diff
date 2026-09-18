@@ -1,0 +1,21 @@
+12b5314
+
+commit 12b5314
+Author: Alain Delree <alain.delree@gmail.com>
+Date:   Thu Aug 20 23:03:46 2026 +0200
+
+    Met à jour ETAT.md : note chemins VirtualBox caduque supprimée (issue #50)
+
+diff --git a/ETAT.md b/ETAT.md
+index 163e2b6..7791c58 100644
+--- a/ETAT.md
++++ b/ETAT.md
+@@ -24,6 +24,6 @@
+ 
+ ## Points en suspens
+ - Builds CCW pas encore testés sur le nouveau PC fixe Windows (Samba,
+-  remplace la VM VirtualBox). Chemins VirtualBox (\\VBOXSVR\CCW_Share\,
+-  Z:\CCW\) dans les scripts de build à adapter au nouveau partage Samba.
++  remplace la VM VirtualBox). Audit confirmé : aucun script de build actif
++  ne référence plus les anciens chemins VirtualBox.
+ - verifier_installation.py existe comme script standalone (pas dans un dépôt)

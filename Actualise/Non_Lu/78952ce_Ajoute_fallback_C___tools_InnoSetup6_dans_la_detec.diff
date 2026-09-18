@@ -1,0 +1,27 @@
+78952ce
+
+commit 78952ce
+Author: Alain Delree <alain.delree@gmail.com>
+Date:   Mon Aug 10 17:34:04 2026 +0200
+
+    Ajoute fallback C:\.tools\InnoSetup6 dans la detection ISCC (issue #45)
+
+diff --git a/build/rebuild_actualise_setup.bat b/build/rebuild_actualise_setup.bat
+index 6490ecd..67fa8fc 100644
+--- a/build/rebuild_actualise_setup.bat
++++ b/build/rebuild_actualise_setup.bat
+@@ -148,10 +148,13 @@ if errorlevel 1 (
+         set "ISCC=%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
+     ) else if exist "%ProgramFiles%\Inno Setup 6\ISCC.exe" (
+         set "ISCC=%ProgramFiles%\Inno Setup 6\ISCC.exe"
++    ) else if exist "C:\.tools\InnoSetup6\ISCC.exe" (
++        set "ISCC=C:\.tools\InnoSetup6\ISCC.exe"
+     ) else (
+         echo.
+         echo ERREUR : ISCC.exe introuvable ^(ni sur le PATH, ni dans
+-        echo "Program Files\Inno Setup 6"^). Verifiez l'installation d'Inno Setup.
++        echo "Program Files\Inno Setup 6", ni dans C:\.tools\InnoSetup6^).
++        echo Verifiez l'installation d'Inno Setup.
+         popd
+         popd
+         exit /b 1

@@ -1,0 +1,295 @@
+3e4a465
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 3e4a465
+# ── Qui a fait ce commit.
+Author: Alain Delree <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Mon Aug 3 18:19:32 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Bascule sécurisée pour l'auto-mise-à-jour d'Actualise (issue #29, suite #9)
+    
+    Corrige un incident réel en production : appliquer_mises_a_jour_en_attente
+    extrayait directement le zip d'Actualise dans son propre dossier
+    d'installation, ce qui échoue sous Windows avec PermissionError [Errno 13]
+    (un .exe en cours d'exécution ne peut pas être réécrit en place). Pour le
+    cas prefixe == "actualise" : extraction dans un dossier temporaire distinct
+    (<repertoire_installation>/maj_temp_*/), puis bascule par renommage
+    fichier à fichier (os.replace) ; manifeste appliqué après la bascule sur
+    repertoire_installation (et non sur le temporaire, puisqu'il cible des
+    résidus déjà en place) ; échec de renommage loggué sans faire planter
+    main(), zip source conservé pour nouvelle tentative. Le cas de
+    l'application cible reste inchangé (extraction directe).
+    
+    CONCEPTION.md mis à jour : le point de vigilance non implémenté devient
+    un mécanisme documenté. Tests ajoutés (bascule réussie, échec de
+    renommage, non-régression application cible) ; suite complète (50 tests)
+    passante.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/CONCEPTION.md b/CONCEPTION.md
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 1c8b79c..fce43fa 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/CONCEPTION.md
+# ── Version APRÈS ce commit.
++++ b/CONCEPTION.md
+# ── Zone modifiée : ligne 412 (13 ligne(s)) dans l'ancienne version → ligne 412 (44 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -412,13 +412,44 @@ sans nécessiter de compteur ni d'état persistant à gérer.
+ - Le parent doit **attendre** la fin de l'enfant (`Popen.wait()` ou
+   équivalent) plutôt que l'enfant ne tue le parent explicitement. Cela
+   garde une séquence de terminaison simple et déterministe.
+-- La nouvelle version d'Actualise doit être téléchargée/écrite sous un
+-  **nom ou chemin temporaire distinct** de l'exécutable en cours
+-  d'exécution, puis basculée par renommage (`rename` /
+-  `MoveFileEx`) une fois l'ancien process terminé. Un `.exe` en cours
+-  d'exécution ne peut pas être réécrit en place sous Windows (seulement
+-  renommé) : écrire à côté puis renommer évite tout verrouillage de
+-  fichier.
++
++**Bascule sécurisée par dossier temporaire + renommage (implémenté).**
++Un incident réel en production a confirmé le risque documenté
++ci-dessus : `appliquer_mises_a_jour_en_attente` tentait d'extraire
++directement le zip d'Actualise dans son propre dossier d'installation
++(`repertoire_installation`, celui de l'exécutable en cours
++d'exécution), ce qui échoue sous Windows avec `PermissionError [Errno
++13]` — un `.exe` en cours d'exécution ne peut pas être réécrit en
++place, seulement renommé. Ce point ne concernait que la mise à jour
++d'Actualise lui-même (`prefixe == "actualise"`) : l'application cible
++n'a pas son exécutable en cours d'exécution au moment de la bascule,
++donc son extraction directe reste inchangée et sans risque.
++
++Pour Actualise lui-même, la bascule suit désormais ce mécanisme :
++
++1. Extraction du zip dans un **dossier temporaire distinct**, créé sous
++   `repertoire_installation` (`<repertoire_installation>/maj_temp_*/`,
++   via `tempfile.TemporaryDirectory`) — jamais directement dans
++   `repertoire_installation`.
++2. **Bascule par renommage** fichier à fichier (`os.replace`) du
++   contenu de ce dossier temporaire vers `repertoire_installation` :
++   chaque fichier (y compris l'exécutable `Actualise.exe` lui-même)
++   est renommé par-dessus l'ancien, jamais réécrit en place pendant
++   qu'il tourne.
++3. Le manifeste (`manifest.json`) est appliqué **après** cette
++   bascule, directement sur `repertoire_installation` — et non sur le
++   dossier temporaire — car `manifest["supprimer"]` cible des fichiers
++   obsolètes de l'installation déjà en place, pas nécessairement
++   présents dans le zip fraîchement extrait ; l'appliquer au dossier
++   temporaire n'aurait donc aucun effet sur ces résidus.
++4. Le dossier temporaire est automatiquement nettoyé (context manager
++   `TemporaryDirectory`) une fois la bascule terminée (succès ou
++   échec).
++5. **Si le renommage échoue à nouveau** (ex. fichier encore verrouillé,
++   `OSError`) : erreur logguée clairement, zip source **conservé** en
++   zone d'attente pour permettre une nouvelle tentative au lancement
++   suivant, sans faire planter `main()` — traitement cohérent avec les
++   autres cas limites déjà en place (manifeste absent, zip corrompu).
+ 
+ ## Intégration avec le setup.exe d'une application cible
+ 
+# (diff du fichier suivant)
+diff --git a/actualise.py b/actualise.py
+# (index — ignorable)
+index 7d1840d..53b0c15 100644
+# (avant — fichier suivant)
+--- a/actualise.py
+# (après — fichier suivant)
++++ b/actualise.py
+# ── Zone modifiée : ligne 9 (10 ligne(s)) dans l'ancienne version → ligne 9 (12 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -9,10 +9,12 @@ infinie » pour le rôle de l'argument ``--child``.
+ import argparse
+ import json
+ import logging
++import os
+ import re
+ import shutil
+ import subprocess
+ import sys
++import tempfile
+ import threading
+ import zipfile
+ from pathlib import Path
+# ── Zone modifiée : ligne 113 (6 ligne(s)) dans l'ancienne version → ligne 115 (28 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -113,6 +115,28 @@ def _relancer_en_enfant() -> None:
+     subprocess.Popen(commande)
+ 
+ 
++def _basculer_par_renommage(dossier_source: Path, destination: Path) -> None:
++    """Bascule le contenu de ``dossier_source`` (dossier temporaire
++    d'extraction) vers ``destination``, fichier par fichier, via
++    renommage (``os.replace``) plutôt qu'une réécriture en place.
++
++    Un ``.exe`` en cours d'exécution ne peut pas être réécrit en place
++    sous Windows (``PermissionError``), mais peut être renommé — voir
++    CONCEPTION.md, « Garde-fou anti-boucle infinie ». Toute ``OSError``
++    (ex. fichier encore verrouillé) remonte telle quelle à l'appelant,
++    qui décide de la marche à suivre (conservation du zip source pour
++    nouvelle tentative).
++    """
++    for chemin_source in dossier_source.rglob("*"):
++        chemin_relatif = chemin_source.relative_to(dossier_source)
++        chemin_destination = destination / chemin_relatif
++        if chemin_source.is_dir():
++            chemin_destination.mkdir(parents=True, exist_ok=True)
++        else:
++            chemin_destination.parent.mkdir(parents=True, exist_ok=True)
++            os.replace(chemin_source, chemin_destination)
++
++
+ def appliquer_mises_a_jour_en_attente(est_enfant: bool) -> None:
+     """Applique, au lancement, les mises à jour mises en attente au
+     cycle précédent (étape 4 de la séquence de démarrage).
+# ── Zone modifiée : ligne 179 (8 ligne(s)) dans l'ancienne version → ligne 203 (42 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -179,8 +203,42 @@ def appliquer_mises_a_jour_en_attente(est_enfant: bool) -> None:
+                 )
+                 continue
+ 
+-            mise_a_jour.extraire_zip(chemin_zip, repertoire_installation)
+-            mise_a_jour.appliquer_manifeste(manifest, repertoire_installation)
++            if prefixe == "actualise":
++                # Actualise ne peut pas être réécrit en place pendant
++                # qu'il tourne (PermissionError sous Windows sur son
++                # propre .exe) : extraction dans un dossier temporaire
++                # distinct, puis bascule par renommage fichier à
++                # fichier — voir CONCEPTION.md, « Garde-fou
++                # anti-boucle infinie ». Le manifeste est appliqué
++                # après la bascule, directement sur
++                # repertoire_installation : il vise des fichiers
++                # obsolètes de l'installation déjà en place (pas
++                # nécessairement présents dans le zip fraîchement
++                # extrait), donc n'aurait aucun effet s'il était
++                # appliqué sur le dossier temporaire.
++                with tempfile.TemporaryDirectory(
++                    dir=repertoire_installation, prefix="maj_temp_"
++                ) as dossier_temp:
++                    mise_a_jour.extraire_zip(chemin_zip, Path(dossier_temp))
++                    try:
++                        _basculer_par_renommage(Path(dossier_temp), repertoire_installation)
++                    except OSError as erreur:
++                        _LOGGER.error(
++                            "Échec du renommage lors de la bascule d'auto-mise-à-jour "
++                            "d'Actualise (%s) : bascule ignorée, zip source conservé "
++                            "pour nouvelle tentative au prochain lancement.",
++                            erreur,
++                        )
++                        continue
++
++                mise_a_jour.appliquer_manifeste(manifest, repertoire_installation)
++            else:
++                # L'exécutable de l'application cible n'est pas en
++                # cours d'exécution au moment de la bascule (contexte
++                # différent d'Actualise lui-même) : l'extraction
++                # directe reste valide et sans risque.
++                mise_a_jour.extraire_zip(chemin_zip, repertoire_installation)
++                mise_a_jour.appliquer_manifeste(manifest, repertoire_installation)
+ 
+             bloc_config["build_installe"] = build_zip
+             config.sauvegarder_config(configuration)
+# (diff du fichier suivant)
+diff --git a/tests/test_actualise.py b/tests/test_actualise.py
+# (index — ignorable)
+index a5203c1..b696198 100644
+# (avant — fichier suivant)
+--- a/tests/test_actualise.py
+# (après — fichier suivant)
++++ b/tests/test_actualise.py
+# ── Zone modifiée : ligne 116 (14 ligne(s)) dans l'ancienne version → ligne 116 (93 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -116,14 +116,93 @@ class TestAppliquerMisesAJourEnAttente(unittest.TestCase):
+             with self.assertRaises(SystemExit):
+                 appliquer_mises_a_jour_en_attente(est_enfant=False)
+ 
+-            mock_mise_a_jour.extraire_zip.assert_called_once_with(
+-                chemin_zip, self.dossier_actualise
++            # L'extraction se fait dans un dossier temporaire distinct
++            # (sous repertoire_installation), jamais directement dans
++            # repertoire_installation lui-même — voir
++            # _basculer_par_renommage.
++            mock_mise_a_jour.extraire_zip.assert_called_once()
++            chemin_zip_appele, dossier_extraction = mock_mise_a_jour.extraire_zip.call_args[0]
++            self.assertEqual(chemin_zip_appele, chemin_zip)
++            self.assertEqual(dossier_extraction.parent, self.dossier_actualise)
++
++            mock_mise_a_jour.appliquer_manifeste.assert_called_once_with(
++                {"build": 11, "supprimer": []}, self.dossier_actualise
+             )
+             mock_relancer.assert_called_once()
+ 
+         self.assertFalse(chemin_zip.exists())
+         self.assertEqual(self.configuration["actualise"]["build_installe"], 11)
+ 
++    def test_bascule_actualise_via_dossier_temporaire_et_renommage(self):
++        # Test de bout en bout (sans mocker mise_a_jour) du mécanisme de
++        # bascule sécurisée : extraction dans un dossier temporaire puis
++        # renommage vers repertoire_installation, jamais d'écriture
++        # directe dans le dossier de l'exécutable en cours d'exécution.
++        chemin_zip = self.zone_attente / "actualise_11.zip"
++        _creer_zip_avec_manifest(chemin_zip, build=11)
++
++        with patch("actualise._relancer_en_enfant") as mock_relancer:
++            with self.assertRaises(SystemExit):
++                appliquer_mises_a_jour_en_attente(est_enfant=False)
++
++            mock_relancer.assert_called_once()
++
++        fichier_bascule = self.dossier_actualise / "fichier.txt"
++        self.assertTrue(fichier_bascule.exists())
++        self.assertEqual(fichier_bascule.read_text(), "contenu")
++        self.assertFalse(chemin_zip.exists())
++        self.assertEqual(self.configuration["actualise"]["build_installe"], 11)
++
++        residus_temp = [
++            chemin
++            for chemin in self.dossier_actualise.iterdir()
++            if chemin.name.startswith("maj_temp_")
++        ]
++        self.assertEqual(residus_temp, [])
++
++    def test_echec_renommage_bascule_actualise_zip_conserve_aucune_exception(self):
++        chemin_zip = self.zone_attente / "actualise_11.zip"
++        _creer_zip_avec_manifest(chemin_zip, build=11)
++
++        with patch(
++            "actualise._basculer_par_renommage",
++            side_effect=PermissionError("fichier encore verrouillé"),
++        ), patch("actualise._relancer_en_enfant") as mock_relancer, self.assertLogs(
++            "actualise", level="ERROR"
++        ) as journal:
++            appliquer_mises_a_jour_en_attente(est_enfant=False)
++
++            mock_relancer.assert_not_called()
++
++        self.assertTrue(chemin_zip.exists())
++        self.assertEqual(self.configuration["actualise"]["build_installe"], 10)
++        self.mock_config.sauvegarder_config.assert_not_called()
++        self.assertTrue(
++            any("renommage" in message.lower() for message in journal.output)
++        )
++
++    def test_application_cible_extrait_directement_sans_dossier_temporaire(self):
++        # Non-régression : contrairement à Actualise lui-même, l'exécutable
++        # de l'application cible n'est pas en cours d'exécution au moment
++        # de la bascule, donc l'extraction directe reste inchangée.
++        chemin_zip = self.zone_attente / "scrabble_48.zip"
++        _creer_zip_avec_manifest(chemin_zip, build=48)
++
++        with patch("actualise.mise_a_jour") as mock_mise_a_jour, patch(
++            "actualise._basculer_par_renommage"
++        ) as mock_basculer:
++            appliquer_mises_a_jour_en_attente(est_enfant=False)
++
++            mock_mise_a_jour.extraire_zip.assert_called_once_with(
++                chemin_zip, self.repertoire_cible
++            )
++            mock_mise_a_jour.appliquer_manifeste.assert_called_once_with(
++                {"build": 48, "supprimer": []}, self.repertoire_cible
++            )
++            mock_basculer.assert_not_called()
++
++        self.assertEqual(self.configuration["application_cible"]["build_installe"], 48)
++
+     def test_aucun_zip_ne_fait_rien(self):
+         with patch("actualise.mise_a_jour") as mock_mise_a_jour:
+             appliquer_mises_a_jour_en_attente(est_enfant=False)

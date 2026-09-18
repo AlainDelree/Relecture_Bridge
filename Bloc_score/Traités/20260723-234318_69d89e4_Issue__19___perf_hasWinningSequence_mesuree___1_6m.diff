@@ -1,0 +1,27 @@
+commit 69d89e465c6279851b28c0df1e432ad0e7af2a34
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Thu Jul 23 23:43:18 2026 +0200
+
+    Issue #19 : perf hasWinningSequence mesuree (~1.6ms pire cas) documentee dans le code
+
+diff --git a/bloc-jeu.html b/bloc-jeu.html
+index 89f9fb2..6cdc50d 100644
+--- a/bloc-jeu.html
++++ b/bloc-jeu.html
+@@ -1443,6 +1443,16 @@
+   // récursivement avec le reste des pièces. Retourne true dès la première séquence complète
+   // trouvée (sortie anticipée). Cas de base : plus aucune pièce → true. Pur : ne touche jamais
+   // à l'état réel du jeu.
++  //
++  // Perf (issue #19, point 6) — mesurée sous Node 18, réplique exacte de l'algo, 3 grandes
++  // pièces (3x3 + deux lignes de 5) sur scénarios difficiles (grille quasi-pleine, damier bas
++  // forçant un retour `false` après exploration exhaustive) :
++  //   pire cas ≈ 1,6 ms (max), ≈ 0,4 ms (moyenne) — bien en dessous du seuil ~100–150 ms.
++  // Les effacements de lignes/colonnes simulés font s'effondrer la grille à chaque niveau, ce
++  // qui élague drastiquement l'arbre et déclenche des sorties anticipées : aucune optimisation
++  // (mémoïsation / limite de profondeur / élagage supplémentaire) n'est nécessaire à ce stade.
++  // Piste si le plateau ou le nombre de pièces grossissait : mémoïser sur une empreinte de la
++  // grille + multiset de pièces restantes pour couper les branches équivalentes.
+   function hasWinningSequence(pieces, gridSnapshot){
+     if(pieces.length === 0) return true;
+     for(let i=0;i<pieces.length;i++){

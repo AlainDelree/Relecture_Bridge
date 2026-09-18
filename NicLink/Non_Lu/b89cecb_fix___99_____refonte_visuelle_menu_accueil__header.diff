@@ -1,0 +1,597 @@
+b89cecb
+
+commit b89cecb
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Mon Aug 10 20:37:48 2026 +0200
+
+    fix: #99 — refonte visuelle menu accueil (header statut + cartes checkbox virtuel)
+    
+    Supprime le message rouge d'erreur échiquier et les split buttons.
+    Le header reflète l'état de connexion (fond + filigrane + pill), les modes
+    Pédagogique/Labo/Exercices utilisent une carte unique avec checkbox
+    "Mode virtuel" (cochée auto sans échiquier), Analyse/Retranscription
+    affichent un label statique, HH affiche "Échiquier requis"/"Prêt", et le
+    bouton reconnect devient un lien discret.
+
+diff --git a/nicsoft/web/static/app.js b/nicsoft/web/static/app.js
+index e807fb3..6a191e9 100644
+--- a/nicsoft/web/static/app.js
++++ b/nicsoft/web/static/app.js
+@@ -238,33 +238,52 @@ function _launchVirtual(mode) {
+ function toggleVirtualMode(enabled) {
+   _virtualMode = enabled;
+   const sub = document.querySelector(".menu-subtitle");
+-  const btn = document.getElementById("btn-reconnect");
++  const link = document.getElementById("btn-reconnect");
+   if (enabled) {
+-    if (sub) { sub.textContent = t("menu.sous_titre_virtuel"); sub.style.color = "#e94560"; }
+-    if (btn) { btn.style.display = "none"; }
++    if (sub) { sub.textContent = t("menu.sous_titre_virtuel"); }
++    if (link) { link.style.display = "none"; }
+   } else {
+-    if (btn) { btn.style.display = ""; }
++    if (link) { link.style.display = _boardOk ? "none" : ""; }
+     if (_boardOk) {
+-      if (sub) { sub.textContent = t("menu.sous_titre_connecte"); sub.style.color = ""; }
++      if (sub) { sub.textContent = t("menu.sous_titre_connecte"); }
+     } else {
+-      if (sub) { sub.textContent = t("menu.verification_echiquier"); sub.style.color = ""; }
++      if (sub) { sub.textContent = t("menu.verification_echiquier"); }
+     }
+   }
+   // Le badge échiquier ne dépend plus de _virtualMode (2 états : connecté / non détecté).
+ }
+ 
+-// Met à jour le badge échiquier (2 états : connecté / non détecté — mode virtuel dispo)
+-function _applyBoardBadge() {
+-  const dot  = document.getElementById("board-status-dot");
+-  const text = document.getElementById("board-status-text");
+-  if (!dot || !text) return;
+-  dot.classList.remove("connected", "unavailable");
+-  if (_boardOk) {
+-    dot.classList.add("connected");
+-    text.textContent = t("status.board.connecte");
++// Coche/décoche automatiquement les checkboxes "Mode virtuel" des cartes selon l'état de l'échiquier
++function _syncVirtualCheckboxes() {
++  document.querySelectorAll(".menu-card-chk").forEach(chk => { chk.checked = !_boardOk; });
++}
++
++// Lance le mode d'une carte (Pédagogique/Labo/Exercices) — virtuel si la case est cochée
++function _menuCardLaunch(mode, cardEl) {
++  const chk = cardEl.querySelector(".menu-card-chk");
++  if (chk && chk.checked) {
++    _launchVirtual(mode);
+   } else {
+-    dot.classList.add("unavailable");
+-    text.textContent = t("status.board.non_detecte");
++    sendAction({ type: "mode", value: mode });
++  }
++}
++
++// Met à jour le header (fond + filigrane + pill) et le statut HH selon l'état de l'échiquier
++function _applyBoardBadge() {
++  const header = document.getElementById("app-header");
++  const pill   = document.getElementById("board-status-pill");
++  const text   = document.getElementById("board-status-text");
++  if (header && pill && text) {
++    header.classList.toggle("header-connected", _boardOk);
++    header.classList.toggle("header-disconnected", !_boardOk);
++    pill.classList.toggle("pill-connected", _boardOk);
++    pill.classList.toggle("pill-disconnected", !_boardOk);
++    text.textContent = t(_boardOk ? "status.board.connecte" : "status.board.sans_echiquier");
++  }
++  const hhLabel = document.getElementById("hh-status-label");
++  if (hhLabel) {
++    hhLabel.classList.toggle("hh-ready", _boardOk);
++    hhLabel.textContent = t(_boardOk ? "menu.hh.pret" : "menu.hh.requiert_echiquier");
+   }
+ }
+ 
+@@ -675,13 +694,12 @@ function updateWdlBar(wdl) {
+ const socket = io();
+ 
+ socket.on("board_error", (data) => {
++  _boardOk    = false;
+   _boardError = true;
+-  // État visuel du bouton reconnect (hors texte — le texte est géré par _refreshDynamicLabels)
+-  const _errBtn = document.getElementById("btn-reconnect");
+-  if (_errBtn && !_virtualMode) {
+-    _errBtn.disabled = false; _errBtn.style.opacity = "1"; _errBtn.style.cursor = "pointer";
+-    _errBtn.style.background = "#e94560"; _errBtn.style.color = "white";
+-  }
++  _syncVirtualCheckboxes();
++  // Lien de reconnexion visible uniquement hors mode virtuel — le texte est géré par _refreshDynamicLabels
++  const _errLink = document.getElementById("btn-reconnect");
++  if (_errLink && !_virtualMode) { _errLink.style.display = ""; }
+   // Appel direct si locale déjà chargée, puis via promise pour garantir le bon locale
+   _refreshDynamicLabels();
+   _applyBoardBadge();
+@@ -691,16 +709,14 @@ socket.on("board_error", (data) => {
+ socket.on("board_ok", () => {
+   _boardOk    = true;
+   _boardError = false;
++  _syncVirtualCheckboxes();
+   document.querySelectorAll("[data-needs-board]")
+     .forEach(btn => {
+       if (_virtualMode && btn.hasAttribute("data-physical-only")) return;
+       btn.disabled = false;
+     });
+-  const _okBtn = document.getElementById("btn-reconnect");
+-  if (_okBtn) {
+-    _okBtn.disabled = true; _okBtn.style.opacity = "0.5"; _okBtn.style.cursor = "default";
+-    _okBtn.style.background = ""; _okBtn.style.color = "";
+-  }
++  const _okLink = document.getElementById("btn-reconnect");
++  if (_okLink) { _okLink.style.display = "none"; }
+   _refreshDynamicLabels();
+   _applyBoardBadge();
+   (window.i18nReady || Promise.resolve()).then(() => { _refreshDynamicLabels(); _applyBoardBadge(); });
+@@ -877,13 +893,14 @@ socket.on("app_state", (data) => {
+     if (_virtualMode) {
+       _virtualMode = false;
+       const sub = document.querySelector(".menu-subtitle");
+-      const btn = document.getElementById("btn-reconnect");
+-      if (btn) btn.style.display = "";
++      const link = document.getElementById("btn-reconnect");
++      if (link) link.style.display = _boardOk ? "none" : "";
+       if (_boardOk) {
+-        if (sub) { sub.textContent = t("menu.sous_titre_connecte"); sub.style.color = ""; }
++        if (sub) { sub.textContent = t("menu.sous_titre_connecte"); }
+       } else {
+-        if (sub) { sub.textContent = t("menu.verification_echiquier"); sub.style.color = ""; }
++        if (sub) { sub.textContent = t("menu.verification_echiquier"); }
+       }
++      _syncVirtualCheckboxes();
+     }
+     // Vider les champs de config HH
+     const wName = document.getElementById("cfg-white-name");
+@@ -905,18 +922,14 @@ socket.on("app_state", (data) => {
+         .forEach(btn => { btn.disabled = false; });
+     }
+     // Filet de sécurité : si les boutons sont encore grisés après 1.5s
+-    // transformer le bouton reconnect en bouton de secours
++    // afficher le lien de reconnexion en mode "débloquer"
+     setTimeout(() => {
+       const needsBoard = document.querySelectorAll("[data-needs-board]");
+       const stillBlocked = Array.from(needsBoard).some(b => b.disabled);
+-      const btn = document.getElementById("btn-reconnect");
+-      if (stillBlocked && _boardOk && btn) {
+-        btn.textContent = t("menu.btn.debloquer");
+-        btn.disabled = false;
+-        btn.style.opacity = "1";
+-        btn.style.cursor = "pointer";
+-        btn.style.background = "#e94560";
+-        btn.style.color = "white";
++      const link = document.getElementById("btn-reconnect");
++      if (stillBlocked && _boardOk && link) {
++        link.textContent = t("menu.btn.debloquer");
++        link.style.display = "";
+       }
+     }, 1500);
+   }
+@@ -1268,25 +1281,19 @@ function _refreshDynamicLabels() {
+     });
+   }
+ 
+-  // Bouton reconnect (texte selon état board)
+-  const reconnectBtn = document.getElementById("btn-reconnect");
+-  if (reconnectBtn && reconnectBtn.disabled) {
+-    reconnectBtn.textContent = t("menu.btn.reconnect_connecte");
+-  } else if (reconnectBtn && !reconnectBtn.disabled) {
+-    reconnectBtn.textContent = t("menu.btn.reconnect_label");
+-  }
++  // Lien reconnect (texte — visibilité gérée par board_ok/board_error)
++  const reconnectLink = document.getElementById("btn-reconnect");
++  if (reconnectLink) reconnectLink.textContent = t("menu.btn.reconnect_label");
+ 
+-  // Sous-titre menu
++  // Sous-titre menu (plus de message d'erreur rouge — le header communique l'état)
+   const sub = document.querySelector(".menu-subtitle");
+   if (sub) {
+     if (_virtualMode) {
+-      sub.textContent = t("menu.sous_titre_virtuel"); sub.style.color = "#e94560";
++      sub.textContent = t("menu.sous_titre_virtuel");
+     } else if (_boardOk) {
+-      sub.textContent = t("menu.sous_titre_connecte"); sub.style.color = "";
+-    } else if (_boardError) {
+-      sub.textContent = t("menu.board_error_long"); sub.style.color = "#e94560";
++      sub.textContent = t("menu.sous_titre_connecte");
+     } else {
+-      sub.textContent = t("menu.verification_echiquier"); sub.style.color = "";
++      sub.textContent = t("menu.verification_echiquier");
+     }
+   }
+ 
+@@ -1312,7 +1319,7 @@ function _refreshDynamicLabels() {
+   const statusText = document.getElementById("status-text");
+   if (statusText) statusText.textContent = t(_socketConnected ? "status.connecte" : "status.deconnecte");
+ 
+-  // Badge échiquier (3 états)
++  // Header + pill échiquier + statut HH
+   _applyBoardBadge();
+ 
+   // Options combobox séquence
+diff --git a/nicsoft/web/static/css/main.css b/nicsoft/web/static/css/main.css
+index cb98324..af81fc5 100644
+--- a/nicsoft/web/static/css/main.css
++++ b/nicsoft/web/static/css/main.css
+@@ -38,19 +38,47 @@
+     }
+ 
+     header {
++      position: relative;
++      overflow: hidden;
+       background: #c2d4e8;
+       padding: 12px 24px;
+       display: flex;
+       align-items: center;
+       gap: 16px;
+       border-bottom: 2px solid #a0b8d0;
++      transition: background 0.3s;
+     }
++    header.header-connected { background: #E1F5EE; }
+ 
+     header h1 {
+       font-size: 1.4rem;
+       color: #e94560;
+       letter-spacing: 1px;
+     }
++    header.header-connected #header-icon { color: #0F6E56; }
++
++    /* Filigrane décoratif — grille d'échiquier 5×4 en coin droit */
++    .board-deco {
++      position: absolute;
++      top: -14px;
++      right: -14px;
++      width: 130px;
++      height: 104px;
++      background-image:
++        linear-gradient(45deg, #8a97a6 25%, transparent 25%, transparent 75%, #8a97a6 75%),
++        linear-gradient(45deg, #8a97a6 25%, transparent 25%, transparent 75%, #8a97a6 75%);
++      background-size: 26px 26px;
++      background-position: 0 0, 13px 13px;
++      opacity: 0.18;
++      transform: rotate(-8deg);
++      pointer-events: none;
++    }
++    header.header-connected .board-deco {
++      background-image:
++        linear-gradient(45deg, #0F6E56 25%, transparent 25%, transparent 75%, #0F6E56 75%),
++        linear-gradient(45deg, #0F6E56 25%, transparent 25%, transparent 75%, #0F6E56 75%);
++    }
++    header > *:not(.board-deco) { position: relative; z-index: 1; }
+ 
+     #status-dot {
+       width: 10px; height: 10px;
+@@ -65,20 +93,27 @@
+       color: #1a2a3a;
+     }
+ 
+-    #board-status-dot {
+-      width: 10px; height: 10px;
+-      border-radius: 50%;
+-      background: #555;
+-      transition: background 0.3s;
++    /* Pill statut échiquier (remplace l'ancien dot + texte libre) */
++    .status-pill {
++      display: inline-flex;
++      align-items: center;
++      gap: 6px;
++      padding: 4px 10px;
++      border-radius: 999px;
++      font-size: 0.78rem;
++      font-weight: 600;
+       margin-left: 12px;
++      transition: background 0.3s, color 0.3s;
+     }
+-    #board-status-dot.connected   { background: #4caf50; }
+-    #board-status-dot.unavailable { background: #e8912d; }
+-
+-    #board-status-text {
+-      font-size: 0.85rem;
+-      color: #1a2a3a;
++    .status-pill-dot {
++      width: 8px; height: 8px;
++      border-radius: 50%;
++      transition: background 0.3s;
+     }
++    .pill-disconnected { background: #e3e8ee; color: #4a5a6a; }
++    .pill-disconnected .status-pill-dot { background: #8a97a6; }
++    .pill-connected { background: #9FE1CB; color: #0a4a3a; }
++    .pill-connected .status-pill-dot { background: #0F6E56; }
+ 
+     /* ── Écrans ── */
+     #screen-exercices {
+@@ -158,32 +193,60 @@
+     .menu-btn-analyse     { background: #8fcfb8; color: #1a4a38; border: none; }
+     .menu-btn-retrans     { background: #e8c9a8; color: #6b3a15; border: none; }
+ 
+-    /* Split button (Pédagogique, Labo, Exercices) */
+-    .menu-split-wrap {
+-      width: 300px; display: flex; border-radius: 8px; overflow: hidden;
+-      box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: transform 0.1s;
+-    }
+-    .menu-split-wrap:hover { transform: scale(1.02); }
+-    .menu-split-main {
+-      flex: 1; padding: 14px 16px; border: none;
+-      font-size: 1rem; font-weight: 600; cursor: pointer;
+-      text-align: left; transition: opacity 0.2s;
+-    }
+-    .menu-split-main:hover:not(:disabled) { opacity: 0.88; }
+-    .menu-split-main:disabled { opacity: 0.3; cursor: not-allowed; }
+-    .menu-split-virt {
+-      width: 62px; padding: 8px 4px; border: none;
+-      font-size: 0.68rem; font-weight: 600; cursor: pointer;
+-      display: flex; flex-direction: column; align-items: center;
+-      justify-content: center; gap: 3px; transition: opacity 0.2s;
+-    }
+-    .menu-split-virt:hover { opacity: 0.85; }
+-    .menu-split-virt .split-icon  { font-size: 1rem; line-height: 1; }
+-    .menu-split-virt .split-label { font-size: 0.6rem; letter-spacing: 0.5px; opacity: 0.85; }
+-    .menu-split-primary      { background: #e94560; color: white; }
+-    .menu-split-primary-virt { background: #c73a52; color: white; border-left: 2px solid rgba(0,0,0,0.15); }
+-    .menu-split-secondary      { background: #c2d4e8; color: #1a2a3a; }
+-    .menu-split-secondary-virt { background: #a8c0d8; color: #1a2a3a; border-left: 2px solid rgba(0,0,0,0.2); }
++    /* Carte menu (Pédagogique, Labo, Exercices) — remplace l'ancien split button */
++    .menu-card {
++      width: 300px;
++      border-radius: 8px;
++      cursor: pointer;
++      overflow: hidden;
++      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
++      transition: opacity 0.2s, transform 0.1s;
++    }
++    .menu-card:hover  { opacity: 0.9; transform: scale(1.02); }
++    .menu-card:active { transform: scale(0.98); }
++    .menu-card-head {
++      padding: 14px 16px 10px;
++      font-size: 1rem; font-weight: 600;
++      text-align: left;
++    }
++    .menu-card-sep { height: 1px; background: rgba(0,0,0,0.12); }
++    .menu-card-foot {
++      padding: 8px 16px 10px;
++      cursor: default;
++    }
++    .menu-card-chk-label {
++      display: flex; align-items: center; gap: 6px;
++      font-size: 0.78rem; font-weight: 500;
++      cursor: pointer;
++      opacity: 0.9;
++    }
++    .menu-card-chk { cursor: pointer; }
++    .menu-card-primary   { background: #e94560; color: white; }
++    .menu-card-primary   .menu-card-sep { background: rgba(255,255,255,0.25); }
++    .menu-card-secondary { background: #c2d4e8; color: #1a2a3a; }
++
++    /* Label statique "Mode virtuel" (Analyse, Retranscription) + statut HH */
++    .menu-static-label, .menu-hh-status {
++      font-size: 0.78rem;
++      font-weight: 500;
++      color: #6a7a8a;
++      text-align: center;
++      margin-top: 6px;
++    }
++    .menu-hh-status.hh-ready { color: #0F6E56; font-weight: 600; }
++
++    /* Lien discret de reconnexion manuelle (remplace l'ancien bouton) */
++    .menu-reconnect-link {
++      display: none;
++      margin-top: 8px;
++      font-size: 0.8rem;
++      color: #3a5a7a;
++      text-decoration: underline;
++      cursor: pointer;
++      opacity: 0.75;
++      transition: opacity 0.2s;
++    }
++    .menu-reconnect-link:hover { opacity: 1; }
+ 
+     .menu-btn-wrap {
+       display: flex; flex-direction: column; align-items: center; gap: 0;
+@@ -658,8 +721,8 @@
+     /* ── res-medium : 1100-1399px ── */
+     .res-medium .menu-btn              { width: 260px; font-size: 0.9rem; }
+     .res-medium .menu-btn-wrap         { width: 260px; }
+-    .res-medium .menu-split-wrap       { width: 260px; }
+-    .res-medium .menu-split-main       { font-size: 0.9rem; }
++    .res-medium .menu-card              { width: 260px; }
++    .res-medium .menu-card-head         { font-size: 0.9rem; }
+     .res-medium .menu-btn-desc         { width: 185px; font-size: 0.74rem; }
+     .res-medium .screen-board-layout,
+     .res-medium #screen-game,
+@@ -671,8 +734,8 @@
+     /* ── res-small : < 1100px ── */
+     .res-small .menu-btn               { width: 240px; font-size: 0.85rem; }
+     .res-small .menu-btn-wrap          { width: 240px; margin-bottom: 4px; }
+-    .res-small .menu-split-wrap        { width: 240px; }
+-    .res-small .menu-split-main        { font-size: 0.85rem; padding: 13px 14px; }
++    .res-small .menu-card               { width: 240px; }
++    .res-small .menu-card-head          { font-size: 0.85rem; padding: 13px 14px 8px; }
+     .res-small .menu-btn-desc {
+       position: static; transform: none;
+       width: 240px; margin-top: 4px;
+diff --git a/nicsoft/web/static/i18n/de.json b/nicsoft/web/static/i18n/de.json
+index 766592e..812fb05 100644
+--- a/nicsoft/web/static/i18n/de.json
++++ b/nicsoft/web/static/i18n/de.json
+@@ -34,6 +34,9 @@
+   "menu.btn.debloquer":        "⟳ Schaltflächen entsperren",
+   "menu.btn.quitter":          "✕ Beenden",
+   "menu.btn.virtuel":          "Virtuell",
++  "menu.mode_virtuel_label":   "Virtueller Modus",
++  "menu.hh.requiert_echiquier": "Brett erforderlich",
++  "menu.hh.pret":              "Bereit",
+   "menu.col.jouer":            "Spielen",
+   "menu.col.outils":           "Werkzeuge",
+   "menu.virtual_mode":         "Brettloser Modus",
+@@ -389,6 +392,7 @@
+   "status.deconnecte":         "Anwendung getrennt",
+   "status.board.connecte":     "Schachbrett verbunden",
+   "status.board.non_detecte":  "Schachbrett nicht erkannt — Virtueller Modus verfügbar",
++  "status.board.sans_echiquier": "Kein Brett",
+ 
+   "game.undo_remettez_pieces":  "Figuren zurückstellen, dann weiterspielen.",
+   "game.undo_remettez_piece":   "Figur zurückstellen, dann weiterspielen.",
+diff --git a/nicsoft/web/static/i18n/en.json b/nicsoft/web/static/i18n/en.json
+index 8f7cc82..7f7bcc6 100644
+--- a/nicsoft/web/static/i18n/en.json
++++ b/nicsoft/web/static/i18n/en.json
+@@ -34,6 +34,9 @@
+   "menu.btn.debloquer":        "⟳ Unlock buttons",
+   "menu.btn.quitter":          "✕ Quit",
+   "menu.btn.virtuel":          "Virtual",
++  "menu.mode_virtuel_label":   "Virtual mode",
++  "menu.hh.requiert_echiquier": "Board required",
++  "menu.hh.pret":              "Ready",
+   "menu.col.jouer":            "Play",
+   "menu.col.outils":           "Tools",
+   "menu.virtual_mode":         "Boardless mode",
+@@ -389,6 +392,7 @@
+   "status.deconnecte":         "Application disconnected",
+   "status.board.connecte":     "Board connected",
+   "status.board.non_detecte":  "Board not detected — virtual mode available",
++  "status.board.sans_echiquier": "No board",
+ 
+   "game.undo_remettez_pieces":  "Put the pieces back, then replay.",
+   "game.undo_remettez_piece":   "Put the piece back, then replay.",
+diff --git a/nicsoft/web/static/i18n/fr.json b/nicsoft/web/static/i18n/fr.json
+index 0f2eaa2..5dc6e52 100644
+--- a/nicsoft/web/static/i18n/fr.json
++++ b/nicsoft/web/static/i18n/fr.json
+@@ -34,6 +34,9 @@
+   "menu.btn.debloquer":        "⟳ Débloquer les boutons",
+   "menu.btn.quitter":          "✕ Quitter",
+   "menu.btn.virtuel":          "Virtuel",
++  "menu.mode_virtuel_label":   "Mode virtuel",
++  "menu.hh.requiert_echiquier": "Échiquier requis",
++  "menu.hh.pret":              "Prêt",
+   "menu.col.jouer":            "Jouer",
+   "menu.col.outils":           "Outils",
+   "menu.virtual_mode":         "Mode sans échiquier",
+@@ -389,6 +392,7 @@
+   "status.deconnecte":         "Application déconnectée",
+   "status.board.connecte":     "Échiquier connecté",
+   "status.board.non_detecte":  "Échiquier non détecté — mode virtuel disponible",
++  "status.board.sans_echiquier": "Sans échiquier",
+ 
+   "game.undo_remettez_pieces":  "Remettez les pièces à leur place, puis rejouez.",
+   "game.undo_remettez_piece":   "Remettez la pièce à sa position initiale, puis rejouez.",
+diff --git a/nicsoft/web/templates/index.html b/nicsoft/web/templates/index.html
+index f9434c4..bd068c2 100644
+--- a/nicsoft/web/templates/index.html
++++ b/nicsoft/web/templates/index.html
+@@ -23,12 +23,15 @@
+ </head>
+ <body>
+ 
+-<header>
+-  <h1><span style="font-size:1.4em; line-height:1;">♜</span> AlChess</h1>
++<header id="app-header" class="header-disconnected">
++  <div class="board-deco" aria-hidden="true"></div>
++  <h1><span id="header-icon" style="font-size:1.4em; line-height:1;">♜</span> AlChess</h1>
+   <div id="status-dot"></div>
+   <span id="status-text">Connexion...</span>
+-  <div id="board-status-dot"></div>
+-  <span id="board-status-text"></span>
++  <div id="board-status-pill" class="status-pill pill-disconnected">
++    <span class="status-pill-dot"></span>
++    <span id="board-status-text"></span>
++  </div>
+   <select id="lang-selector" onchange="i18n.load(this.value).then(_refreshDynamicLabels)"
+     style="margin-left:auto; font-size:0.75rem; color:#3a5a7a; background:transparent; border:none; cursor:pointer; opacity:0.6; transition:opacity 0.2s;"
+     onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.6'">
+@@ -53,42 +56,49 @@
+       <div class="menu-col-title" data-i18n="menu.col.jouer">Jouer</div>
+ 
+       <div class="menu-btn-wrap">
+-        <div class="menu-split-wrap">
+-          <button class="menu-split-main menu-split-primary" data-needs-board disabled
+-                  onclick="sendAction({type:'mode', value:'pedagogique'})">♟ <span data-i18n="menu.btn.pedagogique">🎓 Mode Pédagogique</span></button>
+-          <button class="menu-split-virt menu-split-primary-virt"
+-                  onclick="_launchVirtual('pedagogique')">
+-            <span class="split-icon">🖥</span><span class="split-label" data-i18n="menu.btn.virtuel">Virtuel</span>
+-          </button>
++        <div class="menu-card menu-card-primary" onclick="_menuCardLaunch('pedagogique', this)">
++          <div class="menu-card-head">♟ <span data-i18n="menu.btn.pedagogique">🎓 Mode Pédagogique</span></div>
++          <div class="menu-card-sep"></div>
++          <div class="menu-card-foot" onclick="event.stopPropagation()">
++            <label class="menu-card-chk-label">
++              <input type="checkbox" class="menu-card-chk" checked>
++              <span data-i18n="menu.mode_virtuel_label">Mode virtuel</span>
++            </label>
++          </div>
+         </div>
+         <div class="menu-btn-desc" id="desc-pedagogique" data-i18n="menu.desc.pedagogique">Jouez contre un moteur d'échecs. Chaque coup est analysé en direct — erreurs, imprécisions et coups brillants sont signalés. La partie complète est disponible à la fin.</div>
+       </div>
+ 
+       <div class="menu-btn-wrap">
+         <button class="menu-btn menu-btn-humain" data-needs-board data-physical-only disabled onclick="sendAction({type:'mode', value:'humain'})" data-i18n="menu.btn.humain">⚔️ Humain vs Humain</button>
++        <div class="menu-hh-status" id="hh-status-label" data-i18n="menu.hh.requiert_echiquier">Échiquier requis</div>
+         <div class="menu-btn-desc" id="desc-humain" data-i18n="menu.desc.humain">Deux joueurs s'affrontent sur l'échiquier physique. L'ordinateur vérifie la légalité des coups et enregistre la partie pour analyse ultérieure.</div>
+       </div>
+ 
+       <div class="menu-btn-wrap">
+-        <div class="menu-split-wrap">
+-          <button class="menu-split-main menu-split-secondary" data-needs-board disabled
+-                  onclick="sendAction({type:'mode', value:'labo'})">♟ <span data-i18n="menu.btn.labo">🔬 Laboratoire</span></button>
+-          <button class="menu-split-virt menu-split-secondary-virt"
+-                  onclick="_launchVirtual('labo')">
+-            <span class="split-icon">🖥</span><span class="split-label" data-i18n="menu.btn.virtuel">Virtuel</span>
+-          </button>
++        <div class="menu-card menu-card-secondary" onclick="_menuCardLaunch('labo', this)">
++          <div class="menu-card-head">♟ <span data-i18n="menu.btn.labo">🔬 Laboratoire</span></div>
++          <div class="menu-card-sep"></div>
++          <div class="menu-card-foot" onclick="event.stopPropagation()">
++            <label class="menu-card-chk-label">
++              <input type="checkbox" class="menu-card-chk" checked>
++              <span data-i18n="menu.mode_virtuel_label">Mode virtuel</span>
++            </label>
++          </div>
+         </div>
+         <div class="menu-btn-desc" id="desc-labo" data-i18n="menu.desc.labo">Explorez librement n'importe quelle position. Placez les pièces sur l'échiquier physique et laissez le moteur suggérer les meilleurs coups pour les deux camps.</div>
+       </div>
+ 
+       <div class="menu-btn-wrap">
+-        <div class="menu-split-wrap">
+-          <button class="menu-split-main menu-split-secondary" data-needs-board disabled
+-                  onclick="sendAction({type:'mode', value:'exercices'})">♟ <span data-i18n="menu.btn.exercices">📚 Exercices</span></button>
+-          <button class="menu-split-virt menu-split-secondary-virt"
+-                  onclick="_launchVirtual('exercices')">
+-            <span class="split-icon">🖥</span><span class="split-label" data-i18n="menu.btn.virtuel">Virtuel</span>
+-          </button>
++        <div class="menu-card menu-card-secondary" onclick="_menuCardLaunch('exercices', this)">
++          <div class="menu-card-head">♟ <span data-i18n="menu.btn.exercices">📚 Exercices</span></div>
++          <div class="menu-card-sep"></div>
++          <div class="menu-card-foot" onclick="event.stopPropagation()">
++            <label class="menu-card-chk-label">
++              <input type="checkbox" class="menu-card-chk" checked>
++              <span data-i18n="menu.mode_virtuel_label">Mode virtuel</span>
++            </label>
++          </div>
+         </div>
+         <div class="menu-btn-desc" id="desc-exercices" data-i18n="menu.desc.exercices">Entraînez-vous aux ouvertures avec un livre de Grands Maîtres. Jouez vos coups sur l'échiquier physique — le livre répond et vous guide dans la théorie.</div>
+       </div>
+@@ -101,11 +111,13 @@
+ 
+       <div class="menu-btn-wrap">
+         <button class="menu-btn menu-btn-analyse" onclick="sendAction({type:'mode', value:'analyse'})" data-i18n="menu.btn.analyse">📊 Analyse de partie</button>
++        <div class="menu-static-label" data-i18n="menu.mode_virtuel_label">Mode virtuel</div>
+         <div class="menu-btn-desc" id="desc-analyse" data-i18n="menu.desc.analyse">Importez un fichier PGN (depuis Chess.com, Lichess…) et rejouez la partie coup par coup avec l'analyse du moteur.</div>
+       </div>
+ 
+       <div class="menu-btn-wrap">
+         <button class="menu-btn menu-btn-retrans" onclick="sendAction({type:'mode', value:'retranscription'})" data-i18n="menu.btn.retranscrire">✏️ Retranscrire</button>
++        <div class="menu-static-label" data-i18n="menu.mode_virtuel_label">Mode virtuel</div>
+         <div class="menu-btn-desc" id="desc-retrans" data-i18n="menu.desc.retrans">Retranscrivez une partie jouée sur papier. Saisissez les coups sur l'échiquier virtuel et exportez le PGN.</div>
+       </div>
+ 
+@@ -118,7 +130,7 @@
+ 
+   </div><!-- fin menu-grid -->
+ 
+-  <button class="menu-btn menu-btn-secondary" id="btn-reconnect" onclick="sendAction({type:'reconnect_board'})" style="font-size:0.85rem; opacity:0.5; cursor:default;" disabled>✓ Échiquier connecté</button>
++  <a href="#" id="btn-reconnect" class="menu-reconnect-link" onclick="sendAction({type:'reconnect_board'}); return false;" data-i18n="menu.btn.reconnect_label">⟳ Reconnecter l'échiquier</a>
+ 
+ 
+   <button class="menu-btn" onclick="ouvrirModal('quit', t('modal.quitter_alchess'), t('modal.quitter_btn'), 'btn-warning')" style="background:#b8cce0; color:#555; border:1px solid #333; font-size:0.85rem; margin-top:8px;" data-i18n="menu.btn.quitter">✕ Quitter</button>

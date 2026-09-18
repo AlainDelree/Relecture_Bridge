@@ -1,0 +1,180 @@
+3405471
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 3405471
+# ── Qui a fait ce commit.
+Author: CCL agent <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Mon Aug 3 20:39:48 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    Issue #357 : expose les lettres piochées depuis le moteur (jouer_coup/jouer_placements)
+    
+    _completer_chevalet() renvoie désormais les jetons tirés du sac, remontés
+    dans EntreeHistorique.lettres_piochees puis dans le dict de jouer_placements().
+    api_pose.poser_mot() affecte directement cette liste à _lettres_pioches au lieu
+    de la recalculer par diff de Counter, ce qui était incorrect quand une lettre
+    piochée avait la même valeur qu'une lettre posée (issue #356).
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/src/scrabble/moteur/partie.py b/src/scrabble/moteur/partie.py
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 6317a33..f36401e 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/src/scrabble/moteur/partie.py
+# ── Version APRÈS ce commit.
++++ b/src/scrabble/moteur/partie.py
+# ── Zone modifiée : ligne 133 (6 ligne(s)) dans l'ancienne version → ligne 133 (13 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -133,6 +133,13 @@ class EntreeHistorique:
+     tel quel sans recalcul. L'UI s'en sert pour mettre brièvement en évidence le
+     dernier coup d'un ordinateur sur le plateau (issue #58). Vide pour une passe
+     ou un échange.
++
++    Toujours pour un coup, ``lettres_piochees`` donne la liste exacte des
++    jetons tirés du sac pour recompléter le chevalet à 7 après la pose (issue
++    #357) : contrairement à un calcul par diff de chevalet avant/après, cette
++    liste reste correcte même quand une lettre piochée a la même valeur qu'une
++    lettre posée. Vide pour une passe ou un échange, et si le sac était déjà
++    vide.
+     """
+ 
+     index_joueur: int
+# ── Zone modifiée : ligne 143 (6 ligne(s)) dans l'ancienne version → ligne 150 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -143,6 +150,7 @@ class EntreeHistorique:
+     lettres_echangees: int = 0
+     jetons_echanges: list[str] = field(default_factory=list)
+     positions_posees: list[tuple[int, int]] = field(default_factory=list)
++    lettres_piochees: list[str] = field(default_factory=list)
+     score_cumule: int = 0
+ 
+ 
+# ── Zone modifiée : ligne 386 (7 ligne(s)) dans l'ancienne version → ligne 394 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -386,7 +394,7 @@ class Partie:
+         detail = detailler_score(self.plateau, nouvelles, coup.direction)
+         joueur.score += detail.total
+         _retirer_jetons(joueur.chevalet, requis)
+-        self._completer_chevalet(joueur)
++        piochees = self._completer_chevalet(joueur)
+         self.passes_consecutives = 0
+         entree = self._enregistrer(
+             joueur,
+# ── Zone modifiée : ligne 394 (6 ligne(s)) dans l'ancienne version → ligne 402 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -394,6 +402,7 @@ class Partie:
+             coup=coup,
+             detail=detail,
+             positions_posees=nouvelles,
++            lettres_piochees=piochees,
+         )
+         if self.sac.est_vide() and not joueur.chevalet:
+             self._terminer(MOTIF_CHEVALET_VIDE)
+# ── Zone modifiée : ligne 510 (11 ligne(s)) dans l'ancienne version → ligne 519 (18 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -510,11 +519,18 @@ class Partie:
+                 requis.append(JOKER if tuile.joker else tuile.lettre)
+         return requis
+ 
+-    def _completer_chevalet(self, joueur: Joueur) -> None:
+-        """Complète le chevalet jusqu'à 7 (ou moins si le sac s'épuise)."""
++    def _completer_chevalet(self, joueur: Joueur) -> list[str]:
++        """Complète le chevalet jusqu'à 7 (ou moins si le sac s'épuise).
++
++        Renvoie la liste des jetons effectivement tirés du sac (issue #357),
++        pour que l'appelant puisse la faire remonter sans recalcul par diff.
++        """
+         manque = TAILLE_CHEVALET - len(joueur.chevalet)
+-        if manque > 0:
+-            joueur.chevalet.extend(self.sac.tirer(manque))
++        if manque <= 0:
++            return []
++        piochees = self.sac.tirer(manque)
++        joueur.chevalet.extend(piochees)
++        return piochees
+ 
+     def _enregistrer(
+         self,
+# ── Zone modifiée : ligne 526 (6 ligne(s)) dans l'ancienne version → ligne 542 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -526,6 +542,7 @@ class Partie:
+         lettres_echangees: int = 0,
+         jetons_echanges: list[str] | None = None,
+         positions_posees: list[tuple[int, int]] | None = None,
++        lettres_piochees: list[str] | None = None,
+     ) -> EntreeHistorique:
+         entree = EntreeHistorique(
+             index_joueur=self.index_courant,
+# ── Zone modifiée : ligne 536 (6 ligne(s)) dans l'ancienne version → ligne 553 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -536,6 +553,7 @@ class Partie:
+             lettres_echangees=lettres_echangees,
+             jetons_echanges=list(jetons_echanges) if jetons_echanges else [],
+             positions_posees=list(positions_posees) if positions_posees else [],
++            lettres_piochees=list(lettres_piochees) if lettres_piochees else [],
+             score_cumule=joueur.score,
+         )
+         self.historique.append(entree)
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/api_pose.py b/src/scrabble/ui/api_pose.py
+# (index — ignorable)
+index 544b2cb..a8254d1 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/api_pose.py
+# (après — fichier suivant)
++++ b/src/scrabble/ui/api_pose.py
+# ── Zone modifiée : ligne 328 (23 ligne(s)) dans l'ancienne version → ligne 328 (19 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -328,23 +328,19 @@ class MixinPose:
+         Confidentialité : la réponse ne contient jamais l'identité des lettres
+         d'un chevalet (``etat`` est l'état public, sans chevalet).
+         """
+-        from collections import Counter
+-
+         from scrabble.ui import jeu as mod_jeu
+-        from scrabble.ui.jeu import etat_public, index_humain_reference, jouer_placements
++        from scrabble.ui.jeu import etat_public, jouer_placements
+ 
+         if placements is not None:
+             self._en_attente = [self._normaliser_placement(p) for p in placements]
+         nb_avant = len(self._partie.historique)
+-        # Capture du chevalet du joueur de référence avant la pioche déclenchée
+-        # par le coup, pour en déduire par diff les lettres tout juste piochées
+-        # (issue #325 — animation du chevalet).
+-        index_ref = index_humain_reference(self._partie.joueurs)
+-        avant = list(self._partie.joueurs[index_ref].chevalet)
+         resultat = jouer_placements(self._partie, self._en_attente)
+         if resultat.get("succes"):
+-            apres = self._partie.joueurs[index_ref].chevalet
+-            self._lettres_pioches = list((Counter(apres) - Counter(avant)).elements())
++            # Lettres tout juste piochées, remontées directement par le moteur
++            # (issue #357 — évite le calcul par diff de chevalet, incorrect
++            # quand une lettre piochée a la même valeur qu'une lettre posée,
++            # cf. issue #356 ; utilisées pour l'animation du chevalet, issue #325).
++            self._lettres_pioches = list(resultat.get("lettres_piochees", []))
+             detail = resultat.get("detail")
+             mot = (
+                 detail["mots"][0]["texte"]
+# (diff du fichier suivant)
+diff --git a/src/scrabble/ui/jeu.py b/src/scrabble/ui/jeu.py
+# (index — ignorable)
+index d1092bb..2e66727 100644
+# (avant — fichier suivant)
+--- a/src/scrabble/ui/jeu.py
+# (après — fichier suivant)
++++ b/src/scrabble/ui/jeu.py
+# ── Zone modifiée : ligne 765 (7 ligne(s)) dans l'ancienne version → ligne 765 (10 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -765,7 +765,10 @@ def jouer_placements(
+       (:class:`~scrabble.moteur.partie.ActionInvalide`).
+ 
+     En cas de succès, l'appelant recharge l'état via :func:`etat_public` : rien
+-    n'est perdu côté attente puisque le moteur a consommé les lettres.
++    n'est perdu côté attente puisque le moteur a consommé les lettres. La clé
++    ``lettres_piochees`` porte les jetons réellement tirés du sac pour
++    recompléter le chevalet (:attr:`~scrabble.moteur.partie.EntreeHistorique.lettres_piochees`,
++    issue #357), à consommer directement plutôt que recalculée par diff.
+     """
+     try:
+         coup = construire_coup(partie.plateau, placements)
+# ── Zone modifiée : ligne 787 (6 ligne(s)) dans l'ancienne version → ligne 790 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -787,6 +790,7 @@ def jouer_placements(
+             if entree.detail is not None
+             else None
+         ),
++        "lettres_piochees": list(entree.lettres_piochees),
+     }
+ 
+ 

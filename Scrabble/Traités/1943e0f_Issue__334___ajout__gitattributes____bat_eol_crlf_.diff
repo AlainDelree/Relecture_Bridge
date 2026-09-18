@@ -1,0 +1,15 @@
+1943e0f
+
+commit 1943e0f
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Thu Jul 30 20:21:02 2026 +0200
+
+    Issue #334 : ajout .gitattributes (*.bat eol=crlf) + reconversion CRLF rebuild_scrabble.bat
+
+diff --git a/.gitattributes b/.gitattributes
+new file mode 100644
+index 0000000..69b47b5
+--- /dev/null
++++ b/.gitattributes
+@@ -0,0 +1 @@
++*.bat text eol=crlf

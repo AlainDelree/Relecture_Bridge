@@ -1,0 +1,358 @@
+34892fe
+
+commit 34892fe
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Fri Jul 24 13:46:07 2026 +0200
+
+    Issue #242 : suppression de code mort confirmé (variable JS themePlateau + 16 classes CSS)
+    
+    - jeu.js : suppression de la variable write-only `themePlateau` (déclaration + réassignation), commentaire ajusté.
+    - commun.css : suppression des règles mortes .btn-bloc, .lien-discret,
+      .bloc-titre-jouer, .bloc-titre-brouillon, et des sections complètes
+      chevalet-case/chevalet-vide (dont variantes .masquee/.revelee),
+      brouillon-case/brouillon-case-vide/brouillon-vide,
+      btn-aide-info/aide-info-popover.
+    - jeu.css : suppression de .btn-bloc.
+    - accueil.css : suppression de la section .modale-transition (dont .info-dev).
+    
+    Chaque suppression vérifiée sans référence en .js/.html (statique et dynamique).
+    node --check jeu.js OK, 747 tests pytest verts.
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+diff --git a/src/scrabble/ui/web/accueil.css b/src/scrabble/ui/web/accueil.css
+index ce0fc9a..44c1cb0 100644
+--- a/src/scrabble/ui/web/accueil.css
++++ b/src/scrabble/ui/web/accueil.css
+@@ -525,25 +525,6 @@ section h2 {
+     margin-top: 20px;
+ }
+ 
+-/* Modale transition */
+-.modale-transition {
+-    text-align: center;
+-}
+-
+-.modale-transition p {
+-    margin-bottom: 12px;
+-}
+-
+-.modale-transition .info-dev {
+-    font-size: 0.9rem;
+-    color: #666;
+-    font-style: italic;
+-}
+-
+-.modale-transition button {
+-    margin-top: 8px;
+-}
+-
+ /* Message désactivé */
+ .message-limite {
+     /* Message d'alerte posé sur le tapis vert (issue #77) : le rouge foncé
+diff --git a/src/scrabble/ui/web/commun.css b/src/scrabble/ui/web/commun.css
+index 116f500..aab5744 100644
+--- a/src/scrabble/ui/web/commun.css
++++ b/src/scrabble/ui/web/commun.css
+@@ -118,10 +118,6 @@
+     cursor: not-allowed;
+ }
+ 
+-.btn-bloc {
+-    width: 100%;
+-}
+-
+ .btn-primaire {
+     background: var(--couleur-primaire);
+     color: white;
+@@ -145,30 +141,6 @@
+     font-size: 0.82rem;
+ }
+ 
+-/* Lien d'action discret (actions rares, issue #41). */
+-.lien-discret {
+-    background: none;
+-    border: none;
+-    padding: 2px 4px;
+-    font-size: 0.8rem;
+-    font-weight: 500;
+-    color: #6a6a6a;
+-    cursor: pointer;
+-    border-radius: 4px;
+-    transition: color 0.15s, background 0.15s;
+-}
+-
+-.lien-discret:hover:not(:disabled) {
+-    color: var(--couleur-texte);
+-    text-decoration: underline;
+-    background: rgba(0, 0, 0, 0.04);
+-}
+-
+-.lien-discret:disabled {
+-    opacity: 0.5;
+-    cursor: not-allowed;
+-}
+-
+ /* --------------------------------------------------------------------------- */
+ /* Intitulés de bloc (« À jouer » / « Brouillon »)                              */
+ /* --------------------------------------------------------------------------- */
+@@ -179,222 +151,12 @@
+     margin-bottom: 8px;
+ }
+ 
+-.bloc-titre-jouer {
+-    color: var(--couleur-primaire);
+-}
+-
+-.bloc-titre-brouillon {
+-    color: #8a6d3b;
+-}
+-
+ .bloc-titre-note {
+     font-weight: 500;
+     font-size: 0.74rem;
+     color: #888;
+ }
+ 
+-/* --------------------------------------------------------------------------- */
+-/* Cases de chevalet (masquée / révélée)                                        */
+-/* --------------------------------------------------------------------------- */
+-.chevalet-case {
+-    width: 40px;
+-    height: 44px;
+-    display: flex;
+-    align-items: center;
+-    justify-content: center;
+-    border-radius: 4px;
+-    font-weight: 700;
+-    position: relative;
+-}
+-
+-.chevalet-case.masquee {
+-    background: repeating-linear-gradient(
+-        45deg, #b9a58f, #b9a58f 6px, #a8927a 6px, #a8927a 12px);
+-    color: rgba(0, 0, 0, 0.35);
+-    font-size: 1.3rem;
+-    border: 1px solid #96806a;
+-}
+-
+-.chevalet-case.revelee {
+-    background: var(--tuile-fond);
+-    border: 1px solid var(--tuile-bordure);
+-    color: var(--tuile-texte);
+-    font-size: 1.5rem;
+-    text-transform: uppercase;
+-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+-    cursor: pointer;
+-    transition: transform 0.1s, box-shadow 0.1s;
+-}
+-
+-.chevalet-case.revelee.joker {
+-    border: 2px dashed var(--tuile-joker-bordure);
+-    color: var(--tuile-joker-bordure);
+-}
+-
+-.chevalet-case.revelee:hover {
+-    transform: translateY(-2px);
+-}
+-
+-.chevalet-case.selectionnee {
+-    outline: 3px solid var(--couleur-primaire);
+-    outline-offset: 1px;
+-    transform: translateY(-4px);
+-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+-}
+-
+-.chevalet-case.utilisee {
+-    opacity: 0.35;
+-    cursor: default;
+-    filter: grayscale(0.6);
+-}
+-
+-.chevalet-case.utilisee:hover {
+-    transform: none;
+-}
+-
+-.chevalet-case .val {
+-    position: absolute;
+-    right: 3px;
+-    bottom: 1px;
+-    font-size: 0.6rem;
+-    font-weight: 600;
+-    opacity: 0.8;
+-}
+-
+-.chevalet-vide {
+-    color: #f0e6d8;
+-    font-style: italic;
+-    font-size: 0.9rem;
+-}
+-
+-/* --------------------------------------------------------------------------- */
+-/* Cases de brouillon                                                           */
+-/* --------------------------------------------------------------------------- */
+-.brouillon-case {
+-    width: 40px;
+-    height: 44px;
+-    display: flex;
+-    align-items: center;
+-    justify-content: center;
+-    border-radius: 4px;
+-    font-weight: 700;
+-    font-size: 1.4rem;
+-    text-transform: uppercase;
+-    position: relative;
+-    cursor: pointer;
+-    background: var(--tuile-fond);
+-    border: 1px solid var(--tuile-bordure);
+-    color: var(--tuile-texte);
+-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+-    transition: transform 0.1s, box-shadow 0.1s;
+-}
+-
+-.brouillon-case:hover {
+-    transform: translateY(-2px);
+-}
+-
+-.brouillon-case.joker {
+-    border: 2px dashed var(--tuile-joker-bordure);
+-    color: var(--tuile-joker-bordure);
+-}
+-
+-.brouillon-case.selectionnee {
+-    outline: 3px solid var(--couleur-primaire);
+-    outline-offset: 1px;
+-    transform: translateY(-4px);
+-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+-}
+-
+-.brouillon-case .val {
+-    position: absolute;
+-    right: 3px;
+-    bottom: 1px;
+-    font-size: 0.55rem;
+-    font-weight: 600;
+-    opacity: 0.8;
+-}
+-
+-.brouillon-case-vide {
+-    width: 40px;
+-    height: 44px;
+-    border-radius: 4px;
+-    border: 2px dashed #c9a961;
+-    background: rgba(201, 169, 97, 0.10);
+-    opacity: 0.7;
+-    flex: 0 0 auto;
+-    cursor: pointer;
+-    transition: transform 0.1s, opacity 0.1s, background 0.1s;
+-}
+-
+-.brouillon-case-vide:hover {
+-    transform: translateY(-2px);
+-    opacity: 0.95;
+-    background: rgba(201, 169, 97, 0.20);
+-}
+-
+-.brouillon-vide {
+-    color: #8a7a63;
+-    font-style: italic;
+-    font-size: 0.9rem;
+-}
+-
+-/* --------------------------------------------------------------------------- */
+-/* Icône « i » d'aide + popover replié                                          */
+-/* --------------------------------------------------------------------------- */
+-.btn-aide-info {
+-    display: inline-flex;
+-    align-items: center;
+-    justify-content: center;
+-    width: 26px;
+-    height: 26px;
+-    margin-left: 6px;
+-    padding: 0;
+-    vertical-align: super;
+-    border: 2px solid var(--couleur-secondaire, #5d4037);
+-    border-radius: 50%;
+-    background: white;
+-    color: var(--couleur-secondaire, #5d4037);
+-    font-size: 0.85rem;
+-    font-weight: 700;
+-    font-style: italic;
+-    font-family: Georgia, "Times New Roman", serif;
+-    line-height: 1;
+-    cursor: pointer;
+-}
+-
+-.btn-aide-info:hover {
+-    background: var(--couleur-secondaire, #5d4037);
+-    color: white;
+-}
+-
+-.btn-aide-info:focus-visible {
+-    outline: 3px solid var(--couleur-primaire);
+-    outline-offset: 2px;
+-}
+-
+-.aide-info-popover {
+-    position: absolute;
+-    top: calc(100% + 6px);
+-    left: 0;
+-    z-index: 5;
+-    width: min(320px, 80vw);
+-    padding: 12px 14px;
+-    background: white;
+-    border-radius: var(--rayon-bordure);
+-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+-    font-size: 0.85rem;
+-    color: #5b4a33;
+-    font-style: normal;
+-}
+-
+-.aide-info-popover[hidden] {
+-    display: none;
+-}
+-
+-.aide-info-popover p {
+-    margin: 0;
+-}
+-
+ /* --------------------------------------------------------------------------- */
+ /* Messages (retour d'action / vérification)                                    */
+ /* --------------------------------------------------------------------------- */
+diff --git a/src/scrabble/ui/web/jeu.css b/src/scrabble/ui/web/jeu.css
+index 6674a80..489a81e 100644
+--- a/src/scrabble/ui/web/jeu.css
++++ b/src/scrabble/ui/web/jeu.css
+@@ -1706,10 +1706,6 @@ body {
+     transform: translateY(-1px);
+ }
+ 
+-.btn-bloc {
+-    width: 100%;
+-}
+-
+ .btn-primaire {
+     background: var(--couleur-primaire);
+     color: white;
+diff --git a/src/scrabble/ui/web/jeu.js b/src/scrabble/ui/web/jeu.js
+index 09b8ecd..2fcd4f3 100644
+--- a/src/scrabble/ui/web/jeu.js
++++ b/src/scrabble/ui/web/jeu.js
+@@ -167,8 +167,7 @@ document.addEventListener('DOMContentLoaded', async () => {
+     // Placements en attente déjà posés sur le plateau (copie locale du payload,
+     // pour le rendu et pour savoir si « Retour au menu » doit avertir).
+     let enAttente = [];
+-    // Thème visuel actif et jeu de libellés affichés dans les cases.
+-    let themePlateau = 'classique';
++    // Jeu de libellés affichés dans les cases.
+     let labelVisible = C.LABEL_COMPLET;
+     // Détection d'un coup nouvellement joué pour l'animer (issue #62). On mémorise
+     // l'index du coup en tête d'historique ; à la première application on ne fait
+@@ -2068,7 +2067,6 @@ document.addEventListener('DOMContentLoaded', async () => {
+         if (!THEMES.includes(theme)) {
+             theme = 'classique';
+         }
+-        themePlateau = theme;
+         labelVisible = (theme === 'abrege') ? C.LABEL_ABREGE : C.LABEL_COMPLET;
+         THEMES.forEach((t) => plateauEl.classList.remove(`theme-${t}`));
+         plateauEl.classList.add(`theme-${theme}`);

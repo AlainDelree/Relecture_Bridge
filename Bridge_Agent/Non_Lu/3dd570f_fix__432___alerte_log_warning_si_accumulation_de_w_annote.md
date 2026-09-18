@@ -1,0 +1,218 @@
+3dd570f
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit 3dd570f
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Mon Aug 10 13:55:12 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    fix #432 : alerte log.warning si accumulation de worktrees non nettoyés (SEUIL_ALERTE_WORKTREES, défaut 3)
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/BRIDGE_AGENT_DOC.md b/BRIDGE_AGENT_DOC.md
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 6c105d5..3d8d0a7 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/BRIDGE_AGENT_DOC.md
+# ── Version APRÈS ce commit.
++++ b/BRIDGE_AGENT_DOC.md
+# ── Zone modifiée : ligne 1102 (6 ligne(s)) dans l'ancienne version → ligne 1102 (14 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1102,6 +1102,14 @@ séquentiellement dans `REP_TRAVAIL` (hors périmètre de cette issue).
+   qu'un thread `mode_write` tourne encore, même si `DELAI_INACTIVITE_MIN`
+   est dépassé — réévalué à chaque cycle, dès qu'un thread se termine
+   l'extinction redevient possible.
++- **Alerte accumulation de worktrees (issue #432)** : en début de chaque
++  cycle de polling, juste après le `git pull --ff-only` (§13), le watcher
++  compte les worktrees secondaires actifs (`git worktree list`, hors
++  `REP_TRAVAIL`) et émet un `log.warning` clair (chemin + branche de
++  chacun) dès que ce nombre dépasse `SEUIL_ALERTE_WORKTREES` (`.conf`,
++  entier, défaut **3**) — visible dans l'onglet Journal watcher de
++  l'interface. Aucune notification ntfy/bureau ; le nettoyage reste
++  entièrement manuel (Alain).
+ 
+ > Pour le détail du workflow et les procédures de récupération, voir
+ > [`WORKTREES.md`](WORKTREES.md).
+# (diff du fichier suivant)
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+# (index — ignorable)
+index 599d1e3..12b77da 100644
+# (avant — fichier suivant)
+--- a/CHANGELOG.md
+# (après — fichier suivant)
++++ b/CHANGELOG.md
+# ── Zone modifiée : ligne 9 (6 ligne(s)) dans l'ancienne version → ligne 9 (28 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -9,6 +9,28 @@ milliers de caractères sur une seule ligne logique, coûteux à relire et
+ 
+ Convention d'ajout : voir §10 de `BRIDGE_AGENT_DOC.md`.
+ 
++## 10 août 2026 — issue #432
++
++Alerte accumulation de worktrees : depuis l'issue #337, les worktrees
++créés pour la parallélisation mode_write ne sont jamais supprimés
++automatiquement (nettoyage manuel par Alain) et pouvaient s'accumuler
++silencieusement, sans aucun signal.
++- `watcher.py` : nouvelle fonction `_lister_worktrees_secondaires()`
++  (parse `git worktree list --porcelain` dans `REP_TRAVAIL`, exclut le
++  worktree principal) et `verifier_accumulation_worktrees()`, appelée en
++  début de chaque cycle de polling juste après `rafraichir_depot()`
++  (`git pull --ff-only`). Au-delà de `SEUIL_ALERTE_WORKTREES` worktrees
++  secondaires actifs (nouvelle clé `.conf`, entier, défaut **3**),
++  émet un `log.warning` listant chemin + branche de chacun — visible
++  dans l'onglet Journal watcher de l'interface. En dessous du seuil,
++  silence total ; clé absente du `.conf` → défaut 3, aucune erreur.
++  Pas de notification ntfy/bureau, volontairement — un warning dans le
++  log suffit.
++- `WORKTREES.md` (§5) et `BRIDGE_AGENT_DOC.md` (§13, sous-section
++  parallélisation mode_write) documentent le mécanisme ; la limite
++  « pas d'alerte sur l'accumulation de worktrees » de `WORKTREES.md`
++  §5 est levée.
++
+ ## 8 août 2026 — issue #401
+ 
+ Onglet Résultats : les titres des issues ne s'alignaient pas horizontalement,
+# (diff du fichier suivant)
+diff --git a/WORKTREES.md b/WORKTREES.md
+# (index — ignorable)
+index 24379b7..666a8ba 100644
+# (avant — fichier suivant)
+--- a/WORKTREES.md
+# (après — fichier suivant)
++++ b/WORKTREES.md
+# ── Zone modifiée : ligne 180 (11 ligne(s)) dans l'ancienne version → ligne 180 (14 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -180,11 +180,14 @@ au quotidien.
+   protection inter-process réelle reste le fichier verrou par chemin de
+   travail (§2). Deux watchers distincts visant le même `REP_TRAVAIL` par
+   erreur de configuration restent exposés au même risque qu'avant #337.
+-- **Pas d'alerte sur l'accumulation de worktrees.** Rien ne prévient
+-  Alain si des worktrees s'accumulent faute de merge/nettoyage régulier
+-  (§3, étape 5) — seul `git worktree list` donne l'état réel. Un projet
+-  laissé sans repasse pendant longtemps peut accumuler plusieurs
+-  répertoires frères oubliés.
++- **Alerte accumulation de worktrees (issue #432).** En début de chaque
++  cycle de polling, juste après `git pull --ff-only`, `watcher.py` compte
++  les worktrees secondaires actifs (`git worktree list`, hors
++  `REP_TRAVAIL`) et émet un `log.warning` (chemin + branche de chacun) dès
++  que ce nombre dépasse `SEUIL_ALERTE_WORKTREES` (clé `.conf`, entier,
++  défaut **3**) — visible dans l'onglet Journal watcher de l'interface.
++  Simple signal dans le log, pas de notification ntfy/bureau ; le
++  nettoyage (§3, étape 5) reste entièrement manuel.
+ - **`mode_lecture` / `mode_scratch` non parallélisés.** Le mécanisme ne
+   couvre que `mode_write` — les issues en lecture seule ou en lecture
+   active (scratch) restent strictement séquentielles dans `REP_TRAVAIL`,
+# (diff du fichier suivant)
+diff --git a/watcher.py b/watcher.py
+# (index — ignorable)
+index 42be1da..412248c 100644
+# (avant — fichier suivant)
+--- a/watcher.py
+# (après — fichier suivant)
++++ b/watcher.py
+# ── Zone modifiée : ligne 247 (6 ligne(s)) dans l'ancienne version → ligne 247 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -247,6 +247,7 @@ class Config:
+     delai_inactivite_min: int = 20  # auto-extinction : minutes sans aucune issue traitable avant que le watcher ne s'arrête proprement (issue #200). 0 = désactivé (le watcher tourne indéfiniment, comportement historique).
+     libelle_agent: str     = ""    # libellé de l'agent affiché dans l'ACK (ex. "agent Linux", "agent Windows") — vide = déduit automatiquement de la plateforme (issue #239)
+     max_write_parallele: int = 2   # parallélisation mode_write via git worktrees (issue #337) : nombre max de tâches mode_write concurrentes. 1 = comportement séquentiel historique (aucun worktree, aucun thread). 0 = désactivé (identique à 1).
++    seuil_alerte_worktrees: int = 3  # alerte accumulation de worktrees (issue #432) : au-delà de ce nombre de worktrees secondaires actifs (hors REP_TRAVAIL), un log.warning est émis à chaque cycle — le nettoyage (merge + git worktree remove + git branch -d) reste manuel, cf. WORKTREES.md.
+ 
+     @property
+     def url_ntfy(self) -> str:
+# ── Zone modifiée : ligne 340 (6 ligne(s)) dans l'ancienne version → ligne 341 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -340,6 +341,7 @@ def charger_config(chemin: Path) -> Config:
+         delai_inactivite_min = entier("DELAI_INACTIVITE_MIN", 20),
+         libelle_agent       = brut.get("LIBELLE_AGENT", ""),
+         max_write_parallele = entier("MAX_WRITE_PARALLELE", 2),
++        seuil_alerte_worktrees = entier("SEUIL_ALERTE_WORKTREES", 3),
+     )
+ 
+ 
+# ── Zone modifiée : ligne 618 (6 ligne(s)) dans l'ancienne version → ligne 620 (76 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -618,6 +620,76 @@ def rafraichir_depot(rep: Path, dry_run: bool = False):
+         log.warning(f"  [pull] échoué : {premiere} — poursuite sur le code local.")
+ 
+ 
++def _lister_worktrees_secondaires() -> list[dict]:
++    """Liste les worktrees git du projet AUTRES que le worktree principal
++    (`CFG.rep_travail`) — les répertoires frères créés pour la
++    parallélisation mode_write (issue #337), via `git worktree list
++    --porcelain`. Chaque entrée : {"chemin": str, "branche": str}.
++
++    Best-effort : dossier absent ou pas un dépôt git, ou toute erreur
++    d'exécution git → liste vide, jamais d'exception propagée."""
++    if not CFG.rep_travail.is_dir() or not _est_depot_git(CFG.rep_travail):
++        return []
++    try:
++        res = subprocess.run(
++            ["git", "-C", str(CFG.rep_travail), "worktree", "list", "--porcelain"],
++            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
++        )
++    except (OSError, subprocess.SubprocessError):
++        return []
++    if res.returncode != 0:
++        return []
++
++    worktrees: list[dict] = []
++    courant: dict = {}
++    for ligne in res.stdout.splitlines():
++        if not ligne.strip():
++            if courant:
++                worktrees.append(courant)
++                courant = {}
++            continue
++        cle, sep, valeur = ligne.partition(" ")
++        if cle == "worktree":
++            courant = {"chemin": valeur}
++        elif cle == "branch":
++            courant["branche"] = valeur.removeprefix("refs/heads/")
++    if courant:
++        worktrees.append(courant)
++
++    principal = str(CFG.rep_travail.resolve())
++    return [
++        w for w in worktrees
++        if w.get("chemin") and str(Path(w["chemin"]).resolve()) != principal
++    ]
++
++
++def verifier_accumulation_worktrees() -> None:
++    """Alerte accumulation de worktrees (issue #432) : appelée en début de
++    cycle, juste après `rafraichir_depot()`. Les worktrees créés pour la
++    parallélisation mode_write (issue #337) ne sont jamais supprimés
++    automatiquement — Alain merge et nettoie manuellement (`git worktree
++    remove` + `git branch -d`, cf. WORKTREES.md §3). Sans signal, ils
++    peuvent s'accumuler silencieusement.
++
++    Au-delà de `CFG.seuil_alerte_worktrees` worktrees secondaires actifs
++    (défaut 3), émet un log.warning listant chemin + branche de chacun, à
++    CHAQUE cycle tant que le nombre reste au-dessus du seuil. En dessous,
++    silence total — pas de log superflu. Pas de notification ntfy/bureau,
++    volontairement : un WARNING dans le journal watcher suffit, visible
++    depuis l'onglet Journal de l'interface web."""
++    secondaires = _lister_worktrees_secondaires()
++    if len(secondaires) <= CFG.seuil_alerte_worktrees:
++        return
++    detail = "; ".join(
++        f"{w['chemin']} (branche {w.get('branche', '?')})" for w in secondaires
++    )
++    log.warning(
++        f"⚠️  {len(secondaires)} worktrees git actifs pour {CFG.nom} "
++        f"(seuil {CFG.seuil_alerte_worktrees}) — pensez à merger/nettoyer "
++        f"(git worktree remove + git branch -d) : {detail}"
++    )
++
++
+ def lister_issues():
+     """Retourne la liste des issues (label du projet) ouvertes."""
+     try:
+# ── Zone modifiée : ligne 3455 (6 ligne(s)) dans l'ancienne version → ligne 3527 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -3455,6 +3527,9 @@ def main():
+             # PAS rafraîchis ici : ce sont des dépôts-cibles d'audit, pas le clone
+             # de travail du watcher. Best-effort, jamais bloquant.
+             rafraichir_depot(CFG.rep_travail, dry_run=args.dry_run)
++            # Alerte accumulation de worktrees (issue #432), best-effort et
++            # silencieuse en dessous du seuil — voir verifier_accumulation_worktrees().
++            verifier_accumulation_worktrees()
+             issues = lister_issues()
+             # Activité = présence d'au moins une issue réellement traitable (ni
+             # done, ni needs-human). On réarme AVANT le traitement : le cycle qui

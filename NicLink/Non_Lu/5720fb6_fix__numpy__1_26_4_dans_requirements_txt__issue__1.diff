@@ -1,0 +1,21 @@
+5720fb6
+
+commit 5720fb6
+Author: Athanatos123 <alain.delree@gmail.com>
+Date:   Tue Aug 18 18:07:48 2026 +0200
+
+    fix: numpy>=1.26.4 dans requirements.txt (issue #180)
+
+diff --git a/requirements.txt b/requirements.txt
+index 28424e6..b9edbf2 100755
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -2,7 +2,7 @@ berserk==0.13.2
+ pyproject-toml==0.0.10
+ setuptools==69.1.1
+ pybind11==2.11.1
+-numpy==1.26.4
++numpy>=1.26.4
+ chess==1.10.0
+ readchar==4.0.5
+ pyserial==3.5

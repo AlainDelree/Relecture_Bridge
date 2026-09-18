@@ -1,0 +1,126 @@
+0fed4e3
+
+commit 0fed4e3
+Author: Alain Delree <alain.delree@gmail.com>
+Date:   Sun Jul 26 00:06:12 2026 +0200
+
+    Configuration du logging vers fichier dans actualise.py
+    
+    Ajoute configurer_logging() appelée au tout début de main() : écrit
+    vers config.chemin_config_portable() / "actualise.log" en niveau INFO,
+    avec création du dossier parent si absent (config.json peut ne pas
+    encore exister au premier lancement). Nécessaire car Actualise sera
+    packagé en --noconsole, où écrire sur stdout/stderr peut échouer
+    silencieusement sous Windows (issue #17, suite #9).
+    
+    Ajoute un test vérifiant que le FileHandler du logger racine pointe
+    bien vers un fichier "actualise.log" dans chemin_config_portable(),
+    sans vérifier le contenu exact des logs.
+
+diff --git a/actualise.py b/actualise.py
+index dd1bcb6..2ea3aa9 100644
+--- a/actualise.py
++++ b/actualise.py
+@@ -233,12 +233,37 @@ def tache_verification_arriere_plan() -> None:
+         _LOGGER.exception("Erreur inattendue dans la tâche de vérification en arrière-plan")
+ 
+ 
++def configurer_logging() -> None:
++    """Configure le logging global vers un fichier, avant tout autre
++    traitement de ``main()``.
++
++    Actualise sera packagé en ``--noconsole`` (voir CONCEPTION.md) : sans
++    fenêtre console, écrire sur stdout/stderr peut échouer silencieusement
++    sous Windows, d'où l'écriture vers un fichier plutôt que la console.
++    Le dossier de ``config.chemin_config_portable()`` peut ne pas encore
++    exister au tout premier lancement (avant même que ``config.json`` n'y
++    soit écrit) : il est créé si nécessaire. ``force=True`` garantit que
++    cette configuration s'applique même si le logging a déjà été
++    configuré (ex. appels répétés dans les tests).
++    """
++    chemin_log = config.chemin_config_portable() / "actualise.log"
++    chemin_log.parent.mkdir(parents=True, exist_ok=True)
++    logging.basicConfig(
++        filename=chemin_log,
++        level=logging.INFO,
++        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
++        force=True,
++    )
++
++
+ def main(argv: list[str] | None = None) -> int:
+     """Orchestre la séquence de démarrage non bloquante d'Actualise.
+ 
+     Voir CONCEPTION.md, « Séquence de démarrage — vérification non
+     bloquante » pour le déroulé complet des étapes ci-dessous.
+     """
++    configurer_logging()
++
+     arguments = analyser_arguments(argv)
+ 
+     # Étape 4 : bascule des mises à jour déjà téléchargées et validées
+diff --git a/tests/test_actualise.py b/tests/test_actualise.py
+index 69b5ef9..9b93196 100644
+--- a/tests/test_actualise.py
++++ b/tests/test_actualise.py
+@@ -8,6 +8,7 @@ vérification non bloquante » et « Garde-fou anti-boucle infinie ».
+ """
+ 
+ import json
++import logging
+ import tempfile
+ import unittest
+ import zipfile
+@@ -16,6 +17,7 @@ from unittest.mock import MagicMock, call, patch
+ 
+ from actualise import (
+     appliquer_mises_a_jour_en_attente,
++    configurer_logging,
+     lancer_application_cible,
+     tache_verification_arriere_plan,
+ )
+@@ -131,6 +133,44 @@ class TestAppliquerMisesAJourEnAttente(unittest.TestCase):
+         self.mock_config.sauvegarder_config.assert_not_called()
+ 
+ 
++class TestConfigurerLogging(unittest.TestCase):
++    def setUp(self):
++        self.dossier_temp = tempfile.TemporaryDirectory()
++        self.addCleanup(self.dossier_temp.cleanup)
++
++        racine_logging = logging.getLogger()
++        handlers_originaux = racine_logging.handlers[:]
++        niveau_original = racine_logging.level
++
++        def restaurer():
++            for handler in racine_logging.handlers[:]:
++                racine_logging.removeHandler(handler)
++                handler.close()
++            for handler in handlers_originaux:
++                racine_logging.addHandler(handler)
++            racine_logging.setLevel(niveau_original)
++
++        self.addCleanup(restaurer)
++
++    @patch("actualise.config")
++    def test_configure_un_fichier_dans_chemin_config_portable(self, mock_config):
++        dossier_config = Path(self.dossier_temp.name) / "config_actualise_absent"
++        mock_config.chemin_config_portable.return_value = dossier_config
++
++        configurer_logging()
++
++        racine_logging = logging.getLogger()
++        fichiers_journal = [
++            Path(handler.baseFilename)
++            for handler in racine_logging.handlers
++            if isinstance(handler, logging.FileHandler)
++        ]
++
++        self.assertEqual(len(fichiers_journal), 1)
++        self.assertEqual(fichiers_journal[0], dossier_config / "actualise.log")
++        self.assertTrue(dossier_config.is_dir())
++
++
+ class TestLancerApplicationCible(unittest.TestCase):
+     @patch("actualise.subprocess.Popen")
+     @patch("actualise.config")

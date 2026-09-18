@@ -1,0 +1,26 @@
+ecb9a1a
+
+commit ecb9a1a
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Wed Jul 29 08:41:44 2026 +0200
+
+    Issue #321 : animation pioche — restaurer diff + guard mon_tour (suite #319)
+
+diff --git a/src/scrabble/ui/web/jeu.js b/src/scrabble/ui/web/jeu.js
+index 19a19ef..13ef2f8 100644
+--- a/src/scrabble/ui/web/jeu.js
++++ b/src/scrabble/ui/web/jeu.js
+@@ -1049,9 +1049,11 @@ document.addEventListener('DOMContentLoaded', async () => {
+             // premier affichage (rien n'est « arrivé », c'est l'état initial), ni
+             // si une animation est déjà en cours (mise à jour rapprochée : on
+             // rebâtit directement pour rester synchrone avec Python).
+-            const arrivees = (premierAppel || animationPiocheEnCours)
++            const arrivees = (premierAppel || animationPiocheEnCours
++                              || !etatChevalet.mon_tour)
+                 ? []
+-                : etatChevalet.lettres || [];
++                : nouvellesLettresArrivees(anciennesLettres,
++                                           etatChevalet.lettres || []);
+             if (arrivees.length > 0) {
+                 animerNouvellesLettres(arrivees).then(() => {
+                     reconstruirePanneau();

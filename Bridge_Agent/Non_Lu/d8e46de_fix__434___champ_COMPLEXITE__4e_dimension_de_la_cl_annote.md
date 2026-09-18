@@ -1,0 +1,341 @@
+d8e46de
+
+# ── Identifiant unique de ce commit (hash SHA). Sert à le retrouver précisément (ex. `git show <hash>`).
+commit d8e46de
+# ── Qui a fait ce commit.
+Author: Athanatos123 <alain.delree@gmail.com>
+# ── Quand ce commit a été fait.
+Date:   Mon Aug 10 14:26:03 2026 +0200
+
+# ── Message de commit : résumé de l'intention du changement, écrit par celui qui a committé.
+    fix #434 : champ COMPLEXITE, 4e dimension de la clé EWMA calibration TIMEOUT
+
+# ── Début du diff pour CE fichier précis. a/ = version avant, b/ = version après (identiques si le fichier n'a pas été renommé).
+diff --git a/BRIDGE_AGENT_DOC.md b/BRIDGE_AGENT_DOC.md
+# ── Identifiants internes git (hash du contenu avant/après). Sans intérêt au quotidien, ignorable.
+index 3d8d0a7..0ca8e36 100644
+# ── Version AVANT ce commit (/dev/null = le fichier n'existait pas).
+--- a/BRIDGE_AGENT_DOC.md
+# ── Version APRÈS ce commit.
++++ b/BRIDGE_AGENT_DOC.md
+# ── Zone modifiée : ligne 310 (6 ligne(s)) dans l'ancienne version → ligne 310 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -310,6 +310,7 @@ Le watcher lit ces champs dans le tableau markdown de l'en-tête :
+ | `TYPE` | `chef` ou `ouvrier` | Identifie le rôle de l'issue dans le pattern multi-agent. `chef` = orchestre les ouvriers. `ouvrier` = sous-tâche créée par le chef, masquée par défaut dans l'onglet Résultats. Absent = issue normale. |
+ | `FICHIER_CONTEXTE` | ex. chemin relatif | Fichier additionnel fourni en contexte à CCL pour cette issue (modifiable via l'onglet Configuration, voir §12) |
+ | `SUITE_DE` | ex. `#5` | Indique que cette issue fait suite à l'issue #N (discussion ou tâche complémentaire). Absent = issue inédite. |
++| `COMPLEXITE` | `rapide` / `court` / `normal` / `lourd` | 4e dimension de la clé EWMA de calibration TIMEOUT (issue #434, voir §19), estimée par Claude Chat au moment de rédiger l'issue. Absent ou valeur non reconnue = `normal` (défaut, ~300s). CCL/CCW doit l'inclure dans les issues chef/ouvrier qu'il crée (voir `consignes/globales.md`) ; pour les issues de Claude Chat, c'est géré côté doc/prompt. |
+ 
+ Format dans le corps :
+ ```markdown
+# ── Zone modifiée : ligne 2016 (8 ligne(s)) dans l'ancienne version → ligne 2017 (18 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -2016,8 +2017,18 @@ Le champ `TIMEOUT` de l'en-tête d'une issue (§6) est aujourd'hui choisi « à
+ vue de nez » par Claude Chat (souvent le défaut du formulaire, 300s, ou
+ 600s pour une tâche qui semble plus lourde). Ce système calcule, à partir de
+ l'**historique réel** des durées de traitement, une valeur suggérée —
+-`TIMEOUT_suggéré` — par combinaison (projet, `TYPE`, mode), pour aider
+-Claude Chat à mieux calibrer ce champ au fil du temps.
++`TIMEOUT_suggéré` — par combinaison (projet, `TYPE`, mode, `COMPLEXITE` —
++issue #434), pour aider Claude Chat à mieux calibrer ce champ au fil du
++temps.
++
++> ℹ️ **4e dimension `COMPLEXITE` (issue #434) :** la clé à 3 dimensions
++> `projet|TYPE|mode` mélangeait des populations incompatibles dans la même
++> case (ex. une issue de doc de 250s et une refonte de 1800s). Le champ
++> `COMPLEXITE` de l'en-tête (§6 — `rapide` / `court` / `normal` / `lourd`,
++> défaut `normal` si absent) est désormais inclus dans la clé EWMA :
++> `projet|TYPE|mode|complexite`. Les issues sans ce champ (historique
++> existant) sont traitées comme `normal` — aucune régression, nouvelles
++> clés distinctes, recalibration progressive.
+ 
+ Principe d'inspiration explicitement choisi (validé avec Alain) : l'algorithme
+ de calcul du **RTO (Retransmission TimeOut) de TCP**, Jacobson/Karels — durée
+# ── Zone modifiée : ligne 2062 (7 ligne(s)) dans l'ancienne version → ligne 2073 (8 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -2062,7 +2073,8 @@ piloté — donc **partagé entre tous les process watcher**, quel que soit le
+ projet, et déjà **gitignoré** comme le reste de `logs/`) :
+ 
+ - **`logs/etat_timeout.json`** — une entrée par combinaison
+-  **`projet|TYPE|mode`** : EWMA `duree_typique` et `variabilite` (à
++  **`projet|TYPE|mode|complexite`** (4e dimension `complexite` ajoutée par
++  l'issue #434, cf. §19.1) : EWMA `duree_typique` et `variabilite` (à
+   **demi-vie EN NOMBRE D'ISSUES**, `DEMI_VIE_ISSUES`), `multiplicateur_backoff`,
+   compteur `succes_rapides_consecutifs`, `n_observations`.
+ - **`logs/etat_ambiance.json`** — `F_reseau` et `F_local`, chacun une EWMA à
+# ── Zone modifiée : ligne 2175 (17 ligne(s)) dans l'ancienne version → ligne 2187 (24 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -2175,17 +2187,24 @@ issues de la même combinaison s'il le juge utile.
+ 
+ ---
+ 
+-*Dernière mise à jour : 3 août 2026 — §17 « Notifications centralisées » :
+-nouvelle sous-section 17.3 documentant le SSE de fin d'issue (issue #350) —
+-`scripts/bip.py` renommé `scripts/traitement_fin.py` (clé de config
+-`SCRIPT_BIP` inchangée, chemin à mettre à jour manuellement dans les
+-`configs/*.conf` existants) et devenu, en plus du bip, le déclencheur
+-best-effort d'un POST `/notifier-fin-issue` → SSE `GET /stream`
+-(`app/fin_issue.py`, une `queue.Queue` par onglet Résultats ouvert) consommé
+-côté navigateur par `demarrerStreamFinIssue()`, qui réutilise le fetch de
+-vérification de #334 (`verifierIssueApresDepassement`) sans dupliquer sa
+-logique. Rafraîchissement toujours opt-in via les labels `notif_*` (comme le
+-bip lui-même) ; sans label, la ligne reste soumise au ↻ manuel ou au fetch
++*Dernière mise à jour : 10 août 2026 — §6 « Champs spéciaux dans le corps
++de l'issue » : nouveau champ `COMPLEXITE` documenté (issue #434) — 4e
++dimension de la clé EWMA de calibration TIMEOUT (§19), quatre niveaux
++`rapide`/`court`/`normal`/`lourd`, défaut `normal` (~300s) si absent. §19.1
++et §19.3 mis à jour en conséquence : la clé `etat_timeout.json` passe de
++`projet|TYPE|mode` à `projet|TYPE|mode|complexite` — nouvelles clés
++distinctes, historique existant traité comme `normal`, aucune régression.
++Précédemment — §17 « Notifications centralisées » : nouvelle sous-section
++17.3 documentant le SSE de fin d'issue (issue #350) — `scripts/bip.py`
++renommé `scripts/traitement_fin.py` (clé de config `SCRIPT_BIP` inchangée,
++chemin à mettre à jour manuellement dans les `configs/*.conf` existants) et
++devenu, en plus du bip, le déclencheur best-effort d'un POST
++`/notifier-fin-issue` → SSE `GET /stream` (`app/fin_issue.py`, une
++`queue.Queue` par onglet Résultats ouvert) consommé côté navigateur par
++`demarrerStreamFinIssue()`, qui réutilise le fetch de vérification de #334
++(`verifierIssueApresDepassement`) sans dupliquer sa logique.
++Rafraîchissement toujours opt-in via les labels `notif_*` (comme le bip
++lui-même) ; sans label, la ligne reste soumise au ↻ manuel ou au fetch
+ post-TIMEOUT de #334. Précédemment — §11 « Conventions de code » : deux
+ notes informant les projets utilisant Bridge_Agent des conséquences de la
+ parallélisation `mode_write` par worktrees (issue #337) — risque de conflit
+# ── Zone modifiée : ligne 2195 (19 ligne(s)) dans l'ancienne version → ligne 2214 (6 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -2195,19 +2214,6 @@ possible) et workflow de vérification/push désormais attendu d'Alain
+ (`git worktree list`, `python3 scripts/fusionner_changelog.py` avant tout
+ merge ou push, merge manuel de chaque branche `worktree-issue-<N>`,
+ nettoyage `git worktree remove`/`git branch -d`) — renvoi vers
+-`WORKTREES.md` pour le détail complet (issue #342). Précédemment — §13
+-« Commandes utiles » (nouvelle sous-section « Interrompre une issue
+-bloquée ») et §16.4 « Interrompre une issue CCW coincée » : les deux
+-boutons ⛔ « Interrompre » (CCL et CCW, issue #323) sont désormais
+-documentés comme implémentés et fonctionnels — le renvoi mort vers
+-`TACHES.md` du §16.4 est supprimé (issue #333). §16.4 décrit maintenant au
+-présent ce que fait `interrompre_windows()` (`app/interruption.py`) via
+-`provisioning/windows/interrompre_projet_ccw.ps1` : arrêt du service NSSM,
+-vérification bornée de l'arbre de process, suppression conditionnelle des
+-`.lock`. La nouvelle sous-section de §13 documente le pendant côté CCL
+-(`interrompre_linux()`) : arbre de process retrouvé par remontée
+-`/proc/<pid>/status` (PPID, jamais par nom d'exécutable), `SIGKILL`,
+-attente confirmée de la mort de l'arbre avant suppression du verrou — ainsi
+-que l'équivalent manuel (`kill -9` + suppression du `.lock`).*
++`WORKTREES.md` pour le détail complet (issue #342).*
+ 
+ Historique complet : voir [`CHANGELOG.md`](CHANGELOG.md).
+# (diff du fichier suivant)
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+# (index — ignorable)
+index 12b77da..4b12edc 100644
+# (avant — fichier suivant)
+--- a/CHANGELOG.md
+# (après — fichier suivant)
++++ b/CHANGELOG.md
+# ── Zone modifiée : ligne 9 (6 ligne(s)) dans l'ancienne version → ligne 9 (35 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -9,6 +9,35 @@ milliers de caractères sur une seule ligne logique, coûteux à relire et
+ 
+ Convention d'ajout : voir §10 de `BRIDGE_AGENT_DOC.md`.
+ 
++## 10 août 2026 — issue #434
++
++Champ `COMPLEXITE` dans les issues : 4e dimension de la clé EWMA de
++calibration TIMEOUT. La clé `projet|TYPE|mode` mélangeait des populations
++incompatibles (ex. une issue de doc de 250s et une refonte de 1800s dans
++la même case).
++- `watcher.py` : nouvelle fonction `extraire_complexite(body)` (même
++  pattern que `extraire_timeout`/`extraire_modele`) — lit `| COMPLEXITE |
++  ... |` dans l'en-tête, valeurs reconnues `rapide`/`court`/`normal`/`lourd`
++  (insensible à la casse), toute valeur non reconnue ou champ absent →
++  `normal`. `_cle_combinaison()` prend désormais un 4e paramètre
++  `complexite` et produit `f"{projet}|{type_issue}|{mode}|{complexite}"`
++  au lieu de `f"{projet}|{type_issue}|{mode}"`. `maj_calibration_timeout()`
++  et `lire_timeout_suggere()` reçoivent un nouveau paramètre optionnel
++  `complexite` (défaut `"normal"`) répercuté dans la clé ; les trois sites
++  d'appel (succès, tentative expirée, échec définitif) calculent
++  `extraire_complexite(body)` au même endroit que `deduire_type_issue`/
++  `_etiquette_calibration` et le transmettent. Nouvelles clés distinctes
++  par complexité — l'historique existant (sans ce champ) n'est pas
++  affecté, recalibration progressive.
++- `consignes/globales.md` : nouvelle consigne demandant à CCL/CCW d'inclure
++  `| COMPLEXITE | <niveau> |` dans l'en-tête de toute issue chef/ouvrier
++  qu'il crée lui-même. Ne concerne pas les issues rédigées par Claude
++  Chat — géré côté doc/prompt, hors de ce fichier.
++- `BRIDGE_AGENT_DOC.md` : §6 (table des champs spéciaux) documente le
++  nouveau champ `COMPLEXITE` ; §19.1 et §19.3 (calibration TIMEOUT)
++  mentionnent son rôle de 4e dimension de la clé EWMA et le changement de
++  format de la clé dans `etat_timeout.json`.
++
+ ## 10 août 2026 — issue #432
+ 
+ Alerte accumulation de worktrees : depuis l'issue #337, les worktrees
+# (diff du fichier suivant)
+diff --git a/consignes/globales.md b/consignes/globales.md
+# (index — ignorable)
+index 8de6c98..e596635 100644
+# (avant — fichier suivant)
+--- a/consignes/globales.md
+# (après — fichier suivant)
++++ b/consignes/globales.md
+# ── Zone modifiée : ligne 61 (3 ligne(s)) dans l'ancienne version → ligne 61 (12 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -61,3 +61,12 @@
+   garde-fou technique dans `watcher.py` détecte et annule automatiquement
+   toute modification de `configs/*.conf` survenue malgré tout au cours du
+   traitement.
++- **Champ COMPLEXITE dans les issues que tu crées toi-même (chef/ouvrier) :**
++  inclus systématiquement une ligne `| COMPLEXITE | <niveau> |` dans l'en-tête
++  de toute issue que tu ouvres (que ce soit une issue chef vers un ouvrier, ou
++  une issue ouvrier). Quatre niveaux possibles : `rapide` / `court` / `normal`
++  / `lourd` — estime celui qui correspond le mieux à l'ampleur de la tâche
++  confiée. Ce champ alimente la calibration automatique du TIMEOUT (EWMA par
++  projet/TYPE/mode/complexite) : sans lui, la valeur par défaut `normal` est
++  utilisée. Cette consigne ne concerne QUE les issues que TU rédiges — les
++  issues rédigées par Claude Chat suivent leurs propres instructions.
+# (diff du fichier suivant)
+diff --git a/watcher.py b/watcher.py
+# (index — ignorable)
+index 3005206..06130d1 100644
+# (avant — fichier suivant)
+--- a/watcher.py
+# (après — fichier suivant)
++++ b/watcher.py
+# ── Zone modifiée : ligne 1037 (8 ligne(s)) dans l'ancienne version → ligne 1037 (8 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1037,8 +1037,8 @@ def _alpha_temporel(delta_heures: float, demi_vie_heures: float) -> float:
+     return 1 - 0.5 ** (delta_heures / demi_vie_heures)
+ 
+ 
+-def _cle_combinaison(projet: str, type_issue: str, mode: str) -> str:
+-    return f"{projet}|{type_issue}|{mode}"
++def _cle_combinaison(projet: str, type_issue: str, mode: str, complexite: str) -> str:
++    return f"{projet}|{type_issue}|{mode}|{complexite}"
+ 
+ 
+ def _maj_combinaison_timeout(donnees: dict, cle: str, *, duree_s: float,
+# ── Zone modifiée : ligne 1114 (20 ligne(s)) dans l'ancienne version → ligne 1114 (21 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1114,20 +1114,21 @@ def _maj_ambiance(donnees: dict, cle_f: str, ratio: float, date_iso: str):
+ 
+ def maj_calibration_timeout(*, projet: str, type_issue: str, mode: str,
+                             duree_s: float, timeout_courant: int, expiree: bool,
+-                            body: str, date_iso: str) -> float | None:
++                            body: str, date_iso: str, complexite: str = "normal") -> float | None:
+     """Point d'entrée de la calibration automatique du TIMEOUT (issue #221),
+     appelé après CHAQUE clôture d'issue (succès ou timeout), au même site que
+     enregistrer_duree. Met à jour etat_timeout.json (combinaison projet/TYPE/
+-    mode) et, sur succès avec tag_reseau connu, etat_ambiance.json (F_reseau/
+-    F_local, global à tous les projets). Journalise et retourne le
+-    TIMEOUT_suggéré (secondes, plancher appliqué) pour cette combinaison, ou
+-    None si le calcul n'a pas pu aboutir (verrou d'état non obtenu, ou aucune
+-    observation de succès encore enregistrée pour cette combinaison).
++    mode/complexite, issue #434) et, sur succès avec tag_reseau connu,
++    etat_ambiance.json (F_reseau/F_local, global à tous les projets).
++    Journalise et retourne le TIMEOUT_suggéré (secondes, plancher appliqué)
++    pour cette combinaison, ou None si le calcul n'a pas pu aboutir (verrou
++    d'état non obtenu, ou aucune observation de succès encore enregistrée
++    pour cette combinaison).
+ 
+     N'APPLIQUE RIEN au comportement d'exécution actuel : le TIMEOUT réellement
+     utilisé pour lancer claude reste exclusivement celui de extraire_timeout()
+     — cette fonction ne fait que calculer et journaliser."""
+-    cle = _cle_combinaison(projet, type_issue, mode)
++    cle = _cle_combinaison(projet, type_issue, mode, complexite)
+     capture = {}
+ 
+     def _maj_timeout(donnees):
+# ── Zone modifiée : ligne 1189 (10 ligne(s)) dans l'ancienne version → ligne 1190 (11 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1189,10 +1190,11 @@ def maj_calibration_timeout(*, projet: str, type_issue: str, mode: str,
+     return suggere
+ 
+ 
+-def lire_timeout_suggere(projet: str, type_issue: str, mode: str) -> float | None:
++def lire_timeout_suggere(projet: str, type_issue: str, mode: str, complexite: str = "normal") -> float | None:
+     """Lit (sans écrire ni verrouiller) le TIMEOUT_suggéré actuellement en
+-    vigueur pour la combinaison (projet, TYPE, mode), à partir de l'état déjà
+-    persisté par maj_calibration_timeout (issue #221).
++    vigueur pour la combinaison (projet, TYPE, mode, complexite — issue
++    #434), à partir de l'état déjà persisté par maj_calibration_timeout
++    (issue #221).
+ 
+     Sert au commentaire de clôture d'une issue en ÉCHEC définitif (issue
+     #222) : contrairement au cas succès, l'appel à maj_calibration_timeout
+# ── Zone modifiée : ligne 1203 (7 ligne(s)) dans l'ancienne version → ligne 1205 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1203,7 +1205,7 @@ def lire_timeout_suggere(projet: str, type_issue: str, mode: str) -> float | Non
+     encore été enregistré pour cette combinaison (mêmes conditions que
+     maj_calibration_timeout)."""
+     try:
+-        cle = _cle_combinaison(projet, type_issue, mode)
++        cle = _cle_combinaison(projet, type_issue, mode, complexite)
+         combo = _lire_json_best_effort(FICHIER_ETAT_TIMEOUT).get(cle)
+         if not combo:
+             return None
+# ── Zone modifiée : ligne 1280 (6 ligne(s)) dans l'ancienne version → ligne 1282 (27 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -1280,6 +1282,27 @@ def extraire_modele(body: str) -> str:
+                     return valeur
+     return CFG.modele_ccl
+ 
++def extraire_complexite(body: str) -> str:
++    """Extrait la COMPLEXITE depuis le body de l'issue (en-tête bridge, issue
++    #434) — 4e dimension de la clé EWMA de calibration TIMEOUT, aux côtés de
++    projet/TYPE/mode : sépare les populations « issue de doc de 250s » et
++    « refonte de 1800s » que la clé à 3 dimensions mélangeait.
++
++    Calquée sur extraire_timeout/extraire_modele. Quatre niveaux reconnus
++    (insensible à la casse) : rapide / court / normal / lourd. Champ absent
++    ou valeur non reconnue → 'normal' (défaut, ~300s = TIMEOUT standard) —
++    n'affecte pas l'historique des issues déjà closes, qui n'ont pas ce
++    champ (nouvelles clés, recalibration progressive)."""
++    niveaux = ("rapide", "court", "normal", "lourd")
++    for ligne in body.splitlines():
++        if "| COMPLEXITE" in ligne.upper():
++            parts = ligne.split("|")
++            if len(parts) >= 3:
++                valeur = parts[2].strip().lower()
++                if valeur in niveaux:
++                    return valeur
++    return "normal"
++
+ def extraire_repo_cible(body: str) -> str:
+     """Extrait le REPO_CIBLE depuis le body de l'issue (en-tête bridge).
+     Calqué sur extraire_timeout/extraire_modele : cherche une ligne
+# ── Zone modifiée : ligne 3179 (6 ligne(s)) dans l'ancienne version → ligne 3202 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -3179,6 +3202,7 @@ def _traiter_issue_synchrone(issue: dict, dry_run: bool, chemin_worktree: Path |
+                 # catégorisée par projet/type/mode, pour l'estimation prédictive.
+                 type_issue_close = deduire_type_issue(titre, body)
+                 mode_close        = _etiquette_calibration(mode)
++                complexite_close  = extraire_complexite(body)
+                 duree_reelle      = time.monotonic() - debut_traitement
+                 date_iso_close    = datetime.now().isoformat(timespec="seconds")
+                 enregistrer_duree(
+# ── Zone modifiée : ligne 3198 (6 ligne(s)) dans l'ancienne version → ligne 3222 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -3198,6 +3222,7 @@ def _traiter_issue_synchrone(issue: dict, dry_run: bool, chemin_worktree: Path |
+                     projet=CFG.nom,
+                     type_issue=type_issue_close,
+                     mode=mode_close,
++                    complexite=complexite_close,
+                     duree_s=duree_reelle,
+                     timeout_courant=timeout,
+                     expiree=False,
+# ── Zone modifiée : ligne 3240 (6 ligne(s)) dans l'ancienne version → ligne 3265 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -3240,6 +3265,7 @@ def _traiter_issue_synchrone(issue: dict, dry_run: bool, chemin_worktree: Path |
+             if sortie.startswith("Timeout après"):
+                 type_issue_expire = deduire_type_issue(titre, body)
+                 mode_expire        = _etiquette_calibration(mode)
++                complexite_expire  = extraire_complexite(body)
+                 duree_expiree      = time.monotonic() - debut_traitement
+                 date_iso_expire    = datetime.now().isoformat(timespec="seconds")
+                 enregistrer_duree(
+# ── Zone modifiée : ligne 3259 (6 ligne(s)) dans l'ancienne version → ligne 3285 (7 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -3259,6 +3285,7 @@ def _traiter_issue_synchrone(issue: dict, dry_run: bool, chemin_worktree: Path |
+                     projet=CFG.nom,
+                     type_issue=type_issue_expire,
+                     mode=mode_expire,
++                    complexite=complexite_expire,
+                     duree_s=duree_expiree,
+                     timeout_courant=timeout,
+                     expiree=True,
+# ── Zone modifiée : ligne 3304 (8 ligne(s)) dans l'ancienne version → ligne 3331 (9 ligne(s)) dans la nouvelle. Une ligne '+' = ajoutée, '-' = supprimée, sans signe = contexte inchangé.
+@@ -3304,8 +3331,9 @@ def _traiter_issue_synchrone(issue: dict, dry_run: bool, chemin_worktree: Path |
+                     # même observation dans l'EWMA.
+                     type_issue_echec = deduire_type_issue(titre, body)
+                     mode_echec        = _etiquette_calibration(mode)
++                    complexite_echec  = extraire_complexite(body)
+                     duree_echec       = time.monotonic() - debut_traitement
+-                    suggere_echec     = lire_timeout_suggere(CFG.nom, type_issue_echec, mode_echec)
++                    suggere_echec     = lire_timeout_suggere(CFG.nom, type_issue_echec, mode_echec, complexite_echec)
+                     message_echec += formater_bloc_calibration(duree_echec, timeout, suggere_echec)
+                     commenter_issue(numero, message_echec)
+                     ajouter_label(numero, LABEL_ECHEC)

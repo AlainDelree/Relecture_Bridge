@@ -1,0 +1,20 @@
+commit 21867f53f58257299ed9937c2bbadbf831d5576e
+Author: CCL agent <alain.delree@gmail.com>
+Date:   Thu Jul 23 09:33:38 2026 +0200
+
+    Test du hook de relecture
+
+diff --git a/README.md b/README.md
+index 2d9884b..1bc64c4 100644
+--- a/README.md
++++ b/README.md
+@@ -1 +1,2 @@
+ # test hook
++# test hook
+diff --git a/README2.md b/README2.md
+new file mode 100644
+index 0000000..2d9884b
+--- /dev/null
++++ b/README2.md
+@@ -0,0 +1 @@
++# test hook
