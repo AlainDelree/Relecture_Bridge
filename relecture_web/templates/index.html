@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Relecture Bridge — worktrees &amp; commits en attente</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header>
+  <h1>Worktrees &amp; commits en attente de push</h1>
+  <p class="sous-titre">Un projet par section, un worktree par bloc — recharger la page pour rafraîchir.</p>
+</header>
+
+{% if erreur %}
+<p class="erreur">❌ {{ erreur }}</p>
+{% endif %}
+
+{% for projet in projets %}
+<section class="projet projet--{{ projet.statut }}">
+  <h2>{{ projet.nom }} <span class="depot">{{ projet.depot }}</span></h2>
+
+  {% if projet.statut == "introuvable" %}
+    <p class="statut">Dossier introuvable : {{ projet.repertoire }}</p>
+  {% elif projet.statut == "pas_un_depot_git" %}
+    <p class="statut">Pas un dépôt git : {{ projet.repertoire }}</p>
+  {% elif not projet.worktrees %}
+    <p class="statut">Aucun worktree détecté.</p>
+  {% else %}
+    {% for w in projet.worktrees %}
+    <div class="worktree {{ 'worktree--attente' if w.commits else '' }}">
+      <div class="worktree-entete">
+        <code class="chemin">{{ w.path }}</code>
+        <span class="branche">{{ w.branch or ('détaché @ ' ~ w.get('head', '?')) }}</span>
+        {% if w.commits %}
+          <span class="badge badge--attente">{{ w.commits|length }} commit(s) en attente</span>
+        {% elif w.erreur %}
+          <span class="badge badge--info">{{ w.erreur }}</span>
+        {% else %}
+          <span class="badge badge--ok">à jour ({{ w.amont }})</span>
+        {% endif %}
+      </div>
+      {% if w.commits %}
+      <ul class="commits">
+        {% for c in w.commits %}
+        <li><code>{{ c }}</code></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endfor %}
+  {% endif %}
+</section>
+{% endfor %}
+
+</body>
+</html>
