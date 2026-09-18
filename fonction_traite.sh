@@ -1,7 +1,9 @@
 # Fonctions pour marquer des diffs comme traités.
 #
 # Usage simple : traite <bout_du_hash_ou_du_nom>
-#   → déplace UN diff (et son _annote.md) de Non_Lu/ vers Traités/
+#   → déplace UN diff (et son _resume.md, ou son _annote.md pour les
+#     anciens fichiers déjà produits avant le passage au résumé
+#     fonctionnel) de Non_Lu/ vers Traités/
 #
 # Usage plage : traite <hash_debut> <hash_fin>
 #   → déplace TOUS les diffs compris chronologiquement entre les deux (inclus),
@@ -39,7 +41,7 @@ traite() {
     local motif="$1"
     local trouves
     trouves=$(find ~/Relecture_Bridge -maxdepth 3 -type f \
-        \( -iname "*${motif}*.diff" -o -iname "*${motif}*_annote.md" \) \
+        \( -iname "*${motif}*.diff" -o -iname "*${motif}*_resume.md" -o -iname "*${motif}*_annote.md" \) \
         ! -path "*/Traités/*" ! -path "*/Traites/*")
 
     if [ -z "$trouves" ]; then
@@ -62,10 +64,10 @@ _traite_plage() {
 
     local fichier_debut fichier_fin
     fichier_debut=$(find ~/Relecture_Bridge -maxdepth 3 -type f \
-        \( -iname "*${motif_debut}*.diff" -o -iname "*${motif_debut}*_annote.md" \) \
+        \( -iname "*${motif_debut}*.diff" -o -iname "*${motif_debut}*_resume.md" -o -iname "*${motif_debut}*_annote.md" \) \
         ! -path "*/Traités/*" ! -path "*/Traites/*" | head -n1)
     fichier_fin=$(find ~/Relecture_Bridge -maxdepth 3 -type f \
-        \( -iname "*${motif_fin}*.diff" -o -iname "*${motif_fin}*_annote.md" \) \
+        \( -iname "*${motif_fin}*.diff" -o -iname "*${motif_fin}*_resume.md" -o -iname "*${motif_fin}*_annote.md" \) \
         ! -path "*/Traités/*" ! -path "*/Traites/*" | head -n1)
 
     if [ -z "$fichier_debut" ]; then
@@ -111,7 +113,7 @@ _traite_plage() {
         echo "→ $(basename "$fichier") déplacé vers Traités/"
         compteur=$((compteur + 1))
     done < <(find "$racine_projet" -maxdepth 2 -type f \
-                 \( -name '*.diff' -o -name '*_annote.md' \) \
+                 \( -name '*.diff' -o -name '*_resume.md' -o -name '*_annote.md' \) \
                  ! -path "*/Traités/*")
 
     echo "$compteur fichier(s) déplacé(s)."

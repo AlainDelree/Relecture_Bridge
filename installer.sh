@@ -9,22 +9,22 @@ set -e
 
 DOSSIER_SCRIPT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 HOOK_SOURCE="$DOSSIER_SCRIPT/post-commit"
-ANNOTATION_SOURCE="$DOSSIER_SCRIPT/annoter_diff.py"
+RESUME_SOURCE="$DOSSIER_SCRIPT/resumer_diff.py"
 
 if [ ! -f "$HOOK_SOURCE" ]; then
     echo "Erreur : post-commit introuvable dans $DOSSIER_SCRIPT"
     exit 1
 fi
 
-# Déploiement du script d'annotation (partagé, une seule copie pour tous les projets)
-if [ -f "$ANNOTATION_SOURCE" ]; then
+# Déploiement du script de résumé (partagé, une seule copie pour tous les projets)
+if [ -f "$RESUME_SOURCE" ]; then
     mkdir -p "$HOME/.config/relecture-bridge"
-    cp "$ANNOTATION_SOURCE" "$HOME/.config/relecture-bridge/annoter_diff.py"
-    echo "✓ Script d'annotation installé dans ~/.config/relecture-bridge/"
-    echo "  (pour le désactiver plus tard : touch ~/.config/relecture-bridge/desactiver-annotation)"
+    cp "$RESUME_SOURCE" "$HOME/.config/relecture-bridge/resumer_diff.py"
+    echo "✓ Script de résumé installé dans ~/.config/relecture-bridge/"
+    echo "  (pour le désactiver plus tard : touch ~/.config/relecture-bridge/desactiver-resume)"
     echo ""
 else
-    echo "⚠ annoter_diff.py introuvable — les diffs seront exportés sans annotation."
+    echo "⚠ resumer_diff.py introuvable — les diffs seront exportés sans résumé."
     echo ""
 fi
 

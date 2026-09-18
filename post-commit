@@ -46,18 +46,19 @@ FICHIER_SORTIE="$DOSSIER_NON_LU/${HASH_COURT}_${MESSAGE}.diff"
 
 echo "[relecture] Diff exporté → $FICHIER_SORTIE"
 
-# Annotation pédagogique optionnelle (désactivable, voir README)
-SCRIPT_ANNOTATION="$HOME/.config/relecture-bridge/annoter_diff.py"
-MARQUEUR_DESACTIVATION="$HOME/.config/relecture-bridge/desactiver-annotation"
+# Résumé fonctionnel automatique, optionnel (désactivable, voir README) —
+# généré via le CLI Claude Code déjà installé sur la machine (claude -p).
+SCRIPT_RESUME="$HOME/.config/relecture-bridge/resumer_diff.py"
+MARQUEUR_DESACTIVATION="$HOME/.config/relecture-bridge/desactiver-resume"
 
-if [ -f "$SCRIPT_ANNOTATION" ] && [ ! -f "$MARQUEUR_DESACTIVATION" ]; then
-    FICHIER_ANNOTE="$DOSSIER_NON_LU/${HASH_COURT}_${MESSAGE}_annote.md"
-    FICHIER_ANNOTE_TMP="${FICHIER_ANNOTE}.tmp"
-    if python3 "$SCRIPT_ANNOTATION" "$FICHIER_SORTIE" > "$FICHIER_ANNOTE_TMP"; then
-        mv "$FICHIER_ANNOTE_TMP" "$FICHIER_ANNOTE"
-        echo "[relecture] Version annotée   → $FICHIER_ANNOTE"
+if [ -f "$SCRIPT_RESUME" ] && [ ! -f "$MARQUEUR_DESACTIVATION" ]; then
+    FICHIER_RESUME="$DOSSIER_NON_LU/${HASH_COURT}_${MESSAGE}_resume.md"
+    FICHIER_RESUME_TMP="${FICHIER_RESUME}.tmp"
+    if python3 "$SCRIPT_RESUME" "$FICHIER_SORTIE" > "$FICHIER_RESUME_TMP"; then
+        mv "$FICHIER_RESUME_TMP" "$FICHIER_RESUME"
+        echo "[relecture] Résumé fonctionnel → $FICHIER_RESUME"
     else
-        rm -f "$FICHIER_ANNOTE_TMP"
-        echo "[relecture] Échec de l'annotation (le .diff reste disponible) : $FICHIER_SORTIE"
+        rm -f "$FICHIER_RESUME_TMP"
+        echo "[relecture] Échec du résumé automatique (le .diff reste disponible) : $FICHIER_SORTIE"
     fi
 fi
