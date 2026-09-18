@@ -1,0 +1,63 @@
+e7f5b39
+
+commit e7f5b39
+Author: Athanatos123 <79310036+AlainDelree@users.noreply.github.com>
+Date:   Fri Sep 18 23:37:19 2026 +0200
+
+    avant-issue27-rotation-lisibilite
+
+diff --git a/bloc-formes.html b/bloc-formes.html
+index 58aa4b5..26a8bf5 100644
+--- a/bloc-formes.html
++++ b/bloc-formes.html
+@@ -87,7 +87,12 @@
+     cursor:pointer;
+     transition:opacity .12s ease;
+   }
+-  polygon.cell.occ{stroke:var(--cream);stroke-width:1.6;stroke-opacity:0.85;}
++  polygon.cell.occ{
++    stroke:#fff8ec;
++    stroke-width:2;
++    stroke-opacity:1;
++    filter: drop-shadow(0 0 2px rgba(255,248,236,0.95)) drop-shadow(0 0 5px rgba(255,248,236,0.6));
++  }
+   .piece-preview{pointer-events:none;}
+   .piece-preview.preview-ok{fill:var(--teal);fill-opacity:0.32;stroke:var(--teal);stroke-width:2.4;}
+   .piece-preview.preview-bad{fill:var(--coral);fill-opacity:0.32;stroke:var(--coral);stroke-width:2.4;}
+@@ -115,6 +120,20 @@
+   .piece-btn.active{border-color:var(--cream);}
+   .piece-icon{display:block;flex:0 0 auto;}
+   .units{color:var(--cream-dim);font-size:10px;}
++  .rotate-btn{
++    background:var(--ink-3);
++    border:2px solid var(--mustard);
++    border-radius:10px;
++    padding:10px 14px;
++    color:var(--cream);
++    font-family:'IBM Plex Mono', monospace;
++    font-weight:600;
++    font-size:12px;
++    cursor:pointer;
++    margin-top:10px;
++    letter-spacing:0.02em;
++  }
++  .rotate-btn:disabled{opacity:0.4;cursor:not-allowed;border-color:var(--ink-3);}
+   footer.ft{margin-top:16px;font-size:11px;color:var(--cream-dim);line-height:1.6;}
+ </style>
+ </head>
+@@ -137,11 +156,13 @@
+   </div>
+ 
+   <div class="reserve" id="reserve"></div>
++  <button class="rotate-btn" id="rotateBtn" type="button" disabled>⟳ Tourner</button>
+ 
+   <footer class="ft">
+     Cliquez une pièce ci-dessus puis cliquez sur la grille pour la poser (le
+-    triangle cliqué sert d'ancrage). Une zone se vide et rapporte 1 point
+-    dès que tous ses triangles sont occupés.
++    triangle cliqué sert d'ancrage). Utilisez « ⟳ Tourner » pour changer
++    l'orientation de la pièce sélectionnée avant de la poser. Une zone se
++    vide et rapporte 1 point dès que tous ses triangles sont occupés.
+   </footer>
+ </div>
+ 
