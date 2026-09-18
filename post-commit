@@ -8,7 +8,20 @@
 
 DOSSIER_RELECTURE="$HOME/Relecture_Bridge"
 
-NOM_PROJET=$(basename "$(git rev-parse --show-toplevel)")
+# Nom canonique du projet — PAS basename(git rev-parse --show-toplevel).
+#
+# Un commit peut être fait depuis un worktree `<projet>-issueN` (convention
+# de parallélisation mode_write, issue #337), dont le dossier n'a ni le même
+# nom ni forcément la même casse que le dépôt principal (ex. le worktree
+# "alchess-issueN" correspond au projet dont le dossier principal s'appelle
+# "NicLink" — une simple normalisation de suffixe/casse ne suffirait pas).
+#
+# `git worktree list` liste toujours le worktree PRINCIPAL en première ligne,
+# quel que soit le worktree depuis lequel la commande est lancée : on en tire
+# le nom de dossier canonique, pour que tous les worktrees d'un même dépôt
+# alimentent le même dossier de relecture.
+WORKTREE_PRINCIPAL=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')
+NOM_PROJET=$(basename "$WORKTREE_PRINCIPAL")
 HASH_COURT=$(git rev-parse --short HEAD)
 MESSAGE=$(git log -1 --pretty=%s | tr -c '[:alnum:]-_' '_' | cut -c1-50)
 
