@@ -70,28 +70,23 @@ def _branches_par_nom(repertoire):
 @app.route("/")
 def index():
     """Niveau 1 : liste des projets, avec le nombre de résumés en attente
-    pour chacun — pas de détail de branches/commits ici. Le nombre total de
-    résumés déjà pushés (tous projets confondus) sert à la confirmation du
-    bouton « Nettoyer tous les projets » (issue #17)."""
+    pour chacun — pas de détail de branches/commits ici. Le nombre de
+    résumés déjà pushés n'est plus précalculé ici (issue #19, ralentissait le
+    chargement sur les projets à nombreux fichiers en attente) : il n'est
+    annoncé qu'après coup, dans le message flash du bouton « Nettoyer tous
+    les projets »."""
     projets, erreur = _charger_projets()
 
-    nb_resumes_pushes_total = 0
     for projet in projets:
         if projet["statut"] == "ok":
             projet["resumes"] = collect_resumes_projet(projet["dossier_relecture"], projet["repertoire"])
-            projet["nb_resumes_pushes"] = len(
-                lister_fichiers_resumes_pushes(projet["dossier_relecture"], projet["repertoire"])
-            )
-            nb_resumes_pushes_total += projet["nb_resumes_pushes"]
             projet["nb_worktrees_secondaires"] = sum(
                 1 for worktree in projet["worktrees"] if not worktree["est_worktree_principal"]
             )
         else:
             projet["resumes"] = []
 
-    return render_template(
-        "index.html", projets=projets, erreur=erreur, nb_resumes_pushes_total=nb_resumes_pushes_total
-    )
+    return render_template("index.html", projets=projets, erreur=erreur)
 
 
 @app.route("/projet/<nom_projet>")
