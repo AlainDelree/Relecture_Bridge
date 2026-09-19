@@ -112,20 +112,6 @@ header h1 { margin-bottom: 0.2rem; }
 .message--succes { background: #e6f4ea; color: #1e7b34; border: 1px solid #b7ddc3; }
 .message--erreur { background: #fdecea; color: #a33; border: 1px solid #f5c2c0; }
 
-.worktree-actions {
-  margin-top: 0.5rem;
-  padding-top: 0.5rem;
-  border-top: 1px dashed #e5e5e5;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-.worktree-actions .action {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-}
 .bouton {
   font-size: 0.8rem;
   padding: 0.3rem 0.7rem;
@@ -133,15 +119,61 @@ header h1 { margin-bottom: 0.2rem; }
   border: 1px solid transparent;
   cursor: pointer;
 }
+.bouton:disabled { opacity: 0.4; cursor: not-allowed; }
 .bouton--merger { background: #e8f0fe; color: #1a4fb4; border-color: #c3d6f7; }
-.bouton--merger:hover { background: #d9e6fd; }
+.bouton--merger:hover:not(:disabled) { background: #d9e6fd; }
 .bouton--supprimer { background: #fdecea; color: #a33; border-color: #f5c2c0; }
-.bouton--supprimer:hover { background: #fbdbd7; }
+.bouton--supprimer:hover:not(:disabled) { background: #fbdbd7; }
+.bouton--push { background: #eafaf1; color: #1e7b34; border-color: #b7ddc3; }
+.bouton--push:hover:not(:disabled) { background: #d9f3e4; }
+.bouton--revert { background: #fff4e5; color: #a35a00; border-color: #f0d7ab; }
+.bouton--revert:hover { background: #fbe9cf; }
 .commande-equivalente {
   font-size: 0.75rem;
   color: #888;
 }
 .statut--merge-requis { font-size: 0.8rem; }
+
+.ligne-branche__entete {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.case-branche {
+  display: inline-flex;
+  align-items: center;
+}
+
+.panneau-actions {
+  position: sticky;
+  bottom: 0;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-top: 0.75rem;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.06);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.panneau-actions__titre { margin: 0; font-size: 0.9rem; color: #555; }
+.panneau-actions__boutons {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.commit-actions {
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed #e5e5e5;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
 
 .resume-entree {
   border: 1px solid #eee;

@@ -23,6 +23,9 @@ from git_info import (
     collect_etat_projets,
     fusionner_worktree,
     get_branches_locales,
+    get_remote_defaut,
+    pousser_branche,
+    revert_commit,
     supprimer_worktree,
 )
 from resumes_info import collect_resumes_projet, regrouper_resumes_par_branche
@@ -42,25 +45,26 @@ def _charger_projets():
         return [], str(exc)
 
 
-def _trouver_worktree(nom_projet, chemin_worktree):
-    """Revérifie l'existence du projet/worktree à partir de l'état git actuel
-    (pas des seules données du formulaire) avant toute action destructrice."""
-    projets, _erreur = _charger_projets()
-    for projet in projets:
-        if projet["nom"] != nom_projet:
-            continue
-        for worktree in projet["worktrees"]:
-            if os.path.realpath(worktree["path"]) == os.path.realpath(chemin_worktree):
-                return projet, worktree
-    return None, None
-
-
 def _trouver_projet(nom_projet):
     projets, erreur = _charger_projets()
     for projet in projets:
         if projet["nom"] == nom_projet:
             return projet, erreur
     return None, erreur
+
+
+def _projet_pret(nom_projet):
+    """Revérifie l'existence et l'accessibilité du projet à partir de l'état
+    git actuel (pas des seules données du formulaire) avant toute action.
+    Retourne (projet, None) si prêt, sinon (None, message_erreur)."""
+    projet, _erreur = _trouver_projet(nom_projet)
+    if not projet or projet["statut"] != "ok":
+        return None, f"❌ Projet « {nom_projet} » introuvable ou inaccessible."
+    return projet, None
+
+
+def _branches_par_nom(repertoire):
+    return {branche["nom"]: branche for branche in get_branches_locales(repertoire)}
 
 
 @app.route("/")
@@ -81,9 +85,10 @@ def index():
 @app.route("/projet/<nom_projet>")
 def projet_route(nom_projet):
     """Niveau 2 : branches d'un projet (issue #10), chacune avec son compteur
-    de résumés en attente. Les worktrees actifs y apparaissent naturellement
-    (une branche = un worktree potentiel) ; les actions merge/suppression
-    existantes restent ici, en attendant leur refonte dans une issue séparée."""
+    de résumés en attente et une case à cocher pour la sélection multiple
+    (issue #12) — le panneau d'actions (push/merger/supprimer) qui apparaît
+    pour la sélection agit sur ces branches, plus jamais par worktree affiché
+    individuellement."""
     projet, erreur = _trouver_projet(nom_projet)
     if not projet:
         flash(f"❌ Projet « {nom_projet} » introuvable.", "erreur")
@@ -96,9 +101,25 @@ def projet_route(nom_projet):
     resumes = collect_resumes_projet(projet["dossier_relecture"], projet["repertoire"])
     resumes_par_branche = regrouper_resumes_par_branche(resumes, projet["repertoire"])
 
+    remote = get_remote_defaut(projet["repertoire"])
     branches = get_branches_locales(projet["repertoire"])
     for branche in branches:
         branche["nb_resumes"] = len(resumes_par_branche.get(branche["nom"], []))
+        branche["est_principale"] = branche["nom"] == projet["branche_principale"]
+        branche["commande_push"] = f"git -C {projet['repertoire']} push {remote} {branche['nom']}"
+
+        branche["peut_merger"] = not branche["est_principale"]
+        branche["commande_merge"] = (
+            f"git -C {projet['repertoire']} merge {branche['nom']}" if branche["peut_merger"] else None
+        )
+
+        branche["peut_supprimer"] = (
+            branche["a_un_worktree"] and branche["mergee"] and not branche["est_principale"]
+        )
+        branche["commande_suppression"] = (
+            f"git -C {projet['repertoire']} worktree remove {branche['chemin_worktree']}"
+            if branche["peut_supprimer"] else None
+        )
     projet["branches"] = branches
     projet["worktree_par_branche"] = {
         worktree["branch"]: worktree for worktree in projet["worktrees"] if worktree["branch"]
@@ -111,7 +132,8 @@ def projet_route(nom_projet):
 def branche_route(nom_projet, nom_branche):
     """Niveau 3 : commits d'une branche, en cartes repliées par défaut (hash +
     message seulement) — le résumé structuré et le diff complet restent
-    consultables en dépliant chaque carte."""
+    consultables en dépliant chaque carte. Chaque carte dépliée porte
+    l'action revert (issue #12), indépendante des autres commits."""
     projet, _erreur = _trouver_projet(nom_projet)
     if not projet or projet["statut"] != "ok":
         flash(f"❌ Projet « {nom_projet} » introuvable ou inaccessible.", "erreur")
@@ -120,54 +142,131 @@ def branche_route(nom_projet, nom_branche):
     resumes = collect_resumes_projet(projet["dossier_relecture"], projet["repertoire"])
     resumes_par_branche = regrouper_resumes_par_branche(resumes, projet["repertoire"])
     resumes_branche = resumes_par_branche.get(nom_branche, [])
+    for resume in resumes_branche:
+        resume["commande_revert"] = f"git -C {projet['repertoire']} revert --no-edit {resume['hash']}"
 
     return render_template(
         "branche.html", projet=projet, nom_branche=nom_branche, resumes=resumes_branche,
     )
 
 
-@app.route("/projet/<nom_projet>/merger", methods=["POST"])
-def merger_worktree_route(nom_projet):
-    chemin_worktree = request.form.get("chemin_worktree", "")
-    projet, worktree = _trouver_worktree(nom_projet, chemin_worktree)
+@app.route("/projet/<nom_projet>/branche/<path:nom_branche>/revert", methods=["POST"])
+def revert_commit_route(nom_projet, nom_branche):
+    hash_commit = request.form.get("hash_commit", "")
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+    if not hash_commit:
+        flash("❌ Hash de commit manquant.", "erreur")
+        return redirect(url_for("branche_route", nom_projet=nom_projet, nom_branche=nom_branche))
 
-    if not projet or not worktree or worktree["est_worktree_principal"] or not worktree["branch"]:
-        flash("❌ Worktree introuvable ou action invalide.", "erreur")
+    resultat = revert_commit(projet["repertoire"], hash_commit)
+    if resultat["ok"]:
+        flash(f"✅ Commit « {hash_commit} » annulé (revert) — {resultat['commande']}", "succes")
+    else:
+        flash(f"❌ Échec du revert de « {hash_commit} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
+    return redirect(url_for("branche_route", nom_projet=nom_projet, nom_branche=nom_branche))
+
+
+@app.route("/projet/<nom_projet>/pousser", methods=["POST"])
+def pousser_branches_route(nom_projet):
+    """Pousse chaque branche sélectionnée (case à cocher, niveau 2) jusqu'à
+    son dernier commit — un push cible toujours une branche entière, jamais
+    une sélection de commits épars (contrairement au revert)."""
+    noms_branches = request.form.getlist("branches")
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+    if not noms_branches:
+        flash("❌ Aucune branche sélectionnée.", "erreur")
         return redirect(url_for("projet_route", nom_projet=nom_projet))
 
-    resultat = fusionner_worktree(projet["repertoire"], worktree["branch"])
-    if resultat["ok"]:
-        flash(
-            f"✅ « {worktree['branch']} » fusionnée dans « {projet['branche_principale']} » "
-            f"— {resultat['commande']}",
-            "succes",
-        )
-    else:
-        flash(f"❌ Échec de la fusion ({resultat['commande']}) : {resultat['erreur']}", "erreur")
+    branches = _branches_par_nom(projet["repertoire"])
+    for nom in noms_branches:
+        if nom not in branches:
+            flash(f"❌ Branche « {nom} » introuvable.", "erreur")
+            continue
+        resultat = pousser_branche(projet["repertoire"], nom)
+        if resultat["ok"]:
+            flash(f"✅ « {nom} » poussée — {resultat['commande']}", "succes")
+        else:
+            flash(f"❌ Échec du push de « {nom} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+
+@app.route("/projet/<nom_projet>/merger", methods=["POST"])
+def merger_branches_route(nom_projet):
+    """Fusionne chaque branche sélectionnée (case à cocher, niveau 2) dans la
+    branche principale — action rattachée à la sélection de branches plutôt
+    qu'à un worktree affiché individuellement (issue #12)."""
+    noms_branches = request.form.getlist("branches")
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+    if not noms_branches:
+        flash("❌ Aucune branche sélectionnée.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    branche_principale = projet["branche_principale"]
+    branches = _branches_par_nom(projet["repertoire"])
+    for nom in noms_branches:
+        if nom not in branches:
+            flash(f"❌ Branche « {nom} » introuvable.", "erreur")
+            continue
+        if nom == branche_principale:
+            flash(f"❌ « {nom} » est la branche principale, fusion ignorée.", "erreur")
+            continue
+        resultat = fusionner_worktree(projet["repertoire"], nom)
+        if resultat["ok"]:
+            flash(f"✅ « {nom} » fusionnée dans « {branche_principale} » — {resultat['commande']}", "succes")
+        else:
+            flash(f"❌ Échec de la fusion de « {nom} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
     return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 
 @app.route("/projet/<nom_projet>/supprimer", methods=["POST"])
-def supprimer_worktree_route(nom_projet):
-    chemin_worktree = request.form.get("chemin_worktree", "")
-    projet, worktree = _trouver_worktree(nom_projet, chemin_worktree)
-
-    if not projet or not worktree or worktree["est_worktree_principal"]:
-        flash("❌ Worktree introuvable ou action invalide.", "erreur")
+def supprimer_worktrees_route(nom_projet):
+    """Supprime le worktree de chaque branche sélectionnée (case à cocher,
+    niveau 2), seulement si son merge est confirmé — même garde-fou qu'avant
+    (issue précédente), rattaché à la sélection plutôt qu'à l'affichage par
+    worktree."""
+    noms_branches = request.form.getlist("branches")
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+    if not noms_branches:
+        flash("❌ Aucune branche sélectionnée.", "erreur")
         return redirect(url_for("projet_route", nom_projet=nom_projet))
-    if not worktree["merge_ok"]:
-        flash(
-            "❌ Suppression refusée : cette branche n'est pas confirmée "
-            "fusionnée dans la branche principale.",
-            "erreur",
-        )
-        return redirect(url_for("projet_route", nom_projet=nom_projet))
 
-    resultat = supprimer_worktree(projet["repertoire"], worktree["path"])
-    if resultat["ok"]:
-        flash(f"✅ Worktree supprimé — {resultat['commande']}", "succes")
-    else:
-        flash(f"❌ Échec de la suppression ({resultat['commande']}) : {resultat['erreur']}", "erreur")
+    branche_principale = projet["branche_principale"]
+    branches = _branches_par_nom(projet["repertoire"])
+    for nom in noms_branches:
+        branche = branches.get(nom)
+        if not branche:
+            flash(f"❌ Branche « {nom} » introuvable.", "erreur")
+            continue
+        if nom == branche_principale:
+            flash(f"❌ « {nom} » est la branche principale, suppression ignorée.", "erreur")
+            continue
+        if not branche["a_un_worktree"]:
+            flash(f"❌ « {nom} » : pas de worktree actif, suppression impossible.", "erreur")
+            continue
+        if not branche["mergee"]:
+            flash(
+                f"❌ Suppression de « {nom} » refusée : branche pas confirmée "
+                f"fusionnée dans « {branche_principale} ».",
+                "erreur",
+            )
+            continue
+        resultat = supprimer_worktree(projet["repertoire"], branche["chemin_worktree"])
+        if resultat["ok"]:
+            flash(f"✅ Worktree de « {nom} » supprimé — {resultat['commande']}", "succes")
+        else:
+            flash(f"❌ Échec de la suppression de « {nom} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
     return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 

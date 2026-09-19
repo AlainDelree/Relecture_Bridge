@@ -36,52 +36,105 @@
   {% for b in projet.branches %}
   {% set w = projet.worktree_par_branche.get(b.nom) %}
   <li class="ligne-branche">
-    <a href="{{ url_for('branche_route', nom_projet=projet.nom, nom_branche=b.nom) }}" class="lien-branche">
-      <span class="nom-branche">{{ b.nom }}</span>
-      <span class="compteur">({{ b.nb_resumes }})</span>
-      {% if b.nom == projet.branche_principale %}<span class="badge badge--principal">principale</span>{% endif %}
-      {% if b.a_un_worktree %}<span class="badge badge--info">worktree</span>{% endif %}
-      {% if b.mergee and b.nom != projet.branche_principale %}<span class="badge badge--ok">fusionnée</span>{% endif %}
-      {% if w and not w.est_worktree_principal %}
-        {% if w.commits %}<span class="badge badge--attente">{{ w.commits|length }} commit(s) en attente (push)</span>
-        {% elif w.erreur %}<span class="badge badge--info">{{ w.erreur }}</span>
-        {% else %}<span class="badge badge--ok">à jour ({{ w.amont }})</span>{% endif %}
-      {% endif %}
-    </a>
-    <p class="dernier-commit"><code class="hash">{{ b.dernier_commit.hash }}</code> {{ b.dernier_commit.sujet }}</p>
-
-    {% if w and not w.est_worktree_principal %}
-    <div class="worktree-actions">
-      {% if w.commande_merge %}
-      <div class="action">
-        <form method="post" action="{{ url_for('merger_worktree_route', nom_projet=projet.nom) }}"
-              onsubmit="return confirm('Fusionner « {{ b.nom }} » dans « {{ projet.branche_principale }} » ({{ projet.nom }}) ?\n\nCommande équivalente :\n{{ w.commande_merge }}');">
-          <input type="hidden" name="chemin_worktree" value="{{ w.path }}">
-          <button type="submit" class="bouton bouton--merger">Merger dans {{ projet.branche_principale }}</button>
-        </form>
-        <code class="commande-equivalente">{{ w.commande_merge }}</code>
-      </div>
-
-        {% if w.merge_ok %}
-        <div class="action">
-          <form method="post" action="{{ url_for('supprimer_worktree_route', nom_projet=projet.nom) }}"
-                onsubmit="return confirm('Supprimer le worktree « {{ w.path }} » ?\n(branche « {{ b.nom }} » confirmée fusionnée dans « {{ projet.branche_principale }} »)\n\nCommande équivalente :\n{{ w.commande_suppression }}');">
-            <input type="hidden" name="chemin_worktree" value="{{ w.path }}">
-            <button type="submit" class="bouton bouton--supprimer">Supprimer le worktree</button>
-          </form>
-          <code class="commande-equivalente">{{ w.commande_suppression }}</code>
-        </div>
-        {% else %}
-        <p class="statut statut--merge-requis">Suppression indisponible : branche pas encore confirmée fusionnée dans {{ projet.branche_principale }}.</p>
+    <div class="ligne-branche__entete">
+      <label class="case-branche">
+        <input type="checkbox" name="branches" value="{{ b.nom }}" form="form-actions-branches"
+               class="checkbox-branche"
+               data-nom="{{ b.nom }}"
+               data-commande-push="{{ b.commande_push }}"
+               data-peut-merger="{{ '1' if b.peut_merger else '0' }}"
+               data-commande-merge="{{ b.commande_merge or '' }}"
+               data-peut-supprimer="{{ '1' if b.peut_supprimer else '0' }}"
+               data-commande-suppression="{{ b.commande_suppression or '' }}">
+      </label>
+      <a href="{{ url_for('branche_route', nom_projet=projet.nom, nom_branche=b.nom) }}" class="lien-branche">
+        <span class="nom-branche">{{ b.nom }}</span>
+        <span class="compteur">({{ b.nb_resumes }})</span>
+        {% if b.est_principale %}<span class="badge badge--principal">principale</span>{% endif %}
+        {% if b.a_un_worktree %}<span class="badge badge--info">worktree</span>{% endif %}
+        {% if b.mergee and not b.est_principale %}<span class="badge badge--ok">fusionnée</span>{% endif %}
+        {% if w and not w.est_worktree_principal %}
+          {% if w.commits %}<span class="badge badge--attente">{{ w.commits|length }} commit(s) en attente (push)</span>
+          {% elif w.erreur %}<span class="badge badge--info">{{ w.erreur }}</span>
+          {% else %}<span class="badge badge--ok">à jour ({{ w.amont }})</span>{% endif %}
         {% endif %}
-      {% else %}
-      <p class="statut">Actions indisponibles (branche détachée ou branche principale indéterminée).</p>
-      {% endif %}
+      </a>
     </div>
-    {% endif %}
+    <p class="dernier-commit"><code class="hash">{{ b.dernier_commit.hash }}</code> {{ b.dernier_commit.sujet }}</p>
   </li>
   {% endfor %}
 </ul>
+
+<form id="form-actions-branches" method="post"></form>
+<div id="panneau-actions-branches" class="panneau-actions" hidden>
+  <p class="panneau-actions__titre"><span id="compteur-selection">0</span> branche(s) sélectionnée(s)</p>
+  <div class="panneau-actions__boutons">
+    <button type="submit" form="form-actions-branches" formaction="{{ url_for('pousser_branches_route', nom_projet=projet.nom) }}"
+            class="bouton bouton--push" id="bouton-push">Push</button>
+    <button type="submit" form="form-actions-branches" formaction="{{ url_for('merger_branches_route', nom_projet=projet.nom) }}"
+            class="bouton bouton--merger" id="bouton-merger">Merger dans {{ projet.branche_principale }}</button>
+    <button type="submit" form="form-actions-branches" formaction="{{ url_for('supprimer_worktrees_route', nom_projet=projet.nom) }}"
+            class="bouton bouton--supprimer" id="bouton-supprimer">Supprimer le(s) worktree(s)</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  var cases = document.querySelectorAll(".checkbox-branche");
+  var panneau = document.getElementById("panneau-actions-branches");
+  var compteur = document.getElementById("compteur-selection");
+  var boutonPush = document.getElementById("bouton-push");
+  var boutonMerger = document.getElementById("bouton-merger");
+  var boutonSupprimer = document.getElementById("bouton-supprimer");
+  var form = document.getElementById("form-actions-branches");
+
+  function cochees() {
+    return Array.prototype.filter.call(cases, function (c) { return c.checked; });
+  }
+
+  function actualiser() {
+    var selection = cochees();
+    panneau.hidden = selection.length === 0;
+    compteur.textContent = selection.length;
+    boutonMerger.disabled = !selection.some(function (c) { return c.dataset.peutMerger === "1"; });
+    boutonSupprimer.disabled = !selection.some(function (c) { return c.dataset.peutSupprimer === "1"; });
+  }
+
+  cases.forEach(function (c) { c.addEventListener("change", actualiser); });
+  actualiser();
+
+  form.addEventListener("submit", function (evenement) {
+    var action = evenement.submitter ? evenement.submitter.getAttribute("formaction") : "";
+    var selection = cochees();
+    var lignes = [];
+
+    selection.forEach(function (c) {
+      if (evenement.submitter === boutonPush) {
+        lignes.push(c.dataset.commandePush);
+      } else if (evenement.submitter === boutonMerger && c.dataset.peutMerger === "1") {
+        lignes.push(c.dataset.commandeMerge);
+      } else if (evenement.submitter === boutonSupprimer && c.dataset.peutSupprimer === "1") {
+        lignes.push(c.dataset.commandeSuppression);
+      }
+    });
+
+    if (lignes.length === 0) {
+      alert("Aucune branche sélectionnée n'est éligible pour cette action.");
+      evenement.preventDefault();
+      return;
+    }
+
+    var verbe = evenement.submitter === boutonPush ? "pousser"
+      : evenement.submitter === boutonMerger ? "fusionner"
+      : "supprimer le worktree de";
+    var confirmation = "Confirmer : " + verbe + " " + lignes.length + " branche(s) ({{ projet.nom }}) ?\n\n"
+      + "Commande(s) équivalente(s) :\n" + lignes.join("\n");
+    if (!confirm(confirmation)) {
+      evenement.preventDefault();
+    }
+  });
+})();
+</script>
 {% endif %}
 
 </body>

@@ -20,6 +20,7 @@ FIN_TABLEAU = "<!-- FIN:TABLEAU_PROJETS_ACTIFS"
 
 TIMEOUT_RESEAU = 20
 TIMEOUT_GIT = 10
+TIMEOUT_PUSH = 30
 MAX_COMMITS_AFFICHES = 30
 
 
@@ -224,6 +225,39 @@ def supprimer_worktree(repertoire, chemin_worktree):
     commande = ["git", "-C", repertoire, "worktree", "remove", chemin_worktree]
     resultat = subprocess.run(
         commande, capture_output=True, text=True, timeout=TIMEOUT_GIT,
+    )
+    return {
+        "ok": resultat.returncode == 0,
+        "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
+        "commande": " ".join(commande),
+    }
+
+
+def revert_commit(repertoire, hash_commit):
+    """Annule `hash_commit` via `git revert --no-edit` : crée un nouveau
+    commit d'annulation, indépendant des autres commits de la branche
+    (contrairement au push, pas de contrainte d'ordre). Retourne
+    {ok, erreur, commande} pour affichage transparent."""
+    commande = ["git", "-C", repertoire, "revert", "--no-edit", hash_commit]
+    resultat = subprocess.run(
+        commande, capture_output=True, text=True, timeout=TIMEOUT_GIT,
+    )
+    return {
+        "ok": resultat.returncode == 0,
+        "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
+        "commande": " ".join(commande),
+    }
+
+
+def pousser_branche(repertoire, branche):
+    """Pousse `branche` jusqu'à son dernier commit vers le remote par défaut
+    (`git push <remote> <branche>`) — un push cible toujours une branche
+    entière jusqu'à un point donné, jamais une sélection de commits épars.
+    Retourne {ok, erreur, commande} pour affichage transparent."""
+    remote = get_remote_defaut(repertoire)
+    commande = ["git", "-C", repertoire, "push", remote, branche]
+    resultat = subprocess.run(
+        commande, capture_output=True, text=True, timeout=TIMEOUT_PUSH,
     )
     return {
         "ok": resultat.returncode == 0,
