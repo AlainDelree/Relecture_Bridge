@@ -70,16 +70,25 @@ def _branches_par_nom(repertoire):
 @app.route("/")
 def index():
     """Niveau 1 : liste des projets, avec le nombre de résumés en attente
-    pour chacun — pas de détail de branches/commits ici."""
+    pour chacun — pas de détail de branches/commits ici. Le nombre total de
+    résumés déjà pushés (tous projets confondus) sert à la confirmation du
+    bouton « Nettoyer tous les projets » (issue #17)."""
     projets, erreur = _charger_projets()
 
+    nb_resumes_pushes_total = 0
     for projet in projets:
         if projet["statut"] == "ok":
             projet["resumes"] = collect_resumes_projet(projet["dossier_relecture"], projet["repertoire"])
+            projet["nb_resumes_pushes"] = len(
+                lister_fichiers_resumes_pushes(projet["dossier_relecture"], projet["repertoire"])
+            )
+            nb_resumes_pushes_total += projet["nb_resumes_pushes"]
         else:
             projet["resumes"] = []
 
-    return render_template("index.html", projets=projets, erreur=erreur)
+    return render_template(
+        "index.html", projets=projets, erreur=erreur, nb_resumes_pushes_total=nb_resumes_pushes_total
+    )
 
 
 @app.route("/projet/<nom_projet>")
@@ -98,10 +107,6 @@ def projet_route(nom_projet):
     if projet["statut"] != "ok":
         projet["branches"] = []
         return render_template("projet.html", projet=projet, erreur=erreur)
-
-    projet["nb_resumes_pushes"] = len(
-        lister_fichiers_resumes_pushes(projet["dossier_relecture"], projet["repertoire"])
-    )
 
     resumes = collect_resumes_projet(projet["dossier_relecture"], projet["repertoire"])
     resumes_par_branche = regrouper_resumes_par_branche(resumes, projet["repertoire"])
@@ -174,35 +179,54 @@ def revert_commit_route(nom_projet, nom_branche):
     return redirect(url_for("branche_route", nom_projet=nom_projet, nom_branche=nom_branche))
 
 
-@app.route("/projet/<nom_projet>/nettoyer-resumes-pushes", methods=["POST"])
-def nettoyer_resumes_pushes_route(nom_projet):
-    """Supprime, pour ce projet, les fichiers de Non_Lu/ dont le commit est
-    déjà un ancêtre d'une branche distante (issue #16) — le nombre de
-    fichiers concernés est confirmé côté client avant l'envoi du formulaire,
-    la suppression elle-même revérifie l'état git au moment de l'action."""
-    projet, message_erreur = _projet_pret(nom_projet)
-    if not projet:
-        flash(message_erreur, "erreur")
-        return redirect(url_for("index"))
-
-    fichiers = lister_fichiers_resumes_pushes(projet["dossier_relecture"], projet["repertoire"])
-    if not fichiers:
-        flash("✅ Aucun résumé déjà pushé à nettoyer.", "succes")
-        return redirect(url_for("projet_route", nom_projet=nom_projet))
-
+def _supprimer_fichiers(chemins):
+    """Supprime chaque fichier de `chemins`, retourne (nb_supprimes, nb_echecs)."""
     nb_supprimes, nb_echecs = 0, 0
-    for chemin in fichiers:
+    for chemin in chemins:
         try:
             os.remove(chemin)
             nb_supprimes += 1
         except OSError:
             nb_echecs += 1
+    return nb_supprimes, nb_echecs
 
-    if nb_echecs:
-        flash(f"⚠️ {nb_supprimes} fichier(s) supprimé(s), {nb_echecs} échec(s).", "erreur")
+
+@app.route("/nettoyer-tous-les-projets", methods=["POST"])
+def nettoyer_tous_les_projets_route():
+    """Applique à chaque projet accessible (statut « ok ») le nettoyage des
+    résumés déjà pushés (issue #17, remplace le bouton par-projet de l'issue
+    #16) — réutilise `lister_fichiers_resumes_pushes`/`get_commit_est_pushe`
+    projet par projet ; l'échec d'un projet (dossier introuvable, pas de
+    remote, etc.) est rapporté à part sans bloquer les autres."""
+    projets, erreur = _charger_projets()
+    if erreur:
+        flash(erreur, "erreur")
+        return redirect(url_for("index"))
+
+    nb_supprimes_total, nb_echecs_total = 0, 0
+    projets_en_echec = []
+    for projet in projets:
+        if projet["statut"] != "ok":
+            continue
+        try:
+            fichiers = lister_fichiers_resumes_pushes(projet["dossier_relecture"], projet["repertoire"])
+            nb_supprimes, nb_echecs = _supprimer_fichiers(fichiers)
+            nb_supprimes_total += nb_supprimes
+            nb_echecs_total += nb_echecs
+        except Exception as exc:
+            projets_en_echec.append(f"{projet['nom']} ({exc})")
+
+    if projets_en_echec:
+        flash(
+            f"⚠️ {nb_supprimes_total} résumé(s) supprimé(s) au total — "
+            f"échec sur {len(projets_en_echec)} projet(s) : " + ", ".join(projets_en_echec),
+            "erreur",
+        )
+    elif nb_echecs_total:
+        flash(f"⚠️ {nb_supprimes_total} fichier(s) supprimé(s), {nb_echecs_total} échec(s).", "erreur")
     else:
-        flash(f"✅ {nb_supprimes} résumé(s) déjà pushé(s) supprimé(s).", "succes")
-    return redirect(url_for("projet_route", nom_projet=nom_projet))
+        flash(f"✅ {nb_supprimes_total} résumé(s) déjà pushé(s) supprimé(s) sur tous les projets.", "succes")
+    return redirect(url_for("index"))
 
 
 @app.route("/projet/<nom_projet>/pousser", methods=["POST"])
