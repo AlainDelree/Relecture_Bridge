@@ -67,19 +67,6 @@ def _branches_par_nom(repertoire):
     return {branche["nom"]: branche for branche in get_branches_locales(repertoire)}
 
 
-def _voisins(elements, nom):
-    """Retourne (élément précédent, élément suivant) autour de celui dont le
-    nom correspond, pour la navigation précédent/suivant (issue #14) —
-    (None, None) si absent de la liste (ex. projet pas "ok", donc jamais
-    dans `elements`)."""
-    for i, element in enumerate(elements):
-        if element["nom"] == nom:
-            precedent = elements[i - 1] if i > 0 else None
-            suivant = elements[i + 1] if i < len(elements) - 1 else None
-            return precedent, suivant
-    return None, None
-
-
 @app.route("/")
 def index():
     """Niveau 1 : liste des projets, avec le nombre de résumés en attente
@@ -108,15 +95,9 @@ def projet_route(nom_projet):
         flash(f"❌ Projet « {nom_projet} » introuvable.", "erreur")
         return redirect(url_for("index"))
 
-    projets_ok = [p for p in projets if p["statut"] == "ok"]
-    projet_precedent, projet_suivant = _voisins(projets_ok, nom_projet)
-
     if projet["statut"] != "ok":
         projet["branches"] = []
-        return render_template(
-            "projet.html", projet=projet, erreur=erreur,
-            projet_precedent=projet_precedent, projet_suivant=projet_suivant,
-        )
+        return render_template("projet.html", projet=projet, erreur=erreur)
 
     resumes = collect_resumes_projet(projet["dossier_relecture"], projet["repertoire"])
     resumes_par_branche = regrouper_resumes_par_branche(resumes, projet["repertoire"])
@@ -145,10 +126,7 @@ def projet_route(nom_projet):
         worktree["branch"]: worktree for worktree in projet["worktrees"] if worktree["branch"]
     }
 
-    return render_template(
-        "projet.html", projet=projet, erreur=erreur,
-        projet_precedent=projet_precedent, projet_suivant=projet_suivant,
-    )
+    return render_template("projet.html", projet=projet, erreur=erreur)
 
 
 @app.route("/projet/<nom_projet>/branche/<path:nom_branche>")
@@ -168,12 +146,8 @@ def branche_route(nom_projet, nom_branche):
     for resume in resumes_branche:
         resume["commande_revert"] = f"git -C {projet['repertoire']} revert --no-edit {resume['hash']}"
 
-    branches = get_branches_locales(projet["repertoire"])
-    branche_precedente, branche_suivante = _voisins(branches, nom_branche)
-
     return render_template(
         "branche.html", projet=projet, nom_branche=nom_branche, resumes=resumes_branche,
-        branche_precedente=branche_precedente, branche_suivante=branche_suivante,
     )
 
 

@@ -1,18 +1,11 @@
 {% extends "base.html" %}
 {% block body %}
+<a href="{{ url_for('index') }}" class="bouton-precedent">◀ Précédent</a>
+
 <header>
   <p class="fil-ariane"><a href="{{ url_for('index') }}">Projets</a> / {{ projet.nom }}</p>
   <h1>{{ projet.nom }} <span class="depot">{{ projet.depot }}</span></h1>
 </header>
-
-<nav class="nav-voisins">
-  {% if projet_precedent %}
-  <a href="{{ url_for('projet_route', nom_projet=projet_precedent.nom) }}" class="bouton bouton--nav">← {{ projet_precedent.nom }}</a>
-  {% endif %}
-  {% if projet_suivant %}
-  <a href="{{ url_for('projet_route', nom_projet=projet_suivant.nom) }}" class="bouton bouton--nav bouton--nav-suivant">{{ projet_suivant.nom }} →</a>
-  {% endif %}
-</nav>
 
 {% if erreur %}
 <p class="erreur">❌ {{ erreur }}</p>

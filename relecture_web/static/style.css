@@ -129,20 +129,19 @@ header h1 { margin-bottom: 0.2rem; }
 .bouton--push:hover:not(:disabled) { background: #d9f3e4; }
 .bouton--revert { background: #fff4e5; color: #a35a00; border-color: #f0d7ab; }
 .bouton--revert:hover { background: #fbe9cf; }
-.nav-voisins {
-  display: flex;
-  justify-content: space-between;
-  margin: 0.6rem 0 1rem 0;
-}
-.bouton--nav {
+.bouton-precedent {
   display: inline-block;
   text-decoration: none;
   background: #eef1f5;
   color: #3a4550;
-  border-color: #d7dde5;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 0.5rem 1.1rem;
+  margin-bottom: 0.8rem;
 }
-.bouton--nav:hover { background: #e2e7ee; }
-.bouton--nav-suivant { margin-left: auto; }
+.bouton-precedent:hover { background: #e2e7ee; }
 .commande-equivalente {
   font-size: 0.75rem;
   color: #888;
