@@ -14,7 +14,7 @@ import html
 import os
 import re
 
-from git_info import get_branches_contenant
+from git_info import get_branches_contenant, get_sujet_commit
 
 # relecture_web/ est un sous-dossier direct de la racine Relecture_Bridge, là
 # où le hook post-commit crée <projet>/Non_Lu/ (DOSSIER_RELECTURE="$HOME/Relecture_Bridge").
@@ -76,10 +76,15 @@ def _rendu_leger(texte):
     return "\n".join(morceaux)
 
 
-def collect_resumes_projet(dossier_relecture_projet):
+def collect_resumes_projet(dossier_relecture_projet, repertoire=None):
     """Liste, pour un projet, les fichiers en attente dans Non_Lu/ : chaque
     entrée regroupe le .diff et son résumé (_resume.md ou _annote.md) par
-    hash de commit, du plus récent au plus ancien."""
+    hash de commit, du plus récent au plus ancien.
+
+    Si `repertoire` (chemin du dépôt) est fourni, chaque entrée reçoit aussi
+    le sujet réel du commit (`sujet`, via `git show`) — utilisé pour afficher
+    hash + message sur une carte de commit repliée, plutôt que le nom de
+    fichier `.diff` qui n'est qu'un slug."""
     dossier_non_lu = os.path.join(DOSSIER_RELECTURE, dossier_relecture_projet, "Non_Lu")
     if not os.path.isdir(dossier_non_lu):
         return []
@@ -104,6 +109,8 @@ def collect_resumes_projet(dossier_relecture_projet):
     resultats = []
     for hash_commit, entree in par_hash.items():
         entree["hash"] = hash_commit
+        entree["sujet"] = get_sujet_commit(repertoire, hash_commit) if repertoire else None
+        entree["a_attention"] = False
 
         if entree["resume"]:
             chemin = os.path.join(dossier_non_lu, entree["resume"])
@@ -112,6 +119,7 @@ def collect_resumes_projet(dossier_relecture_projet):
             sections = _parser_sections_resume(contenu_resume)
             if any(sections.values()):
                 entree["sections"] = {cle: _rendu_leger(texte) for cle, texte in sections.items()}
+                entree["a_attention"] = bool(sections["attention"].strip())
             else:
                 # Résumé présent mais qui ne suit pas le format en trois
                 # sections attendu (ex. généré avant un changement de

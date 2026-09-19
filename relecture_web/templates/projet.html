@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>{{ projet.nom }} — branches</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header>
+  <p class="fil-ariane"><a href="{{ url_for('index') }}">Projets</a> / {{ projet.nom }}</p>
+  <h1>{{ projet.nom }} <span class="depot">{{ projet.depot }}</span></h1>
+</header>
+
+{% if erreur %}
+<p class="erreur">❌ {{ erreur }}</p>
+{% endif %}
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+  <ul class="messages">
+    {% for categorie, message in messages %}
+    <li class="message message--{{ categorie }}">{{ message }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+{% endwith %}
+
+{% if projet.statut == "introuvable" %}
+  <p class="statut">Dossier introuvable : {{ projet.repertoire }}</p>
+{% elif projet.statut == "pas_un_depot_git" %}
+  <p class="statut">Pas un dépôt git : {{ projet.repertoire }}</p>
+{% elif not projet.branches %}
+  <p class="statut">Aucune branche locale détectée.</p>
+{% else %}
+<ul class="liste-branches">
+  {% for b in projet.branches %}
+  {% set w = projet.worktree_par_branche.get(b.nom) %}
+  <li class="ligne-branche">
+    <a href="{{ url_for('branche_route', nom_projet=projet.nom, nom_branche=b.nom) }}" class="lien-branche">
+      <span class="nom-branche">{{ b.nom }}</span>
+      <span class="compteur">({{ b.nb_resumes }})</span>
+      {% if b.nom == projet.branche_principale %}<span class="badge badge--principal">principale</span>{% endif %}
+      {% if b.a_un_worktree %}<span class="badge badge--info">worktree</span>{% endif %}
+      {% if b.mergee and b.nom != projet.branche_principale %}<span class="badge badge--ok">fusionnée</span>{% endif %}
+      {% if w and not w.est_worktree_principal %}
+        {% if w.commits %}<span class="badge badge--attente">{{ w.commits|length }} commit(s) en attente (push)</span>
+        {% elif w.erreur %}<span class="badge badge--info">{{ w.erreur }}</span>
+        {% else %}<span class="badge badge--ok">à jour ({{ w.amont }})</span>{% endif %}
+      {% endif %}
+    </a>
+    <p class="dernier-commit"><code class="hash">{{ b.dernier_commit.hash }}</code> {{ b.dernier_commit.sujet }}</p>
+
+    {% if w and not w.est_worktree_principal %}
+    <div class="worktree-actions">
+      {% if w.commande_merge %}
+      <div class="action">
+        <form method="post" action="{{ url_for('merger_worktree_route', nom_projet=projet.nom) }}"
+              onsubmit="return confirm('Fusionner « {{ b.nom }} » dans « {{ projet.branche_principale }} » ({{ projet.nom }}) ?\n\nCommande équivalente :\n{{ w.commande_merge }}');">
+          <input type="hidden" name="chemin_worktree" value="{{ w.path }}">
+          <button type="submit" class="bouton bouton--merger">Merger dans {{ projet.branche_principale }}</button>
+        </form>
+        <code class="commande-equivalente">{{ w.commande_merge }}</code>
+      </div>
+
+        {% if w.merge_ok %}
+        <div class="action">
+          <form method="post" action="{{ url_for('supprimer_worktree_route', nom_projet=projet.nom) }}"
+                onsubmit="return confirm('Supprimer le worktree « {{ w.path }} » ?\n(branche « {{ b.nom }} » confirmée fusionnée dans « {{ projet.branche_principale }} »)\n\nCommande équivalente :\n{{ w.commande_suppression }}');">
+            <input type="hidden" name="chemin_worktree" value="{{ w.path }}">
+            <button type="submit" class="bouton bouton--supprimer">Supprimer le worktree</button>
+          </form>
+          <code class="commande-equivalente">{{ w.commande_suppression }}</code>
+        </div>
+        {% else %}
+        <p class="statut statut--merge-requis">Suppression indisponible : branche pas encore confirmée fusionnée dans {{ projet.branche_principale }}.</p>
+        {% endif %}
+      {% else %}
+      <p class="statut">Actions indisponibles (branche détachée ou branche principale indéterminée).</p>
+      {% endif %}
+    </div>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+</body>
+</html>

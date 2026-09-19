@@ -166,6 +166,16 @@ def get_branches_locales(repertoire):
     return branches
 
 
+def get_sujet_commit(repertoire, hash_commit):
+    """Sujet (première ligne du message) d'un commit donné — utilisé pour
+    afficher hash + message sur les cartes de commit repliées, sans dépendre
+    du nom de fichier `.diff` (qui est un slug, pas le message d'origine)."""
+    resultat = _lancer_git(repertoire, "show", "-s", "--format=%s", hash_commit)
+    if resultat.returncode != 0:
+        return None
+    return resultat.stdout.strip() or None
+
+
 def get_branches_contenant(repertoire, hash_commit):
     """Branches locales contenant `hash_commit` (`git branch --contains`) —
     un commit déjà fusionné peut apparaître dans plusieurs branches ; une

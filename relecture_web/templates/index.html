@@ -2,13 +2,13 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<title>Relecture Bridge — worktrees &amp; commits en attente</title>
+<title>Relecture Bridge — projets</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
 <header>
-  <h1>Worktrees &amp; commits en attente de push</h1>
-  <p class="sous-titre">Un projet par section, un worktree par bloc — recharger la page pour rafraîchir.</p>
+  <h1>Projets</h1>
+  <p class="sous-titre">Le nombre entre parenthèses est le nombre de résumés en attente de relecture — cliquer sur un projet pour voir ses branches.</p>
 </header>
 
 {% if erreur %}
@@ -25,118 +25,29 @@
   {% endif %}
 {% endwith %}
 
-{% for projet in projets %}
-<section class="projet projet--{{ projet.statut }}">
-  <h2>{{ projet.nom }} <span class="depot">{{ projet.depot }}</span></h2>
-
-  {% if projet.statut == "introuvable" %}
-    <p class="statut">Dossier introuvable : {{ projet.repertoire }}</p>
-  {% elif projet.statut == "pas_un_depot_git" %}
-    <p class="statut">Pas un dépôt git : {{ projet.repertoire }}</p>
-  {% elif not projet.worktrees %}
-    <p class="statut">Aucun worktree détecté.</p>
-  {% else %}
-    {% for w in projet.worktrees %}
-    <div class="worktree {{ 'worktree--attente' if w.commits else '' }}">
-      <div class="worktree-entete">
-        <code class="chemin">{{ w.path }}</code>
-        <span class="branche">{{ w.branch or ('détaché @ ' ~ w.get('head', '?')) }}</span>
-        {% if w.est_worktree_principal %}
-          <span class="badge badge--principal">worktree principal</span>
-        {% elif w.commits %}
-          <span class="badge badge--attente">{{ w.commits|length }} commit(s) en attente</span>
-        {% elif w.erreur %}
-          <span class="badge badge--info">{{ w.erreur }}</span>
-        {% else %}
-          <span class="badge badge--ok">à jour ({{ w.amont }})</span>
-        {% endif %}
-      </div>
-      {% if w.commits %}
-      <ul class="commits">
-        {% for c in w.commits %}
-        <li><code>{{ c }}</code></li>
-        {% endfor %}
-      </ul>
-      {% endif %}
-
-      {% if not w.est_worktree_principal %}
-      <div class="worktree-actions">
-        {% if w.commande_merge %}
-        <div class="action">
-          <form method="post" action="{{ url_for('merger_worktree_route', nom_projet=projet.nom) }}"
-                onsubmit="return confirm('Fusionner « {{ w.branch }} » dans « {{ w.branche_principale }} » ({{ projet.nom }}) ?\n\nCommande équivalente :\n{{ w.commande_merge }}');">
-            <input type="hidden" name="chemin_worktree" value="{{ w.path }}">
-            <button type="submit" class="bouton bouton--merger">Merger dans {{ w.branche_principale }}</button>
-          </form>
-          <code class="commande-equivalente">{{ w.commande_merge }}</code>
-        </div>
-
-          {% if w.merge_ok %}
-          <div class="action">
-            <form method="post" action="{{ url_for('supprimer_worktree_route', nom_projet=projet.nom) }}"
-                  onsubmit="return confirm('Supprimer le worktree « {{ w.path }} » ?\n(branche « {{ w.branch }} » confirmée fusionnée dans « {{ w.branche_principale }} »)\n\nCommande équivalente :\n{{ w.commande_suppression }}');">
-              <input type="hidden" name="chemin_worktree" value="{{ w.path }}">
-              <button type="submit" class="bouton bouton--supprimer">Supprimer le worktree</button>
-            </form>
-            <code class="commande-equivalente">{{ w.commande_suppression }}</code>
-          </div>
-          {% else %}
-          <p class="statut statut--merge-requis">Suppression indisponible : branche pas encore confirmée fusionnée dans {{ w.branche_principale }}.</p>
-          {% endif %}
-        {% else %}
-        <p class="statut">Actions indisponibles (branche détachée ou branche principale indéterminée).</p>
-        {% endif %}
-      </div>
-      {% endif %}
-    </div>
-    {% endfor %}
-  {% endif %}
-
-  {% if projet.resumes %}
-  <div class="resumes">
-    <h3>Résumés en attente de relecture ({{ projet.resumes|length }})</h3>
-    {% for r in projet.resumes %}
-    <div class="resume-entree">
-      <div class="resume-entete">
-        <code class="hash">{{ r.hash }}</code>
-        {% if r.diff %}<span class="fichier">{{ r.diff }}</span>{% endif %}
-      </div>
-
-      {% if r.sections %}
-        <div class="resume-section">
-          <h4>Nature du changement</h4>
-          {{ r.sections.nature | safe }}
-        </div>
-        <div class="resume-section">
-          <h4>Intention probable</h4>
-          {{ r.sections.intention | safe }}
-        </div>
-        <div class="resume-section resume-section--attention">
-          <h4>⚠ Points d'attention</h4>
-          {{ r.sections.attention | safe }}
-        </div>
-      {% elif r.resume_brut %}
-        <p class="statut">Résumé disponible mais hors format attendu, affiché tel quel :</p>
-        <pre class="brut">{{ r.resume_brut }}</pre>
-      {% elif r.contenu_annote %}
-        <p class="statut">Ancien format (annotation pédagogique), affiché tel quel :</p>
-        <pre class="brut">{{ r.contenu_annote }}</pre>
-      {% else %}
-        <p class="statut">Pas de résumé disponible pour ce commit — voir le diff.</p>
-      {% endif %}
-
-      {% if r.contenu_diff %}
-      <details class="diff-detail">
-        <summary>Voir le diff complet</summary>
-        <pre class="brut">{{ r.contenu_diff }}</pre>
-      </details>
-      {% endif %}
-    </div>
-    {% endfor %}
-  </div>
-  {% endif %}
-</section>
-{% endfor %}
+<ul class="liste-projets">
+  {% for projet in projets %}
+  <li class="ligne-projet ligne-projet--{{ projet.statut }}">
+    {% if projet.statut == "ok" %}
+    <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}" class="lien-projet">
+      <span class="nom-projet">{{ projet.nom }}</span>
+      <span class="depot">{{ projet.depot }}</span>
+      <span class="compteur">({{ projet.resumes|length }})</span>
+    </a>
+    {% else %}
+    <span class="lien-projet lien-projet--desactive">
+      <span class="nom-projet">{{ projet.nom }}</span>
+      <span class="depot">{{ projet.depot }}</span>
+    </span>
+    {% if projet.statut == "introuvable" %}
+      <p class="statut">Dossier introuvable : {{ projet.repertoire }}</p>
+    {% elif projet.statut == "pas_un_depot_git" %}
+      <p class="statut">Pas un dépôt git : {{ projet.repertoire }}</p>
+    {% endif %}
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
 
 </body>
 </html>

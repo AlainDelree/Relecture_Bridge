@@ -37,23 +37,9 @@ header h1 { margin-bottom: 0.2rem; }
 
 .statut { color: #888; font-style: italic; margin: 0.25rem 0; }
 
-.projet--introuvable, .projet--pas_un_depot_git { opacity: 0.6; }
-
-.worktree {
-  border-top: 1px solid #eee;
-  padding: 0.5rem 0;
-}
-.worktree:first-of-type { border-top: none; }
-
-.worktree-entete {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-}
-
-.chemin { font-size: 0.85rem; color: #444; }
-.branche { font-size: 0.8rem; color: #555; background: #eee; padding: 0.1rem 0.4rem; border-radius: 4px; }
+.fil-ariane { font-size: 0.85rem; color: #666; margin: 0 0 0.3rem 0; }
+.fil-ariane a { color: #1a4fb4; text-decoration: none; }
+.fil-ariane a:hover { text-decoration: underline; }
 
 .badge {
   font-size: 0.75rem;
@@ -65,6 +51,56 @@ header h1 { margin-bottom: 0.2rem; }
 .badge--attente { background: #fff4e5; color: #a35a00; }
 .badge--info { background: #eef1f5; color: #55606b; }
 .badge--principal { background: #eef1f5; color: #3a4550; font-weight: 600; }
+.badge--attention { background: #fdecea; color: #a33; font-weight: 600; margin-left: auto; }
+
+.liste-projets, .liste-branches { list-style: none; padding: 0; margin: 0; }
+
+.ligne-projet, .ligne-branche {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.6rem;
+}
+.ligne-projet--introuvable, .ligne-projet--pas_un_depot_git { opacity: 0.6; }
+
+.lien-projet, .lien-branche {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  text-decoration: none;
+  color: inherit;
+  font-size: 1.05rem;
+}
+.lien-projet:hover, .lien-branche:hover { text-decoration: underline; }
+.lien-projet--desactive { cursor: default; }
+.lien-projet--desactive:hover { text-decoration: none; }
+
+.nom-projet, .nom-branche { font-weight: 600; }
+.compteur { color: #666; font-size: 0.9rem; }
+
+.dernier-commit { margin: 0.3rem 0 0 0; font-size: 0.85rem; color: #555; }
+.hash { font-size: 0.85rem; color: #444; }
+
+.commit-carte {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  margin-bottom: 0.6rem;
+}
+.commit-carte--attention { border-color: #f0b8b3; }
+.commit-carte summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.commit-carte summary .sujet { font-size: 0.95rem; }
+.commit-carte[open] summary { margin-bottom: 0.6rem; }
+.commit-carte .resume-entree { margin-top: 0; }
 
 .messages { list-style: none; padding: 0; margin: 0 0 1rem 0; }
 .message {
@@ -107,20 +143,6 @@ header h1 { margin-bottom: 0.2rem; }
 }
 .statut--merge-requis { font-size: 0.8rem; }
 
-.commits {
-  margin: 0.4rem 0 0 0;
-  padding-left: 1.2rem;
-  font-size: 0.85rem;
-}
-.commits li { margin: 0.1rem 0; }
-
-.resumes {
-  border-top: 1px solid #eee;
-  margin-top: 0.75rem;
-  padding-top: 0.5rem;
-}
-.resumes h3 { margin: 0 0 0.5rem 0; font-size: 0.95rem; color: #444; }
-
 .resume-entree {
   border: 1px solid #eee;
   border-radius: 6px;
@@ -129,16 +151,6 @@ header h1 { margin-bottom: 0.2rem; }
   background: #fdfdfd;
 }
 .resume-entree:last-child { margin-bottom: 0; }
-
-.resume-entete {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.4rem;
-}
-.resume-entete .hash { font-size: 0.85rem; color: #444; }
-.resume-entete .fichier { font-size: 0.75rem; color: #888; }
 
 .resume-section { margin: 0.4rem 0; }
 .resume-section h4 {
