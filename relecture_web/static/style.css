@@ -129,6 +129,8 @@ header h1 { margin-bottom: 0.2rem; }
 .bouton--push:hover:not(:disabled) { background: #d9f3e4; }
 .bouton--revert { background: #fff4e5; color: #a35a00; border-color: #f0d7ab; }
 .bouton--revert:hover { background: #fbe9cf; }
+.bouton--nettoyer { background: #eef1f5; color: #3a4550; border-color: #d7dde5; margin-top: 0.4rem; }
+.bouton--nettoyer:hover { background: #e2e7ee; }
 .bouton-precedent {
   display: inline-block;
   text-decoration: none;

@@ -28,7 +28,7 @@ from git_info import (
     revert_commit,
     supprimer_worktree,
 )
-from resumes_info import collect_resumes_projet, regrouper_resumes_par_branche
+from resumes_info import collect_resumes_projet, lister_fichiers_resumes_pushes, regrouper_resumes_par_branche
 
 PORT = 5057
 
@@ -99,6 +99,10 @@ def projet_route(nom_projet):
         projet["branches"] = []
         return render_template("projet.html", projet=projet, erreur=erreur)
 
+    projet["nb_resumes_pushes"] = len(
+        lister_fichiers_resumes_pushes(projet["dossier_relecture"], projet["repertoire"])
+    )
+
     resumes = collect_resumes_projet(projet["dossier_relecture"], projet["repertoire"])
     resumes_par_branche = regrouper_resumes_par_branche(resumes, projet["repertoire"])
 
@@ -168,6 +172,37 @@ def revert_commit_route(nom_projet, nom_branche):
     else:
         flash(f"❌ Échec du revert de « {hash_commit} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
     return redirect(url_for("branche_route", nom_projet=nom_projet, nom_branche=nom_branche))
+
+
+@app.route("/projet/<nom_projet>/nettoyer-resumes-pushes", methods=["POST"])
+def nettoyer_resumes_pushes_route(nom_projet):
+    """Supprime, pour ce projet, les fichiers de Non_Lu/ dont le commit est
+    déjà un ancêtre d'une branche distante (issue #16) — le nombre de
+    fichiers concernés est confirmé côté client avant l'envoi du formulaire,
+    la suppression elle-même revérifie l'état git au moment de l'action."""
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+
+    fichiers = lister_fichiers_resumes_pushes(projet["dossier_relecture"], projet["repertoire"])
+    if not fichiers:
+        flash("✅ Aucun résumé déjà pushé à nettoyer.", "succes")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    nb_supprimes, nb_echecs = 0, 0
+    for chemin in fichiers:
+        try:
+            os.remove(chemin)
+            nb_supprimes += 1
+        except OSError:
+            nb_echecs += 1
+
+    if nb_echecs:
+        flash(f"⚠️ {nb_supprimes} fichier(s) supprimé(s), {nb_echecs} échec(s).", "erreur")
+    else:
+        flash(f"✅ {nb_supprimes} résumé(s) déjà pushé(s) supprimé(s).", "succes")
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 
 @app.route("/projet/<nom_projet>/pousser", methods=["POST"])

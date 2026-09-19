@@ -14,7 +14,7 @@ import html
 import os
 import re
 
-from git_info import get_branches_contenant, get_sujet_commit
+from git_info import get_branches_contenant, get_commit_est_pushe, get_sujet_commit
 
 # relecture_web/ est un sous-dossier direct de la racine Relecture_Bridge, là
 # où le hook post-commit crée <projet>/Non_Lu/ (DOSSIER_RELECTURE="$HOME/Relecture_Bridge").
@@ -141,6 +141,30 @@ def collect_resumes_projet(dossier_relecture_projet, repertoire=None):
 
     resultats.sort(key=lambda e: e["mtime"], reverse=True)
     return resultats
+
+
+def lister_fichiers_resumes_pushes(dossier_relecture_projet, repertoire):
+    """Liste les chemins de fichiers de Non_Lu/ (diff + résumé/annote) dont le
+    commit est déjà un ancêtre d'une branche distante (`get_commit_est_pushe`)
+    — candidats à la suppression par le bouton « Nettoyer les résumés déjà
+    pushés » (issue #16). Un même hash n'est vérifié qu'une seule fois même
+    s'il correspond à plusieurs fichiers (.diff + résumé)."""
+    dossier_non_lu = os.path.join(DOSSIER_RELECTURE, dossier_relecture_projet, "Non_Lu")
+    if not os.path.isdir(dossier_non_lu):
+        return []
+
+    pushe_par_hash = {}
+    fichiers = []
+    for nom_fichier in os.listdir(dossier_non_lu):
+        chemin = os.path.join(dossier_non_lu, nom_fichier)
+        if not os.path.isfile(chemin):
+            continue
+        hash_commit = _extraire_hash(nom_fichier)
+        if hash_commit not in pushe_par_hash:
+            pushe_par_hash[hash_commit] = get_commit_est_pushe(repertoire, hash_commit)
+        if pushe_par_hash[hash_commit]:
+            fichiers.append(chemin)
+    return fichiers
 
 
 def regrouper_resumes_par_branche(resumes, repertoire):

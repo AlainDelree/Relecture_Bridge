@@ -5,6 +5,29 @@
 <header>
   <p class="fil-ariane"><a href="{{ url_for('index') }}">Projets</a> / {{ projet.nom }}</p>
   <h1>{{ projet.nom }} <span class="depot">{{ projet.depot }}</span></h1>
+  {% if projet.statut == "ok" %}
+  <form method="post" action="{{ url_for('nettoyer_resumes_pushes_route', nom_projet=projet.nom) }}"
+        id="form-nettoyer-resumes-pushes">
+    <button type="submit" class="bouton bouton--nettoyer" data-nb-resumes="{{ projet.nb_resumes_pushes }}">
+      🧹 Nettoyer les résumés déjà pushés
+    </button>
+  </form>
+  <script>
+  (function () {
+    var formNettoyer = document.getElementById("form-nettoyer-resumes-pushes");
+    formNettoyer.addEventListener("submit", function (evenement) {
+      var nb = formNettoyer.querySelector("button").dataset.nbResumes;
+      if (nb === "0") {
+        evenement.preventDefault();
+        return;
+      }
+      if (!confirm("Confirmer la suppression de " + nb + " résumé(s) déjà pushé(s) sur « {{ projet.nom }} » ?")) {
+        evenement.preventDefault();
+      }
+    });
+  })();
+  </script>
+  {% endif %}
 </header>
 
 {% if erreur %}

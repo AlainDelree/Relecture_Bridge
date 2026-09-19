@@ -191,6 +191,17 @@ def get_branches_contenant(repertoire, hash_commit):
     return [l.strip() for l in resultat.stdout.splitlines() if l.strip()]
 
 
+def get_commit_est_pushe(repertoire, hash_commit):
+    """True si `hash_commit` est déjà un ancêtre d'au moins une branche
+    distante (`git branch -r --contains`) — donc en sécurité sur le dépôt
+    distant, indépendamment de la branche locale d'origine (qui peut avoir
+    été supprimée depuis)."""
+    resultat = _lancer_git(repertoire, "branch", "-r", "--contains", hash_commit)
+    if resultat.returncode != 0:
+        return False
+    return bool(resultat.stdout.strip())
+
+
 def get_remote_defaut(repertoire):
     """Nom du remote à utiliser pour un push (`origin` si présent, sinon le
     premier remote configuré, sinon `origin` par défaut pour affichage)."""
