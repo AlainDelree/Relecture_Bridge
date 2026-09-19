@@ -47,6 +47,9 @@
       <span class="nom-projet">{{ projet.nom }}</span>
       <span class="depot">{{ projet.depot }}</span>
       <span class="compteur">({{ projet.resumes|length }})</span>
+      {% if projet.nb_worktrees_secondaires %}
+      <span class="badge badge--info">🌿 {{ projet.nb_worktrees_secondaires }} worktree{{ "s" if projet.nb_worktrees_secondaires > 1 else "" }}</span>
+      {% endif %}
     </a>
     {% else %}
     <span class="lien-projet lien-projet--desactive">

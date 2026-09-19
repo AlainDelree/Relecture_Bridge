@@ -83,6 +83,9 @@ def index():
                 lister_fichiers_resumes_pushes(projet["dossier_relecture"], projet["repertoire"])
             )
             nb_resumes_pushes_total += projet["nb_resumes_pushes"]
+            projet["nb_worktrees_secondaires"] = sum(
+                1 for worktree in projet["worktrees"] if not worktree["est_worktree_principal"]
+            )
         else:
             projet["resumes"] = []
 
