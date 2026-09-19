@@ -14,6 +14,8 @@ import html
 import os
 import re
 
+from git_info import get_branches_contenant
+
 # relecture_web/ est un sous-dossier direct de la racine Relecture_Bridge, là
 # où le hook post-commit crée <projet>/Non_Lu/ (DOSSIER_RELECTURE="$HOME/Relecture_Bridge").
 DOSSIER_RELECTURE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -131,3 +133,18 @@ def collect_resumes_projet(dossier_relecture_projet):
 
     resultats.sort(key=lambda e: e["mtime"], reverse=True)
     return resultats
+
+
+def regrouper_resumes_par_branche(resumes, repertoire):
+    """Regroupe une liste de résumés déjà lus (retournée par
+    `collect_resumes_projet`) par branche locale contenant leur commit, via
+    `get_branches_contenant` (donc `git branch --contains <hash>`). Un commit
+    déjà fusionné dans plusieurs branches apparaît sous chacune d'elles ; un
+    commit dont aucune branche locale ne le contient (branche supprimée
+    depuis) est classé sous la clé `None`."""
+    resumes_par_branche = {}
+    for resume in resumes:
+        branches = get_branches_contenant(repertoire, resume["hash"]) or [None]
+        for branche in branches:
+            resumes_par_branche.setdefault(branche, []).append(resume)
+    return resumes_par_branche

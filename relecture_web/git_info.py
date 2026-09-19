@@ -126,6 +126,60 @@ def est_branche_mergee(repertoire, branche_principale, branche):
     return resultat.returncode == 0
 
 
+def get_branches_locales(repertoire):
+    """Liste toutes les branches locales d'un dépôt (`git for-each-ref
+    refs/heads/`), contrairement à `get_worktrees` qui ne voit que celles
+    ayant un worktree actif. Pour chaque branche : son dernier commit, le
+    chemin de son worktree s'il en existe un, et si elle est fusionnée dans
+    la branche principale (via `est_branche_mergee`)."""
+    resultat = _lancer_git(
+        repertoire, "for-each-ref", "refs/heads/",
+        "--format=%(refname:short)%09%(objectname:short)%09"
+        "%(committerdate:iso-strict)%09%(subject)",
+    )
+    if resultat.returncode != 0:
+        return []
+
+    branche_principale = get_branche_courante(repertoire)
+    chemin_worktree_par_branche = {
+        worktree["branch"]: worktree["path"]
+        for worktree in get_worktrees(repertoire)
+        if worktree["branch"]
+    }
+
+    branches = []
+    for ligne in resultat.stdout.splitlines():
+        if not ligne.strip():
+            continue
+        champs = ligne.split("\t", 3)
+        if len(champs) < 4:
+            continue
+        nom, hash_commit, date, sujet = champs
+        chemin_worktree = chemin_worktree_par_branche.get(nom)
+        branches.append({
+            "nom": nom,
+            "dernier_commit": {"hash": hash_commit, "date": date, "sujet": sujet},
+            "chemin_worktree": chemin_worktree,
+            "a_un_worktree": chemin_worktree is not None,
+            "mergee": est_branche_mergee(repertoire, branche_principale, nom),
+        })
+    return branches
+
+
+def get_branches_contenant(repertoire, hash_commit):
+    """Branches locales contenant `hash_commit` (`git branch --contains`) —
+    un commit déjà fusionné peut apparaître dans plusieurs branches ; une
+    liste vide signifie qu'aucune branche locale actuelle ne le contient
+    (ex. branche supprimée depuis)."""
+    resultat = _lancer_git(
+        repertoire, "branch", "--list", "--contains", hash_commit,
+        "--format=%(refname:short)",
+    )
+    if resultat.returncode != 0:
+        return []
+    return [l.strip() for l in resultat.stdout.splitlines() if l.strip()]
+
+
 def get_remote_defaut(repertoire):
     """Nom du remote à utiliser pour un push (`origin` si présent, sinon le
     premier remote configuré, sinon `origin` par défaut pour affichage)."""
