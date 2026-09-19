@@ -1,22 +1,23 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="utf-8">
-<title>{{ projet.nom }} / {{ nom_branche }} — commits</title>
-<link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
-<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon.svg') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
+{% extends "base.html" %}
+{% block body %}
 <header>
   <p class="fil-ariane">
     <a href="{{ url_for('index') }}">Projets</a> /
     <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}">{{ projet.nom }}</a> /
     {{ nom_branche or "(sans branche locale)" }}
   </p>
-  <h1>{{ nom_branche or "(sans branche locale)" }}</h1>
+  <h1>{{ projet.nom }} — {{ nom_branche or "(sans branche locale)" }}</h1>
   <p class="sous-titre">Cliquer sur une carte pour déplier son résumé et son diff complet.</p>
 </header>
+
+<nav class="nav-voisins">
+  {% if branche_precedente %}
+  <a href="{{ url_for('branche_route', nom_projet=projet.nom, nom_branche=branche_precedente.nom) }}" class="bouton bouton--nav">← {{ branche_precedente.nom }}</a>
+  {% endif %}
+  {% if branche_suivante %}
+  <a href="{{ url_for('branche_route', nom_projet=projet.nom, nom_branche=branche_suivante.nom) }}" class="bouton bouton--nav bouton--nav-suivant">{{ branche_suivante.nom }} →</a>
+  {% endif %}
+</nav>
 
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% if messages %}
@@ -85,5 +86,4 @@
 {% endfor %}
 {% endif %}
 
-</body>
-</html>
+{% endblock %}
