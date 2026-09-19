@@ -126,6 +126,18 @@ def est_branche_mergee(repertoire, branche_principale, branche):
     return resultat.returncode == 0
 
 
+def get_remote_defaut(repertoire):
+    """Nom du remote à utiliser pour un push (`origin` si présent, sinon le
+    premier remote configuré, sinon `origin` par défaut pour affichage)."""
+    resultat = _lancer_git(repertoire, "remote")
+    if resultat.returncode != 0:
+        return "origin"
+    noms = [l.strip() for l in resultat.stdout.splitlines() if l.strip()]
+    if "origin" in noms:
+        return "origin"
+    return noms[0] if noms else "origin"
+
+
 def fusionner_worktree(repertoire, branche):
     """Fusionne `branche` dans la branche courante de `repertoire` (comme un
     `git merge` manuel lancé depuis le worktree principal), sans jamais

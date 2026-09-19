@@ -1,0 +1,41 @@
+bd365f9
+
+commit bd365f9
+Author: Athanatos123 <79310036+AlainDelree@users.noreply.github.com>
+Date:   Sat Sep 19 20:22:35 2026 +0200
+
+    fix #575 : confirmation avant déconnexion (clic accidentel mobile)
+
+diff --git a/CHANGELOG-575.md b/CHANGELOG-575.md
+new file mode 100644
+index 0000000..4a8e3ad
+--- /dev/null
++++ b/CHANGELOG-575.md
+@@ -0,0 +1,14 @@
++## 19 septembre 2026 — issue #575
++
++Incident réel en mode `--externe` sur mobile : le bouton « Déconnexion »
++se trouve pile sous le doigt quand on veut fermer le panneau
++Infrastructure sur petit écran — clic accidentel, déconnexion
++immédiate, obligeant à retaper le mot de passe.
++
++`templates/index.html` : le bouton « Déconnexion » demande désormais
++confirmation (`confirm('Se déconnecter ?')`) avant de naviguer vers
++`/logout` — annulable, sans action si refusée. Même pattern déjà en
++place pour le bouton « Quitter » (fonction `quitter()`,
++`static/js/*.js`). Aucun changement d'apparence, de disposition ni de
++media query : uniquement l'`onclick` du bouton, identique sur desktop
++et mobile.
+diff --git a/templates/index.html b/templates/index.html
+index 851ece8..e5e97de 100644
+--- a/templates/index.html
++++ b/templates/index.html
+@@ -18,7 +18,7 @@
+     <h1>Bridge Agent</h1>
+     <span class="statut">{{ projets|length }} projet(s) disponible(s)</span>
+     {% if auth_active %}
+-    <button class="danger" onclick="location.href='/logout'"
++    <button class="danger" onclick="if(confirm('Se déconnecter ?')) location.href='/logout'"
+             style="font-size:12px;padding:5px 12px">Déconnexion</button>
+     {% endif %}
+     <button id="btn-quitter" class="danger" onclick="quitter()"
