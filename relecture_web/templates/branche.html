@@ -35,6 +35,13 @@
     <code class="hash">{{ r.hash }}</code>
     <span class="sujet">{{ r.sujet or r.diff or ("commit " ~ r.hash) }}</span>
     {% if r.a_attention %}<span class="badge badge--attention">⚠ point d'attention</span>{% endif %}
+    <form method="post" action="{{ url_for('revert_commit_route', nom_projet=projet.nom, nom_branche=nom_branche) }}"
+          class="commit-actions--summary"
+          onclick="event.stopPropagation();"
+          onsubmit="return confirm('Revert (annuler) le commit {{ r.hash }} sur « {{ nom_branche }} » ({{ projet.nom }}) ?\n\nCommande équivalente :\n{{ r.commande_revert }}');">
+      <input type="hidden" name="hash_commit" value="{{ r.hash }}">
+      <button type="submit" class="bouton bouton--revert">Revert ce commit</button>
+    </form>
   </summary>
 
   <div class="resume-entree">
@@ -69,11 +76,6 @@
     {% endif %}
 
     <div class="commit-actions">
-      <form method="post" action="{{ url_for('revert_commit_route', nom_projet=projet.nom, nom_branche=nom_branche) }}"
-            onsubmit="return confirm('Revert (annuler) le commit {{ r.hash }} sur « {{ nom_branche }} » ({{ projet.nom }}) ?\n\nCommande équivalente :\n{{ r.commande_revert }}');">
-        <input type="hidden" name="hash_commit" value="{{ r.hash }}">
-        <button type="submit" class="bouton bouton--revert">Revert ce commit</button>
-      </form>
       <code class="commande-equivalente">{{ r.commande_revert }}</code>
     </div>
   </div>

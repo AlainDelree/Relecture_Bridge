@@ -101,6 +101,7 @@ header h1 { margin-bottom: 0.2rem; }
 .commit-carte summary .sujet { font-size: 0.95rem; }
 .commit-carte[open] summary { margin-bottom: 0.6rem; }
 .commit-carte .resume-entree { margin-top: 0; }
+.commit-carte summary .commit-actions--summary { margin-left: auto; }
 
 .messages { list-style: none; padding: 0; margin: 0 0 1rem 0; }
 .message {
