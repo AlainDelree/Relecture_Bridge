@@ -331,6 +331,7 @@ def supprimer_worktrees_route(nom_projet):
 
 
 if __name__ == "__main__":
+    import threading
     import webbrowser
-    webbrowser.open(f"http://127.0.0.1:{PORT}/")
+    threading.Timer(1.0, lambda: webbrowser.open(f"http://127.0.0.1:{PORT}/")).start()
     app.run(host="127.0.0.1", port=PORT, debug=False)
