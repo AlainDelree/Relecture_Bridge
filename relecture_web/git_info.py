@@ -750,6 +750,49 @@ def get_remote_defaut(repertoire):
     return noms[0] if noms else "origin"
 
 
+MOTIF_CHANGELOG_WORKTREE = re.compile(r"^CHANGELOG-\d+\.md$")
+
+
+def fusionner_changelog_worktree(repertoire):
+    """Si la fusion qui vient d'avoir lieu dans `repertoire` a introduit un
+    ou plusieurs `CHANGELOG-<N>.md` à la racine du dépôt (chaque worktree
+    mode_write écrit le sien plutôt que dans `CHANGELOG.md` directement,
+    pour éviter les conflits entre worktrees actifs en parallèle — issue
+    #577 côté Bridge_Agent), lance `scripts/fusionner_changelog.py` (déjà
+    présent dans chaque projet équipé du système de worktrees) pour les
+    intégrer dans `CHANGELOG.md`, geste qu'Alain devait jusqu'ici penser à
+    faire lui-même à chaque merge (issue #51). Retourne None si aucun
+    `CHANGELOG-<N>.md` trouvé (rien à fusionner, pas de message nécessaire),
+    sinon {ok, erreur, commande} pour affichage transparent — jamais
+    d'échec silencieux même si le script est absent."""
+    try:
+        presence = any(
+            MOTIF_CHANGELOG_WORKTREE.match(nom) for nom in os.listdir(repertoire)
+        )
+    except OSError:
+        presence = False
+    if not presence:
+        return None
+
+    script = os.path.join(repertoire, "scripts", "fusionner_changelog.py")
+    commande = ["python3", script, "--repo", repertoire]
+    if not os.path.isfile(script):
+        return {
+            "ok": False,
+            "erreur": f"script introuvable : {script}",
+            "commande": " ".join(commande),
+        }
+
+    resultat = subprocess.run(
+        commande, capture_output=True, text=True, timeout=TIMEOUT_GIT,
+    )
+    return {
+        "ok": resultat.returncode == 0,
+        "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
+        "commande": " ".join(commande),
+    }
+
+
 def fusionner_worktree(repertoire, branche_cible, branche_source):
     """Fusionne `branche_source` dans `branche_cible` (comme un `git merge`
     manuel), sans jamais pousser. Si `branche_cible` n'est pas la branche
@@ -760,8 +803,13 @@ def fusionner_worktree(repertoire, branche_cible, branche_source):
     fusionner dans une branche qui n'a pas de worktree dédié déjà extrait
     dessus. Un conflit laisse volontairement le dépôt sur `branche_cible`
     en état de fusion non résolue (pas de retour en arrière), pour ne pas
-    perdre l'information. Retourne {ok, erreur, commande} pour affichage
-    transparent."""
+    perdre l'information. Après une fusion réussie, tente aussi d'intégrer
+    un éventuel `CHANGELOG-<N>.md` introduit par la branche source (voir
+    `fusionner_changelog_worktree`, issue #51) — toujours avant la bascule
+    de retour, pendant que `branche_cible` est encore extraite dans
+    `repertoire`. Retourne {ok, erreur, commande, changelog} pour affichage
+    transparent (`changelog` vaut None si aucun CHANGELOG-<N>.md n'était à
+    fusionner)."""
     branche_courante = get_branche_courante(repertoire)
     doit_basculer = branche_courante is not None and branche_courante != branche_cible
 
@@ -772,12 +820,17 @@ def fusionner_worktree(repertoire, branche_cible, branche_source):
                 "ok": False,
                 "erreur": (bascule.stderr or bascule.stdout).strip(),
                 "commande": f"git -C {repertoire} checkout {branche_cible}",
+                "changelog": None,
             }
 
     commande = ["git", "-C", repertoire, "merge", branche_source]
     resultat = subprocess.run(
         commande, capture_output=True, text=True, timeout=TIMEOUT_GIT_LONG,
     )
+
+    resultat_changelog = None
+    if resultat.returncode == 0:
+        resultat_changelog = fusionner_changelog_worktree(repertoire)
 
     if doit_basculer and resultat.returncode == 0:
         _lancer_git(repertoire, "checkout", branche_courante)
@@ -786,6 +839,7 @@ def fusionner_worktree(repertoire, branche_cible, branche_source):
         "ok": resultat.returncode == 0,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
         "commande": " ".join(commande),
+        "changelog": resultat_changelog,
     }
 
 

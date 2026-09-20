@@ -633,6 +633,16 @@ def merger_branches_route(nom_projet):
             continue
         if resultat["ok"]:
             flash(f"✅ « {nom} » fusionnée dans « {branche_cible} » — {resultat['commande']}", "succes")
+            changelog = resultat.get("changelog")
+            if changelog is not None:
+                if changelog["ok"]:
+                    flash(f"✅ CHANGELOG-<N>.md fusionné dans CHANGELOG.md — {changelog['commande']}", "succes")
+                else:
+                    flash(
+                        f"⚠️ « {nom} » fusionnée, mais l'intégration du CHANGELOG a échoué "
+                        f"({changelog['commande']}) : {changelog['erreur']} — à fusionner manuellement.",
+                        "erreur",
+                    )
         else:
             flash(f"❌ Échec de la fusion de « {nom} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
     return redirect(url_for("projet_route", nom_projet=nom_projet))
