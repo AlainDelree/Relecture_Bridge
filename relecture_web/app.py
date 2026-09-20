@@ -17,7 +17,7 @@ new_issue.py).
 import os
 import subprocess
 
-from flask import Flask, flash, redirect, render_template, request, url_for
+from flask import Flask, flash, g, redirect, render_template, request, url_for
 
 from git_info import (
     ErreurRecuperationProjets,
@@ -61,10 +61,19 @@ app.secret_key = os.urandom(24)
 
 
 def _charger_projets():
-    try:
-        return collect_etat_projets(), None
-    except ErreurRecuperationProjets as exc:
-        return [], str(exc)
+    """Mémoïse le résultat dans `g` (durée d'une seule requête HTTP) : la
+    barre latérale (issue #44) a besoin de la même liste de projets que la
+    route en cours, et `collect_etat_projets()` déclenche un appel réseau
+    vers BRIDGE_AGENT_DOC.md (voir `fetch_projets`) — sans ce cache, ce
+    serait un deuxième appel réseau par page, le coût déjà corrigé une fois
+    en page d'accueil (issue #17/#19) se répétant alors sur toutes les
+    pages."""
+    if not hasattr(g, "_projets_charges"):
+        try:
+            g._projets_charges = (collect_etat_projets(), None)
+        except ErreurRecuperationProjets as exc:
+            g._projets_charges = ([], str(exc))
+    return g._projets_charges
 
 
 def _trouver_projet(nom_projet):
@@ -176,6 +185,21 @@ def _construire_rapport_commit(
     else:
         lignes.append("aucun autre")
     return "\n".join(lignes)
+
+
+@app.context_processor
+def injecter_barre_laterale():
+    """Barre latérale (issue #44) injectée dans tous les templates : liste
+    des noms de projets, plus le nom du projet actuellement affiché (déduit
+    de `nom_projet` dans l'URL courante, absent sur les pages qui n'en ont
+    pas comme l'accueil) pour le mettre en évidence. Réutilise
+    `_charger_projets()`, déjà mémoïsé par requête (voir plus haut) : aucun
+    appel réseau supplémentaire par page."""
+    projets, _erreur = _charger_projets()
+    return {
+        "projets_sidebar": [projet["nom"] for projet in projets],
+        "nom_projet_actif": (request.view_args or {}).get("nom_projet"),
+    }
 
 
 @app.route("/projet/<nom_projet>/rapport/<hash_commit>")

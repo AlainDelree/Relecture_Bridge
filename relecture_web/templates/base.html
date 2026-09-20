@@ -8,7 +8,24 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-{% block body %}{% endblock %}
+<div class="mise-en-page">
+  <nav class="barre-laterale">
+    <p class="barre-laterale__titre">Projets</p>
+    <ul class="barre-laterale__liste">
+      {% for nom in projets_sidebar %}
+      <li>
+        <a href="{{ url_for('projet_route', nom_projet=nom) }}"
+           class="barre-laterale__lien{{ ' barre-laterale__lien--actif' if nom == nom_projet_actif else '' }}">
+          {{ nom }}
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </nav>
+  <div class="contenu-principal">
+    {% block body %}{% endblock %}
+  </div>
+</div>
 <script>
 (function () {
   function copierAncienneMethode(texte) {

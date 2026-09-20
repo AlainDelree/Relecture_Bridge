@@ -77,6 +77,16 @@ Deux pages supplémentaires, atteintes depuis des boutons plutôt que
 depuis la navigation principale : **Comparer** et **Rapport** (section
 5).
 
+Une **barre latérale gauche**, présente sur toutes les pages (`base.html`),
+liste les noms de tous les projets avec un lien direct vers leur page
+`/projet/<nom_projet>` — le projet actuellement affiché y est mis en
+évidence. Volontairement minimale (juste les noms, sans compteur ni
+badge) : la liste réutilise la même donnée déjà chargée par la route en
+cours (mémoïsée le temps d'une requête), pour ne pas répéter l'appel
+réseau vers `BRIDGE_AGENT_DOC.md` sur chaque page — le coût déjà corrigé
+une fois côté page d'accueil (section suivante, issue #17/#19) ne devait
+pas être réintroduit ailleurs (issue #44).
+
 ## 3. Le diagnostic automatique des commits orphelins (cas A à F)
 
 Un « commit orphelin » est un commit qui a un résumé en attente dans
