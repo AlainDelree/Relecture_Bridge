@@ -27,6 +27,7 @@ from git_info import (
     get_branches_contenant,
     get_branches_distantes_contenant,
     get_branches_locales,
+    get_diagnostic_doublons_branche,
     get_rapport_cherry_brut,
     get_remote_defaut,
     get_sujet_commit,
@@ -262,6 +263,12 @@ def projet_route(nom_projet):
         branche["commande_push"] = f"git -C {projet['repertoire']} push {remote} {branche['nom']}"
 
         branche["peut_merger"] = branche["nom"] != branche_cible_merge
+        branche["ne_contient_que_doublons"] = branche["peut_merger"] and get_diagnostic_doublons_branche(
+            projet["repertoire"], branche_cible_merge, branche["nom"]
+        )
+        if branche["ne_contient_que_doublons"]:
+            branche["peut_merger"] = False
+
         if not branche["peut_merger"]:
             branche["commande_merge"] = None
         elif branche_cible_merge == projet["branche_principale"]:
@@ -430,6 +437,12 @@ def merger_branches_route(nom_projet):
             continue
         if nom == branche_cible:
             flash(f"❌ « {nom} » est la branche cible de fusion, fusion ignorée.", "erreur")
+            continue
+        if get_diagnostic_doublons_branche(projet["repertoire"], branche_cible, nom):
+            flash(
+                f"❌ « {nom} » ne contient que des doublons déjà intégrés dans « {branche_cible} », fusion ignorée.",
+                "erreur",
+            )
             continue
         resultat = fusionner_worktree(projet["repertoire"], branche_cible, nom)
         if resultat["ok"]:

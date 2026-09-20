@@ -108,6 +108,9 @@
         {% if b.est_principale %}<span class="badge badge--principal">principale</span>{% endif %}
         {% if b.a_un_worktree %}<span class="badge badge--info">worktree</span>{% endif %}
         {% if b.mergee and not b.est_principale %}<span class="badge badge--ok">fusionnée</span>{% endif %}
+        {% if b.ne_contient_que_doublons %}
+        <span class="badge badge--doublon" title="Tous les commits propres de cette branche sont déjà intégrés dans « {{ projet.branche_cible_comparaison }} » sous un autre hash — fusion inutile.">♻️ doublons uniquement — rien à merger</span>
+        {% endif %}
         {% if w and not w.est_worktree_principal %}
           {% if w.commits %}<span class="badge badge--attente">{{ w.commits|length }} commit(s) en attente (push)</span>
           {% elif w.erreur %}<span class="badge badge--info">{{ w.erreur }}</span>

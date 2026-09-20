@@ -278,6 +278,24 @@ def get_chaine_cherry(repertoire, branche_cible, hash_commit):
     return chaine
 
 
+def get_diagnostic_doublons_branche(repertoire, branche_cible, branche):
+    """True si tous les commits propres à `branche` par rapport à
+    `branche_cible` (chaîne complète renvoyée par `git cherry`, commits vides
+    de backup déjà exclus par `get_chaine_cherry`) sont classés doublons —
+    c'est-à-dire que fusionner cette branche n'apporterait aucun contenu
+    nouveau (issue #25, ex. une branche `recuperation-<hash>` dont le commit
+    sécurisé s'avère être un doublon déjà intégré ailleurs). False si
+    `branche_cible` n'est pas configurée, si `branche` n'a aucun commit
+    propre (déjà fusionnée, rien à signaler ici), ou si `git cherry` échoue
+    (ambigu, laissé au jugement manuel comme le cas F)."""
+    if not branche_cible:
+        return False
+    chaine = get_chaine_cherry(repertoire, branche_cible, branche)
+    if not chaine:
+        return False
+    return all(maillon["statut"] == "doublon" for maillon in chaine)
+
+
 def get_rapport_cherry_brut(repertoire, branche_cible, hash_commit):
     """Sortie brute de `git cherry <branche_cible> <hash_commit>` (issue #22,
     bouton « Générer rapport »), indépendante du parsing de
