@@ -746,6 +746,27 @@ def supprimer_worktree(repertoire, chemin_worktree):
     }
 
 
+def supprimer_branche(repertoire, nom_branche):
+    """Supprime définitivement une branche locale (`git branch -D
+    <nom_branche>`) — utilisé pour une branche confirmée fusionnée dont le
+    worktree a déjà été retiré (manuellement ou autrement), cas où
+    `supprimer_worktree` ne peut plus rien puisqu'il n'y a plus de dossier de
+    worktree à retirer (issue #43). Contrairement à
+    `supprimer_branche_recuperation`, aucune contrainte de nommage n'est
+    imposée ici : la sécurité vient de la vérification `mergee` faite par
+    l'appelant avant l'appel, exactement comme pour `supprimer_worktree`.
+    Retourne {ok, erreur, commande} pour affichage transparent."""
+    commande = ["git", "-C", repertoire, "branch", "-D", nom_branche]
+    resultat = subprocess.run(
+        commande, capture_output=True, text=True, timeout=TIMEOUT_GIT,
+    )
+    return {
+        "ok": resultat.returncode == 0,
+        "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
+        "commande": " ".join(commande),
+    }
+
+
 def supprimer_branche_recuperation(repertoire, nom_branche):
     """Supprime définitivement une branche de récupération (`git branch -D
     <nom_branche>`) — contrairement à `supprimer_worktree`, ces branches

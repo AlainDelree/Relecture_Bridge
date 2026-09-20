@@ -146,7 +146,7 @@
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('merger_branches_route', nom_projet=projet.nom) }}"
             class="bouton bouton--merger" id="bouton-merger">Merger dans {{ projet.branche_cible_comparaison }}</button>
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('supprimer_worktrees_route', nom_projet=projet.nom) }}"
-            class="bouton bouton--supprimer" id="bouton-supprimer">Supprimer le(s) worktree(s)</button>
+            class="bouton bouton--supprimer" id="bouton-supprimer">Supprimer la/les branche(s) fusionnée(s)</button>
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('supprimer_branches_recuperation_route', nom_projet=projet.nom) }}"
             class="bouton bouton--supprimer" id="bouton-supprimer-branche-recuperation">Supprimer la/les branche(s) de récupération</button>
   </div>
@@ -205,7 +205,7 @@
     var verbe = evenement.submitter === boutonPush ? "pousser"
       : evenement.submitter === boutonMerger ? "fusionner"
       : evenement.submitter === boutonSupprimerBranche ? "supprimer définitivement la branche de récupération (et son résumé Non_Lu associé) de"
-      : "supprimer le worktree de";
+      : "supprimer";
     var confirmation = "Confirmer : " + verbe + " " + lignes.length + " branche(s) ({{ projet.nom }}) ?\n\n"
       + "Commande(s) équivalente(s) :\n" + lignes.join("\n");
     if (!confirm(confirmation)) {

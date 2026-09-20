@@ -41,6 +41,7 @@ from git_info import (
     pousser_branche,
     revert_commit,
     securiser_commit_orphelin,
+    supprimer_branche,
     supprimer_branche_recuperation,
     supprimer_worktree,
 )
@@ -394,12 +395,17 @@ def projet_route(nom_projet):
                 f"git merge {branche['nom']} && git checkout {projet['branche_principale']}"
             )
 
-        branche["peut_supprimer"] = (
-            branche["a_un_worktree"] and branche["mergee"] and not branche["est_principale"]
-        )
+        # Une branche fusionnée reste supprimable même sans worktree associé
+        # (retiré manuellement entre-temps) : `git worktree remove` n'a alors
+        # plus rien à retirer, donc bascule sur `git branch -D` directement
+        # (issue #43) — même bouton, seule la commande sous-jacente diffère.
+        branche["peut_supprimer"] = branche["mergee"] and not branche["est_principale"]
         branche["commande_suppression"] = (
             f"git -C {projet['repertoire']} worktree remove {branche['chemin_worktree']}"
-            if branche["peut_supprimer"] else None
+            if branche["peut_supprimer"] and branche["a_un_worktree"]
+            else f"git -C {projet['repertoire']} branch -D {branche['nom']}"
+            if branche["peut_supprimer"]
+            else None
         )
 
         # Suppression de branche de récupération (issue #29) : seule la
@@ -604,10 +610,13 @@ def merger_branches_route(nom_projet):
 
 @app.route("/projet/<nom_projet>/supprimer", methods=["POST"])
 def supprimer_worktrees_route(nom_projet):
-    """Supprime le worktree de chaque branche sélectionnée (case à cocher,
-    niveau 2), seulement si son merge est confirmé — même garde-fou qu'avant
-    (issue précédente), rattaché à la sélection plutôt qu'à l'affichage par
-    worktree."""
+    """Supprime chaque branche sélectionnée (case à cocher, niveau 2),
+    seulement si son merge est confirmé — même garde-fou qu'avant (issue
+    précédente), rattaché à la sélection plutôt qu'à l'affichage par
+    worktree. Si la branche a encore un worktree, le retire (`git worktree
+    remove`) ; sinon (worktree déjà retiré manuellement, ne laissant que la
+    branche), supprime directement la branche (`git branch -D`) — même
+    bouton, même garde-fou `mergee`, seule la commande diffère (issue #43)."""
     noms_branches = request.form.getlist("branches")
     projet, message_erreur = _projet_pret(nom_projet)
     if not projet:
@@ -628,9 +637,6 @@ def supprimer_worktrees_route(nom_projet):
         if nom == branche_principale:
             flash(f"❌ « {nom} » est la branche principale, suppression ignorée.", "erreur")
             continue
-        if not branche["a_un_worktree"]:
-            flash(f"❌ « {nom} » : pas de worktree actif, suppression impossible.", "erreur")
-            continue
         if not branche["mergee"]:
             flash(
                 f"❌ Suppression de « {nom} » refusée : branche pas confirmée "
@@ -638,9 +644,14 @@ def supprimer_worktrees_route(nom_projet):
                 "erreur",
             )
             continue
-        resultat = supprimer_worktree(projet["repertoire"], branche["chemin_worktree"])
+        if branche["a_un_worktree"]:
+            resultat = supprimer_worktree(projet["repertoire"], branche["chemin_worktree"])
+            libelle = f"Worktree de « {nom} » supprimé"
+        else:
+            resultat = supprimer_branche(projet["repertoire"], nom)
+            libelle = f"Branche « {nom} » supprimée"
         if resultat["ok"]:
-            flash(f"✅ Worktree de « {nom} » supprimé — {resultat['commande']}", "succes")
+            flash(f"✅ {libelle} — {resultat['commande']}", "succes")
         else:
             flash(f"❌ Échec de la suppression de « {nom} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
     return redirect(url_for("projet_route", nom_projet=nom_projet))
