@@ -241,6 +241,20 @@ non.
   comparer directement contre `main` donnerait un écart de commits
   trompeur (tout ce qui est sur `dev` en attente de merge apparaîtrait
   comme « orphelin » ou « non intégré » à tort).
+- **`branche` accepte plusieurs branches séparées par une virgule**
+  (ex. `master, feature/moteur-strategique`, issue #41), pour les
+  projets à lignes de développement parallèles et indépendantes — qui
+  ne se succèdent pas comme `dev`/`main`, mais coexistent sans qu'un
+  travail sur l'une doive passer par l'autre. Dans ce cas,
+  `charger_branches_cibles()`/`get_branche_cible_comparaison()`
+  retournent une **liste** de branches plutôt qu'une chaîne unique
+  (repli inchangé — chaîne unique — pour les projets à une seule
+  cible ou sans configuration). **La logique de diagnostic en aval
+  (`collect_etat_projets`, `est_branche_mergee`, etc.) ne sait pas
+  encore choisir entre plusieurs cibles** : déclarer plusieurs
+  branches pour un projet fait planter la génération de la page tant
+  que cette suite (issue séparée) n'est pas traitée — ne pas activer
+  une entrée multi-cibles avant.
 - **Ce fichier suit le même statut que les `configs/*.conf` de
   Bridge_Agent** : CCL ne le modifie jamais de sa propre initiative,
   même sur demande explicite d'une issue — seul Alain l'édite à la

@@ -137,14 +137,21 @@ def est_branche_mergee(repertoire, branche_principale, branche):
 
 def charger_branches_cibles():
     """Lit `branches_cibles.conf` (une ligne `nom_projet = branche` par
-    entrée, `#` pour les commentaires) — configure, projet par projet, la
-    branche à utiliser comme référence pour savoir si un commit orphelin ou
-    en attente est déjà intégré, quand ce n'est pas la branche principale du
-    dépôt (ex. un projet qui travaille sur `dev` avant de merger vers
-    `main` : comparer contre `main` donnerait un écart de commits trompeur).
+    entrée, `#` pour les commentaires) — configure, projet par projet, la ou
+    les branches à utiliser comme référence pour savoir si un commit
+    orphelin ou en attente est déjà intégré, quand ce n'est pas la branche
+    principale du dépôt (ex. un projet qui travaille sur `dev` avant de
+    merger vers `main` : comparer contre `main` donnerait un écart de
+    commits trompeur).
     `nom_projet` est le champ "nom" de BRIDGE_AGENT_DOC.md (ex.
     "ff_galerie"), pas le nom de dossier. Fichier absent ou entrée manquante
-    pour un projet : aucune surcharge, comportement inchangé."""
+    pour un projet : aucune surcharge, comportement inchangé.
+
+    `branche` accepte plusieurs branches séparées par une virgule (ex.
+    `master, feature/moteur-strategique`) pour les projets à lignes de
+    développement parallèles et indépendantes (issue #41) — dans ce cas,
+    l'entrée stockée est une liste plutôt qu'une chaîne unique (voir
+    `get_branche_cible_comparaison`)."""
     branches_cibles = {}
     try:
         with open(CHEMIN_BRANCHES_CIBLES, encoding="utf-8") as fichier:
@@ -156,19 +163,25 @@ def charger_branches_cibles():
         ligne = ligne.split("#", 1)[0].strip()
         if not ligne or "=" not in ligne:
             continue
-        nom_projet, branche = ligne.split("=", 1)
-        nom_projet, branche = nom_projet.strip(), branche.strip()
-        if nom_projet and branche:
-            branches_cibles[nom_projet] = branche
+        nom_projet, valeur = ligne.split("=", 1)
+        nom_projet = nom_projet.strip()
+        cibles = [c.strip() for c in valeur.split(",") if c.strip()]
+        if nom_projet and cibles:
+            branches_cibles[nom_projet] = cibles[0] if len(cibles) == 1 else cibles
     return branches_cibles
 
 
 def get_branche_cible_comparaison(nom_projet, branche_principale, branches_cibles=None):
-    """Branche cible de comparaison d'un projet : la valeur configurée dans
-    `branches_cibles.conf` si elle existe, sinon `branche_principale` (repli
-    par défaut, comportement inchangé pour les projets sans configuration
-    explicite). `branches_cibles` peut être fourni déjà chargé pour éviter
-    de relire le fichier à chaque projet dans une boucle."""
+    """Branche(s) cible(s) de comparaison d'un projet : la valeur configurée
+    dans `branches_cibles.conf` si elle existe, sinon `branche_principale`
+    (repli par défaut, comportement inchangé pour les projets sans
+    configuration explicite). Retourne une chaîne unique pour un projet à
+    une seule cible (comportement inchangé depuis l'issue #20), ou une liste
+    de chaînes pour un projet à plusieurs cibles configurées (issue #41) —
+    à charge de l'appelant de gérer les deux formes ; le choix de la cible à
+    utiliser pour un commit donné dans ce second cas n'est pas traité ici
+    (voir issue de suivi). `branches_cibles` peut être fourni déjà chargé
+    pour éviter de relire le fichier à chaque projet dans une boucle."""
     if branches_cibles is None:
         branches_cibles = charger_branches_cibles()
     return branches_cibles.get(nom_projet, branche_principale)
