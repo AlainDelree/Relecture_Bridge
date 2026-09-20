@@ -205,6 +205,15 @@ Points clés :
   action même en cas d'erreur de diagnostic). Cette suppression efface
   aussi les fichiers `Non_Lu/` associés à ce hash, sans quoi le commit
   redeviendrait immédiatement orphelin non sécurisé.
+- **Chaîne complète nettoyée, pas seulement le hash nommé** (issue #40) :
+  si le commit visé par la branche a lui-même des ancêtres non fusionnés,
+  la branche protège toute cette chaîne (comportement normal de git — un
+  pointeur de branche protège tout ce qui est en dessous), le même
+  regroupement que le cas C du diagnostic (section 3). Avant de supprimer
+  la branche, `relecture_web` réutilise `get_chaine_cherry` pour lister ces
+  ancêtres et efface le fichier `Non_Lu/` de chacun — sans quoi un ancêtre
+  protégé uniquement par cette branche redeviendrait orphelin et non
+  protégé après coup.
 - Pour les branches `recuperation-<hash>` spécifiquement, le badge
   « doublons uniquement » (section 4) réutilise directement le
   diagnostic du commit visé plutôt que d'agréger `git cherry` sur toute
@@ -268,7 +277,7 @@ silencieuse.
 | **Merger** | Une ou plusieurs branches sélectionnées. | `git merge <branche>` (avec bascule temporaire si la branche cible n'a pas de worktree dédié) | Refusé si la branche est déjà la branche cible, ou si le diagnostic « doublons uniquement » (section 4) indique qu'elle n'apporterait aucun contenu nouveau. Un conflit laisse volontairement le dépôt en état de fusion non résolue (pas de rollback automatique), pour ne pas perdre l'information. Même timeout étendu (120s) et même gestion d'erreur par message flash que Push (issue #39). |
 | **Supprimer le(s) worktree(s)** | Une ou plusieurs branches sélectionnées ayant un worktree actif. | `git worktree remove <chemin>` | Refusé si la branche n'a pas de worktree, si c'est la branche principale, ou si elle n'est pas confirmée fusionnée dans la branche cible. Jamais `--force` : git refuse de lui-même s'il reste des modifications non commitées. |
 | **Sécuriser** (un commit ou tous) | Un commit orphelin, ou tous les commits orphelins d'un projet. | `git branch recuperation-<hash> <hash>` | Voir section 6 — geste purement défensif, idempotent. |
-| **Supprimer la/les branche(s) de récupération** | Une ou plusieurs branches sélectionnées suivant la convention `recuperation-<hash>`. | `git branch -D <nom>` | Voir section 6 — refus structurel si le nom ne suit pas exactement la convention, indépendamment du badge affiché. Supprime aussi les fichiers `Non_Lu/` associés au même hash. |
+| **Supprimer la/les branche(s) de récupération** | Une ou plusieurs branches sélectionnées suivant la convention `recuperation-<hash>`. | `git branch -D <nom>` | Voir section 6 — refus structurel si le nom ne suit pas exactement la convention, indépendamment du badge affiché. Supprime aussi les fichiers `Non_Lu/` de toute la chaîne de commits protégée par la branche, pas seulement le hash nommé. |
 | **Comparer** | Un commit orphelin (cas B), en lecture seule. | `git diff <hash1> <hash2>` (après localisation par `git patch-id`) | Aucune modification — voir section 5. |
 | **Générer rapport** | Un commit non tranché (cas F, ou tout commit affiché sur une branche), en lecture seule. | `git cherry`, `git branch --contains`, `git branch -r --contains` (assemblés en texte) | Aucune modification — voir section 5. |
 | **Nettoyer tous les projets** | Tous les projets accessibles. | suppression de fichiers `Non_Lu/` (pas de commande git) | Ne supprime que les résumés dont le commit est déjà un ancêtre d'une branche **distante** (`git branch -r --contains`) — jamais un résumé dont le commit n'est pas encore réellement en sécurité sur GitHub. |

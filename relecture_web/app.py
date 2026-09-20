@@ -30,6 +30,7 @@ from git_info import (
     get_branches_contenant,
     get_branches_distantes_contenant,
     get_branches_locales,
+    get_chaine_cherry,
     get_diagnostic_doublons_branche,
     get_issue_deja_referencee,
     get_rapport_cherry_brut,
@@ -648,17 +649,31 @@ def supprimer_worktrees_route(nom_projet):
 @app.route("/projet/<nom_projet>/supprimer-branche-recuperation", methods=["POST"])
 def supprimer_branches_recuperation_route(nom_projet):
     """Supprime définitivement (`git branch -D`) chaque branche de
-    récupération sélectionnée (case à cocher, niveau 2), ainsi que ses
-    fichiers Non_Lu/ associés (`lister_fichiers_resumes_hash`, même hash que
-    la branche) — ces branches (issue #23) n'ont pas de worktree, donc
-    distinct de `supprimer_worktrees_route`. Revérifiée ici indépendamment de
-    la case cochée côté template : seule la convention de nom
-    `recuperation-<hash>` (issue #26) autorise la suppression, jamais le
-    badge de diagnostic (issue #29).
+    récupération sélectionnée (case à cocher, niveau 2), ainsi que les
+    fichiers Non_Lu/ associés à **toute la chaîne de commits qu'elle
+    protège** — pas seulement le hash nommé dans la branche (issue #40).
+
+    Une branche `recuperation-<hash>` créée sur un commit qui a lui-même des
+    ancêtres non fusionnés protège toute cette chaîne (comportement normal
+    de git : un pointeur de branche protège tout ce qui est en dessous), le
+    même regroupement que le cas C du diagnostic (voir
+    `diagnostiquer_commits_orphelins`). On réutilise donc `get_chaine_cherry`
+    (même brique) pour lister ces ancêtres avant de supprimer la branche, et
+    on nettoie le fichier Non_Lu/ de chacun — sans quoi un ancêtre protégé
+    uniquement par cette branche redeviendrait orphelin et non protégé après
+    coup (issue #40, plus grave que #31 : là où #31 ne laissait derrière que
+    des doublons, ici l'ancêtre peut être du vrai travail non intégré, cas A).
+
+    Ces branches (issue #23) n'ont pas de worktree, donc distinct de
+    `supprimer_worktrees_route`. Revérifiée ici indépendamment de la case
+    cochée côté template : seule la convention de nom `recuperation-<hash>`
+    (issue #26) autorise la suppression, jamais le badge de diagnostic
+    (issue #29).
 
     Les deux suppressions (branche + résumés) sont faites dans le même geste
     car aucun cas n'a de sens à supprimer l'une sans l'autre : sans elles,
-    le commit redevient orphelin non sécurisé juste après (issue #31)."""
+    le(s) commit(s) redevien(nen)t orphelin(s) non sécurisé(s) juste après
+    (issue #31)."""
     noms_branches = request.form.getlist("branches")
     projet, message_erreur = _projet_pret(nom_projet)
     if not projet:
@@ -669,6 +684,7 @@ def supprimer_branches_recuperation_route(nom_projet):
         return redirect(url_for("projet_route", nom_projet=nom_projet))
 
     branches = _branches_par_nom(projet)
+    branche_cible = projet["branche_cible_comparaison"]
     for nom in noms_branches:
         if nom not in branches:
             flash(f"❌ Branche « {nom} » introuvable.", "erreur")
@@ -677,23 +693,33 @@ def supprimer_branches_recuperation_route(nom_projet):
         if hash_commit is None:
             flash(f"❌ « {nom} » ne suit pas la convention recuperation-<hash>, suppression refusée.", "erreur")
             continue
+
+        hashes_a_nettoyer = {hash_commit}
+        if branche_cible:
+            chaine = get_chaine_cherry(projet["repertoire"], branche_cible, hash_commit)
+            if chaine:
+                hashes_a_nettoyer.update(maillon["hash"] for maillon in chaine)
+
         resultat = supprimer_branche_recuperation(projet["repertoire"], nom)
         if not resultat["ok"]:
             flash(f"❌ Échec de la suppression de « {nom} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
             continue
 
-        fichiers = lister_fichiers_resumes_hash(projet["dossier_relecture"], hash_commit)
+        fichiers = set()
+        for h in hashes_a_nettoyer:
+            fichiers.update(lister_fichiers_resumes_hash(projet["dossier_relecture"], h))
         nb_supprimes, nb_echecs = _supprimer_fichiers(fichiers)
+        detail_chaine = f" (chaîne de {len(hashes_a_nettoyer)} commits)" if len(hashes_a_nettoyer) > 1 else ""
         if nb_echecs:
             flash(
                 f"⚠️ Branche « {nom} » supprimée ({resultat['commande']}), mais {nb_echecs} "
-                f"fichier(s) Non_Lu/ associé(s) à « {hash_commit} » n'ont pas pu être supprimés.",
+                f"fichier(s) Non_Lu/ associé(s) à « {hash_commit} »{detail_chaine} n'ont pas pu être supprimés.",
                 "erreur",
             )
         elif nb_supprimes:
             flash(
                 f"✅ Branche « {nom} » supprimée — {resultat['commande']} "
-                f"({nb_supprimes} fichier(s) Non_Lu/ associé(s) supprimé(s))",
+                f"({nb_supprimes} fichier(s) Non_Lu/ associé(s) supprimé(s){detail_chaine})",
                 "succes",
             )
         else:

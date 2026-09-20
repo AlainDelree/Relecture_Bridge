@@ -173,11 +173,18 @@ def lister_fichiers_resumes_pushes(dossier_relecture_projet, repertoire):
 
 def lister_fichiers_resumes_hash(dossier_relecture_projet, hash_commit):
     """Liste les chemins de fichiers de Non_Lu/ (diff + résumé/annote) dont le
-    hash correspond exactement à `hash_commit` — utilisé pour supprimer le
-    résumé d'un commit en même temps que sa branche de récupération (issue
-    #31) : sans ce nettoyage, le commit redevient orphelin non sécurisé dès
-    la suppression de `recuperation-<hash_commit>` (voir
-    `supprimer_branche_recuperation`)."""
+    hash correspond à `hash_commit` — utilisé pour supprimer le résumé d'un
+    commit en même temps que sa branche de récupération (issue #31), y
+    compris pour chaque ancêtre de sa chaîne (issue #40, voir
+    `get_chaine_cherry`) : sans ce nettoyage, le(s) commit(s) redevien(nen)t
+    orphelin(s) non sécurisé(s) dès la suppression de
+    `recuperation-<hash_commit>` (voir `supprimer_branche_recuperation`).
+
+    Comparaison par préfixe plutôt qu'égalité stricte : `hash_commit` peut
+    être soit le hash court utilisé dans le nom de fichier (cas historique),
+    soit le SHA complet renvoyé par `git cherry` pour un maillon de chaîne
+    (issue #40) — l'un est toujours un préfixe de l'autre pour un même
+    commit."""
     dossier_non_lu = os.path.join(DOSSIER_RELECTURE, dossier_relecture_projet, "Non_Lu")
     if not os.path.isdir(dossier_non_lu):
         return []
@@ -185,7 +192,10 @@ def lister_fichiers_resumes_hash(dossier_relecture_projet, hash_commit):
     fichiers = []
     for nom_fichier in os.listdir(dossier_non_lu):
         chemin = os.path.join(dossier_non_lu, nom_fichier)
-        if os.path.isfile(chemin) and _extraire_hash(nom_fichier) == hash_commit:
+        if not os.path.isfile(chemin):
+            continue
+        hash_fichier = _extraire_hash(nom_fichier)
+        if hash_commit.startswith(hash_fichier) or hash_fichier.startswith(hash_commit):
             fichiers.append(chemin)
     return fichiers
 
