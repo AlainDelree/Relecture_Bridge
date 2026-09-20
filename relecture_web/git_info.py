@@ -452,7 +452,17 @@ def comparer_commit_doublon(repertoire, branche_cible, hash_commit):
     jamais empêcher une vérification humaine directe.
 
     Retourne {trouve, hash_correspondant, sujet_correspondant, diff,
-    message_absence}."""
+    message_absence, vide}."""
+    if get_commit_est_vide(repertoire, hash_commit):
+        return {
+            "trouve": False,
+            "hash_correspondant": None,
+            "sujet_correspondant": None,
+            "diff": None,
+            "message_absence": "Commit vide — rien à comparer, aucune action requise.",
+            "vide": True,
+        }
+
     hash_correspondant = trouver_commit_correspondant(repertoire, branche_cible, hash_commit)
     if not hash_correspondant:
         message_absence = (

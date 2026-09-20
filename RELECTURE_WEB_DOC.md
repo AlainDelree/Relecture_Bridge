@@ -173,7 +173,12 @@ automatique ne suffit pas :
   deux. Un diff vide confirme visuellement le doublon. Si aucune
   empreinte ne correspond exactement (contenu légèrement retouché
   entre-temps malgré le verdict « doublon » de `git cherry`), la page
-  l'indique explicitement plutôt que d'afficher un mauvais candidat.
+  l'indique explicitement plutôt que d'afficher un mauvais candidat. Si
+  le commit orphelin lui-même est vide (backup `--allow-empty`), la
+  page ne tente même pas la recherche par empreinte de patch : elle
+  l'indique directement (« commit vide — rien à comparer, aucune action
+  requise »), pour ne pas laisser croire à un doute sur son contenu
+  (issue #45).
 - **Générer rapport** (cas F, ambigu, mais disponible sur tout commit)
   — assemble un texte prêt à copier-coller dans une conversation Claude
   Chat dédiée au projet : hash, message, résumé fonctionnel déjà

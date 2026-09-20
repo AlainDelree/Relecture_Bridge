@@ -38,6 +38,8 @@
 {% else %}
 <p class="statut">Diff vide — contenu strictement identique, doublon confirmé.</p>
 {% endif %}
+{% elif comparaison.vide %}
+<p class="statut">ℹ️ {{ comparaison.message_absence }}</p>
 {% else %}
 <p class="erreur">❌ {{ comparaison.message_absence }}</p>
 {% endif %}
