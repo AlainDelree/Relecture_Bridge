@@ -21,6 +21,7 @@ from flask import Flask, flash, redirect, render_template, request, url_for
 from git_info import (
     ErreurRecuperationProjets,
     collect_etat_projets,
+    commit_est_securise,
     diagnostiquer_commits_orphelins,
     fusionner_worktree,
     get_branches_contenant,
@@ -29,8 +30,10 @@ from git_info import (
     get_rapport_cherry_brut,
     get_remote_defaut,
     get_sujet_commit,
+    nom_branche_recuperation,
     pousser_branche,
     revert_commit,
+    securiser_commit_orphelin,
     supprimer_worktree,
 )
 from resumes_info import collect_resumes_projet, lister_fichiers_resumes_pushes, regrouper_resumes_par_branche
@@ -91,6 +94,14 @@ def _diagnostiquer_orphelins(projet, resumes_orphelins):
         diagnostic["sujet"] = resume["sujet"] if resume else get_sujet_commit(repertoire, diagnostic["hash"])
         for maillon in diagnostic["chaine"]:
             maillon["sujet"] = get_sujet_commit(repertoire, maillon["hash"])
+
+        # Sécurisation (issue #23) : indépendante du diagnostic A-F ci-dessus,
+        # affichée pour tout commit orphelin, tranché ou non.
+        diagnostic["nom_branche_recuperation"] = nom_branche_recuperation(diagnostic["hash"])
+        diagnostic["deja_securise"] = commit_est_securise(repertoire, diagnostic["hash"])
+        diagnostic["commande_securisation"] = (
+            f"git -C {repertoire} branch {diagnostic['nom_branche_recuperation']} {diagnostic['hash']}"
+        )
     return diagnostics
 
 
@@ -171,6 +182,31 @@ def rapport_commit_route(nom_projet, hash_commit):
         cherry, branches_locales, branches_distantes, autres_orphelins,
     )
     return render_template("rapport.html", projet=projet, hash_commit=hash_commit, rapport=rapport)
+
+
+@app.route("/projet/<nom_projet>/orphelin/<hash_commit>/securiser", methods=["POST"])
+def securiser_orphelin_route(nom_projet, hash_commit):
+    """Sécurise un commit orphelin (issue #23) en créant une branche
+    `recuperation-<hash>` pointant dessus — action déclenchée en un clic
+    confirmé côté template, applicable à tout commit orphelin sans attendre
+    le diagnostic A-F (voir `securiser_commit_orphelin`)."""
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+
+    resultat = securiser_commit_orphelin(projet["repertoire"], hash_commit)
+    if resultat["deja_securise"]:
+        flash(f"ℹ️ « {hash_commit} » déjà sécurisé — branche « {resultat['nom_branche']} » existante.", "succes")
+    elif resultat["ok"]:
+        flash(
+            f"✅ « {hash_commit} » sécurisé — branche « {resultat['nom_branche']} » créée "
+            f"({resultat['commande']}).",
+            "succes",
+        )
+    else:
+        flash(f"❌ Échec de la sécurisation de « {hash_commit} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 
 @app.route("/")

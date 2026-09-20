@@ -52,6 +52,15 @@
         {% if d.orphelins_absorbes %}
         <span class="badge badge--principal">chaîne de {{ d.chaine|length }} commit(s)</span>
         {% endif %}
+        {% if d.deja_securise %}
+        <span class="badge badge--ok">🔒 sécurisé ({{ d.nom_branche_recuperation }})</span>
+        {% else %}
+        <form method="post" action="{{ url_for('securiser_orphelin_route', nom_projet=projet.nom, hash_commit=d.hash) }}"
+              class="commit-actions--summary"
+              onsubmit="return confirm('Sécuriser le commit orphelin {{ d.hash }} ({{ projet.nom }}) en créant la branche « {{ d.nom_branche_recuperation }} » ?\n\nGeste défensif pur : ne fusionne ni ne modifie rien.\n\nCommande équivalente :\n{{ d.commande_securisation }}');">
+          <button type="submit" class="bouton bouton--securiser">🔒 Sécuriser</button>
+        </form>
+        {% endif %}
       </div>
       {% if d.orphelins_absorbes %}
       <details class="diff-detail">

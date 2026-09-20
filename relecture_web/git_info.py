@@ -373,6 +373,55 @@ def diagnostiquer_commits_orphelins(repertoire, branche_cible, hashes_orphelins)
     return [diag for h, diag in diagnostics.items() if h not in absorbes_global]
 
 
+def nom_branche_recuperation(hash_commit):
+    """Nom de la branche de sécurisation d'un commit orphelin — même
+    convention que le geste manuel déjà pratiqué (issue #23) :
+    `git branch recuperation-<hash> <hash>`."""
+    return f"recuperation-{hash_commit}"
+
+
+def commit_est_securise(repertoire, hash_commit):
+    """True si une branche de sécurisation (voir `nom_branche_recuperation`)
+    existe déjà pour ce commit — évite de recréer inutilement la branche et
+    permet d'afficher l'état déjà sécurisé plutôt qu'un bouton d'action."""
+    resultat = _lancer_git(
+        repertoire, "rev-parse", "--verify", "--quiet",
+        f"refs/heads/{nom_branche_recuperation(hash_commit)}",
+    )
+    return resultat.returncode == 0
+
+
+def securiser_commit_orphelin(repertoire, hash_commit):
+    """Sécurise un commit orphelin (aucune branche locale ne le contient,
+    donc retenu uniquement par le reflog — 90 jours par défaut, purgeable
+    ensuite par un `git gc`) en créant une branche `recuperation-<hash>`
+    pointant dessus (issue #23) — geste défensif pur, qui ne fusionne ni ne
+    modifie rien, identique au geste manuel déjà pratiqué sur ff_galerie.
+
+    N'a besoin d'aucun diagnostic préalable (cas A-F, voir
+    `diagnostiquer_commits_orphelins`) : s'applique à n'importe quel commit
+    orphelin, tranché ou non. Idempotent : si la branche existe déjà,
+    retourne ok=True avec `deja_securise=True` sans relancer git branch.
+    Retourne {ok, deja_securise, erreur, commande, nom_branche} pour
+    affichage transparent."""
+    nom_branche = nom_branche_recuperation(hash_commit)
+    if commit_est_securise(repertoire, hash_commit):
+        return {
+            "ok": True, "deja_securise": True, "erreur": None,
+            "commande": None, "nom_branche": nom_branche,
+        }
+
+    commande = ["git", "-C", repertoire, "branch", nom_branche, hash_commit]
+    resultat = subprocess.run(commande, capture_output=True, text=True, timeout=TIMEOUT_GIT)
+    return {
+        "ok": resultat.returncode == 0,
+        "deja_securise": False,
+        "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
+        "commande": " ".join(commande),
+        "nom_branche": nom_branche,
+    }
+
+
 def get_commit_est_pushe(repertoire, hash_commit):
     """True si `hash_commit` est déjà un ancêtre d'au moins une branche
     distante (`git branch -r --contains`) — donc en sécurité sur le dépôt
