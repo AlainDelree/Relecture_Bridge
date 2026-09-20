@@ -294,15 +294,23 @@ non.
   cible ou sans configuration).
   Le diagnostic des commits orphelins (cas M ci-dessus, issue #46) et le
   bouton Comparer (essaie chaque branche candidate tour à tour, issue #46)
-  savent gérer une liste sans deviner ni planter. **Le reste de la logique
-  en aval (liste des branches d'un projet, badge « fusionnée », fusion
-  d'une branche — `get_branches_locales`, `est_branche_mergee`,
-  `get_diagnostic_doublons_branche`) ne sait, elle, pas encore choisir
-  entre plusieurs cibles** : déclarer plusieurs branches pour un projet
-  fait toujours planter la génération de la page `/projet/<nom>` (qui
-  affiche aussi cette liste de branches) tant que cette suite (issue
-  séparée) n'est pas traitée — ne pas activer une entrée multi-cibles
-  avant que l'ensemble de la page soit couvert.
+  savent gérer une liste sans deviner ni planter. `get_branches_locales`
+  et `est_branche_mergee` (badge « fusionnée ») savent aussi gérer une
+  liste sans planter (issue #50) : une branche est considérée fusionnée
+  si elle est ancêtre d'au moins une des cibles candidates. **Le bouton
+  Merger, en revanche, ne devine jamais de cible parmi plusieurs
+  candidates** (issue #52) : un merge modifie réellement le dépôt, à la
+  différence d'un diagnostic — deviner la mauvaise cible serait plus
+  grave qu'un badge imprécis. Quand plusieurs cibles sont configurées,
+  le panneau d'actions affiche donc un sélecteur (« Cible du merge »)
+  listant les cibles candidates ; Alain doit en choisir une explicitement
+  avant que le bouton Merger ne devienne utilisable pour de vrai — la
+  commande équivalente affichée en confirmation reflète la cible
+  choisie. Sans ce choix (ou avec une cible hors de la liste configurée,
+  ex. requête forgée), `merger_branches_route` refuse l'action par
+  message flash plutôt que de deviner. Pour un projet à une seule cible
+  configurée, rien ne change : pas de sélecteur, comportement identique
+  à avant l'issue #52.
 - **Ce fichier suit le même statut que les `configs/*.conf` de
   Bridge_Agent** : CCL ne le modifie jamais de sa propre initiative,
   même sur demande explicite d'une issue — seul Alain l'édite à la
@@ -336,7 +344,7 @@ silencieuse.
 |---|---|---|---|
 | **Revert** | Un commit précis, sur la page d'une branche. | `git revert --no-edit <hash>` | Aucun autre que la confirmation — crée un nouveau commit d'annulation, ne réécrit pas l'historique. |
 | **Push** | Une ou plusieurs branches sélectionnées (cases à cocher, niveau « branches d'un projet »). | `git push <remote> <branche>` | Cible toujours une branche entière jusqu'à son dernier commit, jamais une sélection de commits épars. Timeout de 120s (dépôt volumineux, connexion lente) ; un dépassement ou une erreur inattendue est rapporté par un message flash explicite, jamais par une page d'erreur brute (issue #39). |
-| **Merger** | Une ou plusieurs branches sélectionnées. | `git merge <branche>` (avec bascule temporaire si la branche cible n'a pas de worktree dédié) | Refusé si la branche est déjà la branche cible, ou si le diagnostic « doublons uniquement » (section 4) indique qu'elle n'apporterait aucun contenu nouveau. Un conflit laisse volontairement le dépôt en état de fusion non résolue (pas de rollback automatique), pour ne pas perdre l'information. Même timeout étendu (120s) et même gestion d'erreur par message flash que Push (issue #39). |
+| **Merger** | Une ou plusieurs branches sélectionnées. | `git merge <branche>` (avec bascule temporaire si la branche cible n'a pas de worktree dédié) | Refusé si la branche est déjà la branche cible, ou si le diagnostic « doublons uniquement » (section 4) indique qu'elle n'apporterait aucun contenu nouveau. Un conflit laisse volontairement le dépôt en état de fusion non résolue (pas de rollback automatique), pour ne pas perdre l'information. Même timeout étendu (120s) et même gestion d'erreur par message flash que Push (issue #39). Projet à plusieurs cibles configurées (section 7, issue #52) : un sélecteur « Cible du merge » apparaît dans le panneau d'actions — aucune cible n'est devinée, refus par message flash si aucune n'est choisie explicitement. |
 | **Supprimer la/les branche(s) fusionnée(s)** | Une ou plusieurs branches sélectionnées confirmées fusionnées. | `git worktree remove <chemin>` si la branche a encore un worktree actif, sinon `git branch -D <nom>` directement (issue #43 — cas d'un worktree déjà retiré manuellement, ne laissant que la branche). | Refusé si c'est la branche principale, ou si elle n'est pas confirmée fusionnée dans la branche cible. Le `worktree remove` n'est jamais `--force` : git refuse de lui-même s'il reste des modifications non commitées ; le `branch -D` (sans worktree) n'a pas cette protection, d'où l'exigence stricte de `mergee` en amont. Même bouton dans les deux cas — seule la commande affichée en confirmation diffère. |
 | **Sécuriser** (un commit ou tous) | Un commit orphelin, ou tous les commits orphelins d'un projet. | `git branch recuperation-<hash> <hash>` | Voir section 6 — geste purement défensif, idempotent. |
 | **Supprimer la/les branche(s) de récupération** | Une ou plusieurs branches sélectionnées suivant la convention `recuperation-<hash>`. | `git branch -D <nom>` | Voir section 6 — refus structurel si le nom ne suit pas exactement la convention, indépendamment du badge affiché. Supprime aussi les fichiers `Non_Lu/` de toute la chaîne de commits protégée par la branche, pas seulement le hash nommé. |

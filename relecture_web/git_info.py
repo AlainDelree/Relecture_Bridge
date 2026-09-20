@@ -126,13 +126,20 @@ def get_branche_courante(repertoire):
 def est_branche_mergee(repertoire, branche_principale, branche):
     """True si `branche` est un ancêtre de `branche_principale` dans le dépôt
     de `repertoire` — c'est-à-dire intégralement fusionnée, condition requise
-    avant de proposer la suppression d'un worktree."""
+    avant de proposer la suppression d'un worktree.
+
+    `branche_principale` accepte aussi une liste de cibles candidates (projet
+    à plusieurs cibles configurées, issue #41) : `branche` est alors
+    considérée fusionnée si elle est ancêtre d'au moins une des candidates —
+    sans quoi `subprocess.run` reçoit une liste là où il attend une chaîne et
+    plante (issue #50, cas `scrabble`)."""
     if not branche_principale or not branche:
         return False
-    resultat = _lancer_git(
-        repertoire, "merge-base", "--is-ancestor", branche, branche_principale
+    cibles = branche_principale if isinstance(branche_principale, list) else [branche_principale]
+    return any(
+        _lancer_git(repertoire, "merge-base", "--is-ancestor", branche, cible).returncode == 0
+        for cible in cibles
     )
-    return resultat.returncode == 0
 
 
 def charger_branches_cibles():

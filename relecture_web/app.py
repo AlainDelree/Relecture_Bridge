@@ -401,28 +401,62 @@ def projet_route(nom_projet):
     projet["diagnostics_orphelins"] = _diagnostiquer_orphelins(projet, resumes_par_branche.get(None, []))
 
     remote = get_remote_defaut(projet["repertoire"])
-    branches = get_branches_locales(projet["repertoire"], projet["branche_cible_comparaison"])
-    branche_cible_merge = projet["branche_cible_comparaison"]
+    cible_merge_configuree = projet["branche_cible_comparaison"]
+    branches = get_branches_locales(projet["repertoire"], cible_merge_configuree)
+
+    # Issue #52 : un projet à plusieurs cibles configurées (ex. `scrabble`,
+    # `master` ou `feature/moteur-strategique`) n'a pas de cible évidente à
+    # calculer automatiquement — merger vers l'une ou l'autre n'a pas le même
+    # sens selon le contenu de la branche. On expose donc la liste des
+    # cibles candidates au template (`cibles_merge`, toujours une liste,
+    # même à une seule entrée pour garder un seul chemin de rendu), à charge
+    # d'Alain de choisir explicitement via le sélecteur du panneau d'actions
+    # avant de merger — comportement inchangé pour un projet à une seule
+    # cible (`cibles_merge` réduite à cette unique entrée).
+    cibles_merge = (
+        cible_merge_configuree if isinstance(cible_merge_configuree, list) else [cible_merge_configuree]
+    )
+    projet["cibles_merge"] = cibles_merge
+
+    def _commande_merge(cible, nom_branche):
+        if cible == projet["branche_principale"]:
+            return f"git -C {projet['repertoire']} merge {nom_branche}"
+        return (
+            f"git -C {projet['repertoire']} checkout {cible} && "
+            f"git merge {nom_branche} && git checkout {projet['branche_principale']}"
+        )
+
     for branche in branches:
         branche["nb_resumes"] = len(resumes_par_branche.get(branche["nom"], []))
         branche["est_principale"] = branche["nom"] == projet["branche_principale"]
         branche["commande_push"] = f"git -C {projet['repertoire']} push {remote} {branche['nom']}"
 
-        branche["peut_merger"] = branche["nom"] != branche_cible_merge
-        branche["ne_contient_que_doublons"] = branche["peut_merger"] and get_diagnostic_doublons_branche(
-            projet["repertoire"], branche_cible_merge, branche["nom"]
-        )
-        if branche["ne_contient_que_doublons"]:
-            branche["peut_merger"] = False
+        branche["peut_merger"] = branche["nom"] not in cibles_merge
 
-        if not branche["peut_merger"]:
-            branche["commande_merge"] = None
-        elif branche_cible_merge == projet["branche_principale"]:
-            branche["commande_merge"] = f"git -C {projet['repertoire']} merge {branche['nom']}"
-        else:
+        if len(cibles_merge) == 1:
+            branche_cible_merge = cibles_merge[0]
+            branche["ne_contient_que_doublons"] = branche["peut_merger"] and get_diagnostic_doublons_branche(
+                projet["repertoire"], branche_cible_merge, branche["nom"]
+            )
+            if branche["ne_contient_que_doublons"]:
+                branche["peut_merger"] = False
             branche["commande_merge"] = (
-                f"git -C {projet['repertoire']} checkout {branche_cible_merge} && "
-                f"git merge {branche['nom']} && git checkout {projet['branche_principale']}"
+                _commande_merge(branche_cible_merge, branche["nom"]) if branche["peut_merger"] else None
+            )
+            branche["commandes_merge"] = None
+        else:
+            # Plusieurs cibles configurées : aucun diagnostic de doublons
+            # automatique (même parti pris que le cas M du diagnostic des
+            # commits orphelins, issue #46/#50 — pas de `git cherry` contre
+            # une cible qui n'a pas encore été choisie), aucune commande par
+            # défaut. Une commande est précalculée par cible candidate ;
+            # `merger_branches_route` n'utilisera que celle correspondant à
+            # la cible choisie explicitement dans le formulaire.
+            branche["ne_contient_que_doublons"] = False
+            branche["commande_merge"] = None
+            branche["commandes_merge"] = (
+                {cible: _commande_merge(cible, branche["nom"]) for cible in cibles_merge}
+                if branche["peut_merger"] else None
             )
 
         # Une branche fusionnée reste supprimable même sans worktree associé
@@ -594,7 +628,14 @@ def merger_branches_route(nom_projet):
     branche principale git si aucune configuration explicite — voir
     `get_branche_cible_comparaison`, issue #20 ; issue #24) — action
     rattachée à la sélection de branches plutôt qu'à un worktree affiché
-    individuellement (issue #12)."""
+    individuellement (issue #12).
+
+    Projet à plusieurs cibles configurées (issue #52) : aucune cible n'est
+    devinée. Le formulaire doit alors fournir `cible_merge` (sélecteur du
+    panneau d'actions, voir `projet.html`), validé contre la liste des
+    cibles candidates — sans ce choix explicite, l'action est refusée plutôt
+    que de deviner une cible, un merge étant une action qui modifie
+    réellement le dépôt."""
     noms_branches = request.form.getlist("branches")
     projet, message_erreur = _projet_pret(nom_projet)
     if not projet:
@@ -604,7 +645,21 @@ def merger_branches_route(nom_projet):
         flash("❌ Aucune branche sélectionnée.", "erreur")
         return redirect(url_for("projet_route", nom_projet=nom_projet))
 
-    branche_cible = projet["branche_cible_comparaison"]
+    cible_configuree = projet["branche_cible_comparaison"]
+    if isinstance(cible_configuree, list):
+        cible_choisie = request.form.get("cible_merge")
+        if not cible_choisie or cible_choisie not in cible_configuree:
+            flash(
+                f"❌ Plusieurs cibles sont configurées pour « {nom_projet} » "
+                f"({', '.join(cible_configuree)}) — choisissez explicitement la "
+                "cible de fusion avant de merger.",
+                "erreur",
+            )
+            return redirect(url_for("projet_route", nom_projet=nom_projet))
+        branche_cible = cible_choisie
+    else:
+        branche_cible = cible_configuree
+
     branches = _branches_par_nom(projet)
     for nom in noms_branches:
         if nom not in branches:
