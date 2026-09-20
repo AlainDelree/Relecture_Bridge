@@ -283,17 +283,34 @@ def get_chaine_cherry(repertoire, branche_cible, hash_commit):
 
 
 def get_diagnostic_doublons_branche(repertoire, branche_cible, branche):
-    """True si tous les commits propres à `branche` par rapport à
-    `branche_cible` (chaîne complète renvoyée par `git cherry`, commits vides
-    de backup déjà exclus par `get_chaine_cherry`) sont classés doublons —
-    c'est-à-dire que fusionner cette branche n'apporterait aucun contenu
-    nouveau (issue #25, ex. une branche `recuperation-<hash>` dont le commit
-    sécurisé s'avère être un doublon déjà intégré ailleurs). False si
-    `branche_cible` n'est pas configurée, si `branche` n'a aucun commit
-    propre (déjà fusionnée, rien à signaler ici), ou si `git cherry` échoue
-    (ambigu, laissé au jugement manuel comme le cas F)."""
+    """True si fusionner `branche` dans `branche_cible` n'apporterait aucun
+    contenu nouveau. False si `branche_cible` n'est pas configurée.
+
+    Cas particulier `recuperation-<hash>` (issue #23) : une telle branche ne
+    contient par construction qu'un seul commit d'intérêt, celui dont elle
+    porte le nom. Utiliser l'agrégat `git cherry` sur toute la branche est
+    fragile si elle a été créée sur un point ancien de l'arbre : la chaîne
+    remonte alors aussi de vieux commits d'historique sans rapport avec le
+    commit orphelin visé, et un seul d'entre eux suffit à faire échouer
+    l'agrégat même si le commit visé est bien un doublon (issue #27). On
+    réutilise donc directement le diagnostic de ce commit précis (même
+    logique que `diagnostiquer_commits_orphelins`, cas B/D = rien à
+    apporter), plutôt que de relancer `git cherry` sur toute la chaîne.
+
+    Pour toute autre branche (worktree `mode_write` ordinaire, plusieurs
+    commits propres légitimes), comportement inchangé (issue #25) : agrégat
+    sur la chaîne complète renvoyée par `git cherry` (commits vides de
+    backup déjà exclus par `get_chaine_cherry`) — False si `branche` n'a
+    aucun commit propre (déjà fusionnée, rien à signaler ici), ou si `git
+    cherry` échoue (ambigu, laissé au jugement manuel comme le cas F)."""
     if not branche_cible:
         return False
+
+    hash_recuperation = hash_depuis_branche_recuperation(branche)
+    if hash_recuperation:
+        diagnostic = _diagnostiquer_commit(repertoire, branche_cible, hash_recuperation)
+        return diagnostic["cas"] in ("B", "D")
+
     chaine = get_chaine_cherry(repertoire, branche_cible, branche)
     if not chaine:
         return False
@@ -367,18 +384,13 @@ def diagnostiquer_commits_orphelins(repertoire, branche_cible, hashes_orphelins)
     absorbes_global = set()
 
     for h in hashes_orphelins:
-        if get_commit_est_vide(repertoire, h):
-            diagnostics[h] = {"hash": h, "cas": "D", "chaine": [], "orphelins_absorbes": []}
+        diagnostic = _diagnostiquer_commit(repertoire, branche_cible, h)
+        if diagnostic["cas"] in ("D", "F"):
+            diagnostics[h] = {"hash": h, "cas": diagnostic["cas"], "chaine": [], "orphelins_absorbes": []}
             continue
 
-        chaine = get_chaine_cherry(repertoire, branche_cible, h)
-        maillon_tip = (
-            next((m for m in chaine if m["hash"].startswith(h)), None) if chaine else None
-        )
-        if chaine is None or maillon_tip is None:
-            diagnostics[h] = {"hash": h, "cas": "F", "chaine": [], "orphelins_absorbes": []}
-            continue
-
+        chaine = diagnostic["chaine"]
+        maillon_tip = diagnostic["maillon_tip"]
         orphelins_absorbes = [
             autre for autre in ensemble_orphelins
             if autre != h and any(m["hash"].startswith(autre) for m in chaine if m is not maillon_tip)
@@ -387,7 +399,7 @@ def diagnostiquer_commits_orphelins(repertoire, branche_cible, hashes_orphelins)
 
         diagnostics[h] = {
             "hash": h,
-            "cas": "A" if maillon_tip["statut"] == "nouveau" else "B",
+            "cas": diagnostic["cas"],
             "chaine": chaine,
             "orphelins_absorbes": orphelins_absorbes,
         }
@@ -395,11 +407,49 @@ def diagnostiquer_commits_orphelins(repertoire, branche_cible, hashes_orphelins)
     return [diag for h, diag in diagnostics.items() if h not in absorbes_global]
 
 
+def _diagnostiquer_commit(repertoire, branche_cible, hash_commit):
+    """Diagnostic d'un unique commit contre `branche_cible` (cas D/F/A/B de
+    la table de l'issue #21, cas E exclu — à la charge de l'appelant quand
+    `branche_cible` n'est pas configurée), sans la logique d'absorption de
+    chaîne propre à `diagnostiquer_commits_orphelins` — brique commune,
+    réutilisée telle quelle par cette dernière et par
+    `get_diagnostic_doublons_branche` pour les branches `recuperation-<hash>`
+    (issue #27), où seul le diagnostic du commit visé importe, pas celui de
+    toute la chaîne de divergence remontée par `git cherry`."""
+    if get_commit_est_vide(repertoire, hash_commit):
+        return {"cas": "D", "chaine": [], "maillon_tip": None}
+
+    chaine = get_chaine_cherry(repertoire, branche_cible, hash_commit)
+    maillon_tip = (
+        next((m for m in chaine if m["hash"].startswith(hash_commit)), None) if chaine else None
+    )
+    if chaine is None or maillon_tip is None:
+        return {"cas": "F", "chaine": [], "maillon_tip": None}
+
+    return {
+        "cas": "A" if maillon_tip["statut"] == "nouveau" else "B",
+        "chaine": chaine,
+        "maillon_tip": maillon_tip,
+    }
+
+
 def nom_branche_recuperation(hash_commit):
     """Nom de la branche de sécurisation d'un commit orphelin — même
     convention que le geste manuel déjà pratiqué (issue #23) :
     `git branch recuperation-<hash> <hash>`."""
     return f"recuperation-{hash_commit}"
+
+
+def hash_depuis_branche_recuperation(nom_branche):
+    """Inverse de `nom_branche_recuperation` : le hash orphelin visé si
+    `nom_branche` suit la convention `recuperation-<hash>`, sinon None —
+    utilisé par `get_diagnostic_doublons_branche` (issue #27) pour repérer
+    les branches de récupération, qui ne contiennent par construction qu'un
+    seul commit d'intérêt."""
+    prefixe = "recuperation-"
+    if not nom_branche.startswith(prefixe):
+        return None
+    return nom_branche[len(prefixe):] or None
 
 
 def commit_est_securise(repertoire, hash_commit):
