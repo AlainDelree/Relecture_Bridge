@@ -180,6 +180,13 @@
   </div>
 </div>
 
+<div id="overlay-action-en-cours" class="overlay-action" hidden>
+  <div class="overlay-action__contenu">
+    <div class="overlay-action__spinner"></div>
+    <p id="overlay-action-texte" class="overlay-action__texte"></p>
+  </div>
+</div>
+
 <script>
 (function () {
   var cases = document.querySelectorAll(".checkbox-branche");
@@ -267,8 +274,26 @@
       + "Commande(s) équivalente(s) :\n" + lignes.join("\n");
     if (!confirm(confirmation)) {
       evenement.preventDefault();
+      return;
+    }
+
+    if (evenement.submitter === boutonPush || evenement.submitter === boutonMerger) {
+      afficherOverlaiAction(evenement.submitter === boutonPush ? "Push" : "Fusion");
     }
   });
+
+  var overlay = document.getElementById("overlay-action-en-cours");
+  var overlayTexte = document.getElementById("overlay-action-texte");
+
+  function afficherOverlaiAction(libelle) {
+    var secondes = 0;
+    overlayTexte.textContent = libelle + " en cours... 0s";
+    overlay.hidden = false;
+    setInterval(function () {
+      secondes += 1;
+      overlayTexte.textContent = libelle + " en cours... " + secondes + "s";
+    }, 1000);
+  }
 })();
 </script>
 {% endif %}
