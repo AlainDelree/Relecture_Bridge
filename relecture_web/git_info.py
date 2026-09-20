@@ -170,12 +170,15 @@ def get_branche_cible_comparaison(nom_projet, branche_principale, branches_cible
     return branches_cibles.get(nom_projet, branche_principale)
 
 
-def get_branches_locales(repertoire):
+def get_branches_locales(repertoire, branche_cible=None):
     """Liste toutes les branches locales d'un dépôt (`git for-each-ref
     refs/heads/`), contrairement à `get_worktrees` qui ne voit que celles
     ayant un worktree actif. Pour chaque branche : son dernier commit, le
-    chemin de son worktree s'il en existe un, et si elle est fusionnée dans
-    la branche principale (via `est_branche_mergee`)."""
+    chemin de son worktree s'il en existe un, et si elle est fusionnée
+    (via `est_branche_mergee`) dans `branche_cible` — la branche cible de
+    comparaison configurée (issue #20) si fournie, sinon la branche
+    principale git par défaut (repli, comportement inchangé pour les
+    projets sans configuration explicite — issue #26)."""
     resultat = _lancer_git(
         repertoire, "for-each-ref", "refs/heads/",
         "--format=%(refname:short)%09%(objectname:short)%09"
@@ -185,6 +188,7 @@ def get_branches_locales(repertoire):
         return []
 
     branche_principale = get_branche_courante(repertoire)
+    branche_reference = branche_cible or branche_principale
     chemin_worktree_par_branche = {
         worktree["branch"]: worktree["path"]
         for worktree in get_worktrees(repertoire)
@@ -205,7 +209,7 @@ def get_branches_locales(repertoire):
             "dernier_commit": {"hash": hash_commit, "date": date, "sujet": sujet},
             "chemin_worktree": chemin_worktree,
             "a_un_worktree": chemin_worktree is not None,
-            "mergee": est_branche_mergee(repertoire, branche_principale, nom),
+            "mergee": est_branche_mergee(repertoire, branche_reference, nom),
         })
     return branches
 
@@ -616,7 +620,7 @@ def collect_etat_projets():
             )
             if peut_agir:
                 worktree["merge_ok"] = est_branche_mergee(
-                    repertoire, branche_principale, worktree["branch"]
+                    repertoire, entree["branche_cible_comparaison"], worktree["branch"]
                 )
                 worktree["commande_merge"] = f"git -C {repertoire} merge {worktree['branch']}"
                 worktree["commande_suppression"] = (

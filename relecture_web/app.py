@@ -72,8 +72,11 @@ def _projet_pret(nom_projet):
     return projet, None
 
 
-def _branches_par_nom(repertoire):
-    return {branche["nom"]: branche for branche in get_branches_locales(repertoire)}
+def _branches_par_nom(projet):
+    return {
+        branche["nom"]: branche
+        for branche in get_branches_locales(projet["repertoire"], projet["branche_cible_comparaison"])
+    }
 
 
 def _diagnostiquer_orphelins(projet, resumes_orphelins):
@@ -255,7 +258,7 @@ def projet_route(nom_projet):
     projet["diagnostics_orphelins"] = _diagnostiquer_orphelins(projet, resumes_par_branche.get(None, []))
 
     remote = get_remote_defaut(projet["repertoire"])
-    branches = get_branches_locales(projet["repertoire"])
+    branches = get_branches_locales(projet["repertoire"], projet["branche_cible_comparaison"])
     branche_cible_merge = projet["branche_cible_comparaison"]
     for branche in branches:
         branche["nb_resumes"] = len(resumes_par_branche.get(branche["nom"], []))
@@ -399,7 +402,7 @@ def pousser_branches_route(nom_projet):
         flash("❌ Aucune branche sélectionnée.", "erreur")
         return redirect(url_for("projet_route", nom_projet=nom_projet))
 
-    branches = _branches_par_nom(projet["repertoire"])
+    branches = _branches_par_nom(projet)
     for nom in noms_branches:
         if nom not in branches:
             flash(f"❌ Branche « {nom} » introuvable.", "erreur")
@@ -430,7 +433,7 @@ def merger_branches_route(nom_projet):
         return redirect(url_for("projet_route", nom_projet=nom_projet))
 
     branche_cible = projet["branche_cible_comparaison"]
-    branches = _branches_par_nom(projet["repertoire"])
+    branches = _branches_par_nom(projet)
     for nom in noms_branches:
         if nom not in branches:
             flash(f"❌ Branche « {nom} » introuvable.", "erreur")
@@ -468,7 +471,8 @@ def supprimer_worktrees_route(nom_projet):
         return redirect(url_for("projet_route", nom_projet=nom_projet))
 
     branche_principale = projet["branche_principale"]
-    branches = _branches_par_nom(projet["repertoire"])
+    branche_cible = projet["branche_cible_comparaison"]
+    branches = _branches_par_nom(projet)
     for nom in noms_branches:
         branche = branches.get(nom)
         if not branche:
@@ -483,7 +487,7 @@ def supprimer_worktrees_route(nom_projet):
         if not branche["mergee"]:
             flash(
                 f"❌ Suppression de « {nom} » refusée : branche pas confirmée "
-                f"fusionnée dans « {branche_principale} ».",
+                f"fusionnée dans « {branche_cible} ».",
                 "erreur",
             )
             continue
