@@ -183,7 +183,12 @@ def rapport_commit_route(nom_projet, hash_commit):
     branches locales/distantes le contenant, et le contexte déjà disponible
     (branche cible configurée, autres commits orphelins en attente) — pour
     coller le tout dans une conversation Claude Chat dédiée au projet.
-    Route en lecture seule (GET), aucune action git déclenchée."""
+    Route en lecture seule (GET), aucune action git déclenchée.
+    `nom_branche` (query string, optionnel, issue #35) : nom de la branche
+    d'origine si l'appel vient de `branche_route`, pour que le bouton
+    « Précédent » y revienne plutôt qu'à la page projet — absent pour un
+    commit orphelin, qui n'a pas de branche d'origine."""
+    nom_branche = request.args.get("nom_branche") or None
     projet, message_erreur = _projet_pret(nom_projet)
     if not projet:
         flash(message_erreur, "erreur")
@@ -212,7 +217,10 @@ def rapport_commit_route(nom_projet, hash_commit):
         projet, hash_commit, sujet, resume_texte, branche_cible,
         cherry, branches_locales, branches_distantes, autres_orphelins,
     )
-    return render_template("rapport.html", projet=projet, hash_commit=hash_commit, rapport=rapport)
+    return render_template(
+        "rapport.html", projet=projet, hash_commit=hash_commit, rapport=rapport,
+        nom_branche=nom_branche,
+    )
 
 
 @app.route("/projet/<nom_projet>/comparer/<hash_commit>")
@@ -223,7 +231,10 @@ def comparer_commit_route(nom_projet, hash_commit):
     `comparer_commit_doublon`), et affiche le diff entre les deux — pour une
     vérification humaine directe, sans deviner de candidat ni lancer de
     commande manuelle. Route en lecture seule (GET), aucune action git
-    déclenchée."""
+    déclenchée.
+    `nom_branche` (query string, optionnel, issue #35) : voir
+    `rapport_commit_route` — même logique de retour vers `branche_route`."""
+    nom_branche = request.args.get("nom_branche") or None
     projet, message_erreur = _projet_pret(nom_projet)
     if not projet:
         flash(message_erreur, "erreur")
@@ -237,6 +248,7 @@ def comparer_commit_route(nom_projet, hash_commit):
     return render_template(
         "comparer.html", projet=projet, hash_commit=hash_commit, sujet=sujet,
         branche_cible=branche_cible, comparaison=comparaison,
+        nom_branche=nom_branche,
     )
 
 

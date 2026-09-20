@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 {% block body %}
+{% if nom_branche %}
+<a href="{{ url_for('branche_route', nom_projet=projet.nom, nom_branche=nom_branche) }}" class="bouton-precedent">◀ Précédent</a>
+{% else %}
 <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}" class="bouton-precedent">◀ Précédent</a>
+{% endif %}
 
 <header>
   <p class="fil-ariane">
