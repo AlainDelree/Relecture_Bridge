@@ -765,6 +765,73 @@ def supprimer_branches_recuperation_route(nom_projet):
     return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 
+@app.route("/projet/<nom_projet>/comparer-selection", methods=["POST"])
+def comparer_selection_route(nom_projet):
+    """Vérification groupée (issue #47) pour une sélection de branches de
+    récupération (case à cocher, niveau 2, même sélection que
+    `supprimer_branches_recuperation_route`) : relance `comparer_commit_doublon`
+    (issue #30, aucune nouvelle logique de comparaison) pour chacune, et
+    affiche un résultat par ligne — diff vide (doublon confirmé), diff non
+    vide (à vérifier manuellement, lien vers le détail), ou commit vide
+    (rien à comparer, issue #45). Route en lecture seule malgré la méthode
+    POST, nécessaire pour transmettre la sélection (liste de noms de
+    branches) — ne déclenche aucune commande git de modification.
+
+    Une branche qui ne suit pas la convention `recuperation-<hash>` est
+    ignorée avec un message flash, même garde-fou que pour la suppression
+    groupée (issue #29)."""
+    noms_branches = request.form.getlist("branches")
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+    if not noms_branches:
+        flash("❌ Aucune branche sélectionnée.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    repertoire = projet["repertoire"]
+    branche_cible = projet["branche_cible_comparaison"]
+    branche_cible_affichage = (
+        " ou ".join(branche_cible) if isinstance(branche_cible, list) else branche_cible
+    )
+
+    resultats = []
+    ignorees = []
+    for nom in noms_branches:
+        hash_commit = hash_depuis_branche_recuperation(nom)
+        if hash_commit is None:
+            ignorees.append(nom)
+            continue
+        comparaison = comparer_commit_doublon(repertoire, branche_cible, hash_commit)
+        if comparaison.get("vide"):
+            statut = "vide"
+        elif comparaison["trouve"] and not comparaison["diff"]:
+            statut = "doublon_confirme"
+        else:
+            statut = "a_verifier"
+        resultats.append({
+            "nom_branche": nom,
+            "hash": hash_commit,
+            "sujet": get_sujet_commit(repertoire, hash_commit),
+            "comparaison": comparaison,
+            "statut": statut,
+        })
+
+    if ignorees:
+        flash(
+            "⚠️ Ignorée(s) car ne suit/suivent pas la convention recuperation-<hash> : "
+            + ", ".join(ignorees),
+            "erreur",
+        )
+    if not resultats:
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    return render_template(
+        "comparer_selection.html", projet=projet, resultats=resultats,
+        branche_cible_affichage=branche_cible_affichage,
+    )
+
+
 if __name__ == "__main__":
     import threading
     import webbrowser

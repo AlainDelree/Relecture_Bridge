@@ -73,9 +73,11 @@ L'interface est organisée en trois niveaux, chacun avec sa page :
    (nature du changement / intention probable / points d'attention) et
    le diff complet.
 
-Deux pages supplémentaires, atteintes depuis des boutons plutôt que
-depuis la navigation principale : **Comparer** et **Rapport** (section
-5).
+Pages supplémentaires, atteintes depuis des boutons plutôt que depuis la
+navigation principale : **Comparer**, **Rapport** (section 5), et
+**Comparer la sélection** (issue #47, section 5) — cette dernière
+uniquement depuis le panneau d'actions du niveau 2, sur une sélection de
+branches `recuperation-<hash>`.
 
 Une **barre latérale gauche**, présente sur toutes les pages (`base.html`),
 liste les noms de tous les projets avec un lien direct vers leur page
@@ -192,6 +194,26 @@ automatique ne suffit pas :
   attente pour ce projet. C'est exactement ce texte qu'un Claude Chat
   externe peut recevoir pour investiguer un commit que l'outil n'a pas
   pu trancher automatiquement.
+- **Comparer la sélection** (issue #47) — vérifie en une seule action
+  plusieurs branches `recuperation-<hash>` cochées (niveau « branches
+  d'un projet »), plutôt que de faire confiance au seul badge de
+  diagnostic ou de cliquer Comparer une par une : relance
+  `comparer_commit_doublon` pour chacune (réutilisation directe, aucune
+  nouvelle logique de comparaison) et affiche un résultat groupé, une
+  ligne par branche — diff vide (♻️ doublon confirmé), diff non vide
+  (⚠ à vérifier manuellement, avec un lien vers la page Comparer
+  individuelle pour le détail), ou commit vide (ℹ️ rien à comparer,
+  issue #45). Une branche sélectionnée qui ne suit pas la convention
+  `recuperation-<hash>` est ignorée avec un message flash, même
+  garde-fou que pour la suppression groupée (section 6). Route en
+  lecture seule malgré la méthode POST (nécessaire pour transmettre la
+  sélection) : aucune commande git de modification n'est déclenchée.
+  Seules les branches confirmées diff vide dans le résultat se voient
+  proposer un bouton de suppression groupée, qui réutilise directement
+  l'action « Supprimer la/les branche(s) de récupération » existante
+  (section 6, issue #29/#31/#40) — les autres restent à traiter
+  manuellement via le lien de détail, jamais incluses dans cette
+  suppression groupée.
 
 ## 6. La convention `recuperation-<hash>`
 
@@ -319,6 +341,7 @@ silencieuse.
 | **Sécuriser** (un commit ou tous) | Un commit orphelin, ou tous les commits orphelins d'un projet. | `git branch recuperation-<hash> <hash>` | Voir section 6 — geste purement défensif, idempotent. |
 | **Supprimer la/les branche(s) de récupération** | Une ou plusieurs branches sélectionnées suivant la convention `recuperation-<hash>`. | `git branch -D <nom>` | Voir section 6 — refus structurel si le nom ne suit pas exactement la convention, indépendamment du badge affiché. Supprime aussi les fichiers `Non_Lu/` de toute la chaîne de commits protégée par la branche, pas seulement le hash nommé. |
 | **Comparer** | Un commit orphelin (cas B), en lecture seule. | `git diff <hash1> <hash2>` (après localisation par `git patch-id`) | Aucune modification — voir section 5. |
+| **Comparer la sélection** | Une ou plusieurs branches `recuperation-<hash>` sélectionnées, en lecture seule. | `comparer_commit_doublon` (donc `git diff`/`git patch-id`) relancé pour chacune | Aucune modification — voir section 5. Branche hors convention `recuperation-<hash>` ignorée. Le bouton de suppression groupée proposé sur le résultat ne couvre que les branches confirmées diff vide. |
 | **Générer rapport** | Un commit non tranché (cas F, ou tout commit affiché sur une branche), en lecture seule. | `git cherry`, `git branch --contains`, `git branch -r --contains` (assemblés en texte) | Aucune modification — voir section 5. |
 | **Nettoyer tous les projets** | Tous les projets accessibles. | suppression de fichiers `Non_Lu/` (pas de commande git) | Ne supprime que les résumés dont le commit est déjà un ancêtre d'une branche **distante** (`git branch -r --contains`) — jamais un résumé dont le commit n'est pas encore réellement en sécurité sur GitHub. |
 

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block body %}
+<a href="{{ url_for('projet_route', nom_projet=projet.nom) }}" class="bouton-precedent">◀ Précédent</a>
+
+<header>
+  <p class="fil-ariane">
+    <a href="{{ url_for('index') }}">Projets</a> /
+    <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}">{{ projet.nom }}</a> /
+    comparer la sélection
+  </p>
+  <h1>Comparer la sélection — {{ resultats|length }} branche(s) de récupération</h1>
+  <p class="sous-titre">
+    Vérification groupée (issue #47) : même comparaison de contenu que le
+    bouton « Comparer » individuel (empreinte de patch <code>git patch-id</code>),
+    contre « {{ branche_cible_affichage or "branche cible non configurée" }} »,
+    lancée pour chacune des branches sélectionnées.
+  </p>
+</header>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+  <ul class="messages">
+    {% for categorie, message in messages %}
+    <li class="message message--{{ categorie }}">{{ message }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+{% endwith %}
+
+<ul class="liste-diagnostics">
+  {% for r in resultats %}
+  <li class="ligne-diagnostic">
+    <div class="ligne-diagnostic__entete">
+      <code class="hash">{{ r.hash }}</code>
+      <button type="button" class="bouton-copier" data-copier="{{ r.hash }}" title="Copier le hash">📋</button>
+      <span class="sujet">{{ r.sujet or ("commit " ~ r.hash) }}</span>
+      <span class="nom-branche">({{ r.nom_branche }})</span>
+      {% if r.statut == "doublon_confirme" %}
+      <span class="badge badge--doublon">♻️ diff vide — doublon confirmé</span>
+      {% elif r.statut == "vide" %}
+      <span class="badge badge--info">commit vide — rien à comparer</span>
+      {% else %}
+      <span class="badge badge--attention">⚠ diff non vide — à vérifier manuellement</span>
+      <a href="{{ url_for('comparer_commit_route', nom_projet=projet.nom, hash_commit=r.hash) }}"
+         class="bouton bouton--comparer lien-bouton">Voir le détail</a>
+      {% endif %}
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+
+{% set a_supprimer = resultats|selectattr("statut", "equalto", "doublon_confirme")|list %}
+{% if a_supprimer %}
+<form method="post" action="{{ url_for('supprimer_branches_recuperation_route', nom_projet=projet.nom) }}"
+      onsubmit="return confirm('Confirmer : supprimer définitivement la branche de récupération (et le(s) résumé(s) Non_Lu associé(s)) de {{ a_supprimer|length }} branche(s) confirmée(s) doublon (diff vide) ?\n\n' + [{% for r in a_supprimer %}'{{ r.nom_branche }}'{{ ', ' if not loop.last }}{% endfor %}].join('\n'));">
+  {% for r in a_supprimer %}
+  <input type="hidden" name="branches" value="{{ r.nom_branche }}">
+  {% endfor %}
+  <button type="submit" class="bouton bouton--supprimer">🗑️ Supprimer les {{ a_supprimer|length }} branche(s) confirmée(s) (diff vide)</button>
+</form>
+{% else %}
+<p class="statut">Aucune branche confirmée diff vide dans cette sélection — rien à supprimer en groupe, traitement manuel nécessaire pour celles listées ci-dessus.</p>
+{% endif %}
+
+{% endblock %}

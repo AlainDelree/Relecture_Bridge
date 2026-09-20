@@ -158,6 +158,8 @@
             class="bouton bouton--merger" id="bouton-merger">Merger dans {{ projet.branche_cible_comparaison }}</button>
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('supprimer_worktrees_route', nom_projet=projet.nom) }}"
             class="bouton bouton--supprimer" id="bouton-supprimer">Supprimer la/les branche(s) fusionnée(s)</button>
+    <button type="submit" form="form-actions-branches" formaction="{{ url_for('comparer_selection_route', nom_projet=projet.nom) }}"
+            class="bouton bouton--comparer" id="bouton-comparer-selection">Comparer la sélection</button>
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('supprimer_branches_recuperation_route', nom_projet=projet.nom) }}"
             class="bouton bouton--supprimer" id="bouton-supprimer-branche-recuperation">Supprimer la/les branche(s) de récupération</button>
   </div>
@@ -171,6 +173,7 @@
   var boutonPush = document.getElementById("bouton-push");
   var boutonMerger = document.getElementById("bouton-merger");
   var boutonSupprimer = document.getElementById("bouton-supprimer");
+  var boutonComparerSelection = document.getElementById("bouton-comparer-selection");
   var boutonSupprimerBranche = document.getElementById("bouton-supprimer-branche-recuperation");
   var form = document.getElementById("form-actions-branches");
 
@@ -184,6 +187,7 @@
     compteur.textContent = selection.length;
     boutonMerger.disabled = !selection.some(function (c) { return c.dataset.peutMerger === "1"; });
     boutonSupprimer.disabled = !selection.some(function (c) { return c.dataset.peutSupprimer === "1"; });
+    boutonComparerSelection.disabled = !selection.some(function (c) { return c.dataset.peutSupprimerBranche === "1"; });
     boutonSupprimerBranche.disabled = !selection.some(function (c) { return c.dataset.peutSupprimerBranche === "1"; });
   }
 
@@ -204,12 +208,20 @@
         lignes.push(c.dataset.commandeSuppression);
       } else if (evenement.submitter === boutonSupprimerBranche && c.dataset.peutSupprimerBranche === "1") {
         lignes.push(c.dataset.commandeSuppressionBranche);
+      } else if (evenement.submitter === boutonComparerSelection && c.dataset.peutSupprimerBranche === "1") {
+        lignes.push(c.dataset.nom);
       }
     });
 
     if (lignes.length === 0) {
       alert("Aucune branche sélectionnée n'est éligible pour cette action.");
       evenement.preventDefault();
+      return;
+    }
+
+    if (evenement.submitter === boutonComparerSelection) {
+      // Action de lecture seule (aucune commande git de modification) : pas
+      // de confirmation, contrairement aux autres actions de ce panneau.
       return;
     }
 
