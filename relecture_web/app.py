@@ -462,10 +462,13 @@ def projet_route(nom_projet):
         # Une branche fusionnée reste supprimable même sans worktree associé
         # (retiré manuellement entre-temps) : `git worktree remove` n'a alors
         # plus rien à retirer, donc bascule sur `git branch -D` directement
-        # (issue #43) — même bouton, seule la commande sous-jacente diffère.
+        # (issue #43) — même bouton. Si le worktree existe encore, les deux
+        # commandes s'enchaînent dans le même clic (issue #54), d'où
+        # l'aperçu combiné affiché avant confirmation.
         branche["peut_supprimer"] = branche["mergee"] and not branche["est_principale"]
         branche["commande_suppression"] = (
             f"git -C {projet['repertoire']} worktree remove {branche['chemin_worktree']}"
+            f" && git -C {projet['repertoire']} branch -D {branche['nom']}"
             if branche["peut_supprimer"] and branche["a_un_worktree"]
             else f"git -C {projet['repertoire']} branch -D {branche['nom']}"
             if branche["peut_supprimer"]
@@ -708,10 +711,13 @@ def supprimer_worktrees_route(nom_projet):
     """Supprime chaque branche sélectionnée (case à cocher, niveau 2),
     seulement si son merge est confirmé — même garde-fou qu'avant (issue
     précédente), rattaché à la sélection plutôt qu'à l'affichage par
-    worktree. Si la branche a encore un worktree, le retire (`git worktree
-    remove`) ; sinon (worktree déjà retiré manuellement, ne laissant que la
-    branche), supprime directement la branche (`git branch -D`) — même
-    bouton, même garde-fou `mergee`, seule la commande diffère (issue #43)."""
+    worktree. Si la branche a encore un worktree, retire le worktree
+    (`git worktree remove`) PUIS la branche (`git branch -D`) dans le même
+    geste — sans quoi il fallait recliquer une seconde fois pour que la
+    branche, désormais sans worktree détecté, tombe enfin sous le second cas
+    (issue #54). Si le worktree n'existe déjà plus (retiré manuellement),
+    supprime directement la branche — même bouton, même garde-fou `mergee`,
+    seule la commande diffère (issue #43)."""
     noms_branches = request.form.getlist("branches")
     projet, message_erreur = _projet_pret(nom_projet)
     if not projet:
@@ -740,13 +746,32 @@ def supprimer_worktrees_route(nom_projet):
             )
             continue
         if branche["a_un_worktree"]:
-            resultat = supprimer_worktree(projet["repertoire"], branche["chemin_worktree"])
-            libelle = f"Worktree de « {nom} » supprimé"
-        else:
-            resultat = supprimer_branche(projet["repertoire"], nom)
-            libelle = f"Branche « {nom} » supprimée"
+            resultat_worktree = supprimer_worktree(projet["repertoire"], branche["chemin_worktree"])
+            if not resultat_worktree["ok"]:
+                flash(
+                    f"❌ Échec de la suppression de « {nom} » ({resultat_worktree['commande']}) : "
+                    f"{resultat_worktree['erreur']}",
+                    "erreur",
+                )
+                continue
+            resultat_branche = supprimer_branche(projet["repertoire"], nom)
+            if resultat_branche["ok"]:
+                flash(
+                    f"✅ Worktree et branche « {nom} » supprimés — {resultat_worktree['commande']} "
+                    f"+ {resultat_branche['commande']}",
+                    "succes",
+                )
+            else:
+                flash(
+                    f"⚠️ Worktree de « {nom} » supprimé ({resultat_worktree['commande']}), mais la "
+                    f"branche n'a pas pu être supprimée ({resultat_branche['commande']}) : "
+                    f"{resultat_branche['erreur']}",
+                    "erreur",
+                )
+            continue
+        resultat = supprimer_branche(projet["repertoire"], nom)
         if resultat["ok"]:
-            flash(f"✅ {libelle} — {resultat['commande']}", "succes")
+            flash(f"✅ Branche « {nom} » supprimée — {resultat['commande']}", "succes")
         else:
             flash(f"❌ Échec de la suppression de « {nom} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
     return redirect(url_for("projet_route", nom_projet=nom_projet))
