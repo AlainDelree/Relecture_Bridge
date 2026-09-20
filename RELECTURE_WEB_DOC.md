@@ -108,7 +108,7 @@ sous un hash différent (rebase, cherry-pick, réécriture manuelle).
 - `-` en préfixe → contenu déjà présent sous un autre hash → **cas B :
   doublon, nettoyable**.
 
-Ce principe de base est affiné par quatre cas supplémentaires :
+Ce principe de base est affiné par cinq cas supplémentaires :
 
 | Cas | Signification | Badge affiché |
 |---|---|---|
@@ -118,6 +118,7 @@ Ce principe de base est affiné par quatre cas supplémentaires :
 | **D** | Le commit ne modifie aucun fichier (commit de backup `--allow-empty`, comme ceux que CCL fait avant chaque modification). Exclu du diagnostic. | commit vide — exclu |
 | **E** | Aucune branche cible de comparaison n'est configurée pour ce projet (section 7) — rien à comparer, aucun verdict deviné. | branche cible à configurer |
 | **F** | `git cherry` échoue, ou renvoie une sortie inattendue pour ce commit — cas ambigu, aucun verdict automatique. | ⚠ ambigu — à traiter manuellement, avec un bouton **Générer rapport** |
+| **M** | Plusieurs branches cibles sont configurées pour ce projet (section 7, liste plutôt que chaîne unique). Deviner automatiquement la plus pertinente pour chaque commit orphelin croiserait chaque commit avec chaque branche candidate (`git cherry`/`merge-base`) — un coût qui a fait échouer par timeout une tentative en ce sens sur un historique volumineux (`scrabble`, issue #46). Aucune commande git supplémentaire n'est lancée : aucun verdict A-F deviné. | plusieurs cibles configurées pour ce projet — vérification manuelle nécessaire via Comparer, avec un bouton **Comparer** |
 
 **Nuance sur le cas A** : `git cherry` compare des diffs, pas des
 messages. Un doublon *réimplémenté différemment* (variables renommées,
@@ -166,19 +167,23 @@ Deux actions, toujours en lecture seule (aucune commande git de
 modification n'est déclenchée), pensées pour les cas où le diagnostic
 automatique ne suffit pas :
 
-- **Comparer** (cas B, doublon confirmé) — retrouve, dans la branche
-  cible, le commit dont l'empreinte de patch (`git patch-id --stable`,
-  qui identifie un contenu de diff indépendamment du hash) correspond
-  exactement au commit orphelin, puis affiche le `git diff` entre les
-  deux. Un diff vide confirme visuellement le doublon. Si aucune
-  empreinte ne correspond exactement (contenu légèrement retouché
-  entre-temps malgré le verdict « doublon » de `git cherry`), la page
-  l'indique explicitement plutôt que d'afficher un mauvais candidat. Si
-  le commit orphelin lui-même est vide (backup `--allow-empty`), la
-  page ne tente même pas la recherche par empreinte de patch : elle
-  l'indique directement (« commit vide — rien à comparer, aucune action
-  requise »), pour ne pas laisser croire à un doute sur son contenu
-  (issue #45).
+- **Comparer** (cas B, doublon confirmé — également proposé sur le cas M
+  pour une vérification manuelle) — retrouve, dans la branche cible, le
+  commit dont l'empreinte de patch (`git patch-id --stable`, qui identifie
+  un contenu de diff indépendamment du hash) correspond exactement au
+  commit orphelin, puis affiche le `git diff` entre les deux. Un diff vide
+  confirme visuellement le doublon. Si aucune empreinte ne correspond
+  exactement (contenu légèrement retouché entre-temps malgré le verdict
+  « doublon » de `git cherry`), la page l'indique explicitement plutôt que
+  d'afficher un mauvais candidat. Si le commit orphelin lui-même est vide
+  (backup `--allow-empty`), la page ne tente même pas la recherche par
+  empreinte de patch : elle l'indique directement (« commit vide — rien à
+  comparer, aucune action requise »), pour ne pas laisser croire à un
+  doute sur son contenu (issue #45). Pour un projet à plusieurs cibles
+  configurées (cas M, section 7), un seul commit étant en jeu, essayer
+  chaque branche candidate tour à tour reste négligeable — contrairement
+  au diagnostic automatique, ce bouton essaie donc chaque cible jusqu'à
+  trouver une correspondance (issue #46).
 - **Générer rapport** (cas F, ambigu, mais disponible sur tout commit)
   — assemble un texte prêt à copier-coller dans une conversation Claude
   Chat dédiée au projet : hash, message, résumé fonctionnel déjà
@@ -264,12 +269,18 @@ non.
   `charger_branches_cibles()`/`get_branche_cible_comparaison()`
   retournent une **liste** de branches plutôt qu'une chaîne unique
   (repli inchangé — chaîne unique — pour les projets à une seule
-  cible ou sans configuration). **La logique de diagnostic en aval
-  (`collect_etat_projets`, `est_branche_mergee`, etc.) ne sait pas
-  encore choisir entre plusieurs cibles** : déclarer plusieurs
-  branches pour un projet fait planter la génération de la page tant
-  que cette suite (issue séparée) n'est pas traitée — ne pas activer
-  une entrée multi-cibles avant.
+  cible ou sans configuration).
+  Le diagnostic des commits orphelins (cas M ci-dessus, issue #46) et le
+  bouton Comparer (essaie chaque branche candidate tour à tour, issue #46)
+  savent gérer une liste sans deviner ni planter. **Le reste de la logique
+  en aval (liste des branches d'un projet, badge « fusionnée », fusion
+  d'une branche — `get_branches_locales`, `est_branche_mergee`,
+  `get_diagnostic_doublons_branche`) ne sait, elle, pas encore choisir
+  entre plusieurs cibles** : déclarer plusieurs branches pour un projet
+  fait toujours planter la génération de la page `/projet/<nom>` (qui
+  affiche aussi cette liste de branches) tant que cette suite (issue
+  séparée) n'est pas traitée — ne pas activer une entrée multi-cibles
+  avant que l'ensemble de la page soit couvert.
 - **Ce fichier suit le même statut que les `configs/*.conf` de
   Bridge_Agent** : CCL ne le modifie jamais de sa propre initiative,
   même sur demande explicite d'une issue — seul Alain l'édite à la

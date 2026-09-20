@@ -30,11 +30,19 @@
 {% if projet.diagnostics_orphelins %}
 <section class="diagnostic-orphelins">
   <h2>Commits orphelins — diagnostic automatique</h2>
+  {% if projet.branche_cible_comparaison is string %}
   <p class="sous-titre">
     Comparaison de contenu (<code>git cherry</code>) contre la branche cible
     {% if projet.branche_cible_comparaison %}« {{ projet.branche_cible_comparaison }} »{% else %}non configurée{% endif %}
     — pas par hash ni par message de commit.
   </p>
+  {% else %}
+  <p class="sous-titre">
+    Plusieurs branches cibles configurées pour ce projet — pas de comparaison
+    automatique (<code>git cherry</code>), vérification manuelle nécessaire via
+    « Comparer » pour chaque commit ci-dessous.
+  </p>
+  {% endif %}
   <form method="post" action="{{ url_for('securiser_tous_orphelins_route', nom_projet=projet.nom) }}"
         onsubmit="return confirm('Sécuriser tous les commits orphelins de {{ projet.nom }} ?\n\nGeste défensif pur : ne fusionne ni ne modifie rien. Les commits déjà sécurisés sont simplement ignorés.');">
     <button type="submit" class="bouton bouton--securiser">🔒 Sécuriser tous les commits orphelins</button>
@@ -55,6 +63,9 @@
            class="bouton bouton--comparer lien-bouton">Comparer</a>
         {% elif d.cas == "D" %}<span class="badge badge--info">commit vide — exclu</span>
         {% elif d.cas == "E" %}<span class="badge badge--info">branche cible à configurer</span>
+        {% elif d.cas == "M" %}<span class="badge badge--info">plusieurs cibles configurées pour ce projet — vérification manuelle nécessaire via Comparer</span>
+        <a href="{{ url_for('comparer_commit_route', nom_projet=projet.nom, hash_commit=d.hash) }}"
+           class="bouton bouton--comparer lien-bouton">Comparer</a>
         {% elif d.cas == "F" %}<span class="badge badge--attention">⚠ ambigu — à traiter manuellement</span>
         <a href="{{ url_for('rapport_commit_route', nom_projet=projet.nom, hash_commit=d.hash) }}"
            class="bouton bouton--rapport lien-bouton">Générer rapport</a>

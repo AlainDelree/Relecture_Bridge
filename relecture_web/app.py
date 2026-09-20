@@ -269,13 +269,16 @@ def comparer_commit_route(nom_projet, hash_commit):
 
     repertoire = projet["repertoire"]
     branche_cible = projet["branche_cible_comparaison"]
+    branche_cible_affichage = (
+        " ou ".join(branche_cible) if isinstance(branche_cible, list) else branche_cible
+    )
     sujet = get_sujet_commit(repertoire, hash_commit)
     comparaison = comparer_commit_doublon(repertoire, branche_cible, hash_commit)
 
     return render_template(
         "comparer.html", projet=projet, hash_commit=hash_commit, sujet=sujet,
-        branche_cible=branche_cible, comparaison=comparaison,
-        nom_branche=nom_branche,
+        branche_cible=branche_cible, branche_cible_affichage=branche_cible_affichage,
+        comparaison=comparaison, nom_branche=nom_branche,
     )
 
 

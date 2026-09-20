@@ -388,12 +388,29 @@ def trouver_commit_correspondant(repertoire, branche_cible, hash_commit):
     périmètre de comparaison que celui utilisé par `git cherry` lui-même),
     pas tout l'historique du dépôt.
 
+    `branche_cible` peut être une liste (projet à plusieurs cibles
+    configurées, issue #41/#46) : contrairement au diagnostic automatique
+    (case 'M', voir `diagnostiquer_commits_orphelins`) qui évite tout calcul
+    supplémentaire sur l'ensemble des commits orphelins, une recherche
+    déclenchée à la demande par le bouton « Comparer » ne porte que sur un
+    seul commit — essayer chaque branche candidate à tour de rôle reste donc
+    négligeable, et permet au bouton de rester utilisable tel quel dans ce
+    cas plutôt que d'échouer.
+
     Retourne le hash exact trouvé, ou None si aucune empreinte ne
     correspond — contenu légèrement retouché entre-temps malgré le verdict
-    « doublon » de `git cherry`, ou branche cible non configurée. À
-    l'appelant de distinguer ce cas plutôt que d'afficher un mauvais
-    candidat (voir `comparer_commit_doublon`)."""
+    « doublon » de `git cherry`, aucune branche candidate ne contenant ce
+    contenu, ou branche cible non configurée. À l'appelant de distinguer ce
+    cas plutôt que d'afficher un mauvais candidat (voir
+    `comparer_commit_doublon`)."""
     if not branche_cible:
+        return None
+
+    if isinstance(branche_cible, list):
+        for candidate in branche_cible:
+            trouve = trouver_commit_correspondant(repertoire, candidate, hash_commit)
+            if trouve:
+                return trouve
         return None
 
     base = _lancer_git(repertoire, "merge-base", branche_cible, hash_commit)
@@ -465,11 +482,14 @@ def comparer_commit_doublon(repertoire, branche_cible, hash_commit):
 
     hash_correspondant = trouver_commit_correspondant(repertoire, branche_cible, hash_commit)
     if not hash_correspondant:
+        cibles_affichees = (
+            " ou ".join(branche_cible) if isinstance(branche_cible, list) else branche_cible
+        )
         message_absence = (
             "Branche cible de comparaison non configurée pour ce projet."
             if not branche_cible else
             "Aucun commit correspondant précis n'a pu être identifié automatiquement dans "
-            f"« {branche_cible} » (empreinte de patch différente de tous les commits comparés "
+            f"« {cibles_affichees} » (empreinte de patch différente de tous les commits comparés "
             "— le contenu a peut-être été légèrement retouché entre-temps, malgré le verdict "
             "« doublon » de git cherry)."
         )
@@ -508,6 +528,14 @@ def diagnostiquer_commits_orphelins(repertoire, branche_cible, hashes_orphelins)
     """Classe chaque commit orphelin `hashes_orphelins` (aucune branche
     locale ne le contient, voir `regrouper_resumes_par_branche`) selon la
     table de l'issue #21, à l'aide de `git cherry` contre `branche_cible` :
+      - 'M' si plusieurs branches cibles sont configurées pour le projet
+        (`branche_cible` est une liste, issue #41) : choisir automatiquement
+        la plus pertinente impliquerait de croiser chaque commit orphelin
+        avec chaque branche candidate (`git cherry`/`merge-base`), un coût
+        qui a déjà fait échouer par timeout une tentative en ce sens sur un
+        historique volumineux (`scrabble`, issue #46) — on ne devine rien,
+        aucune commande git supplémentaire n'est lancée, la vérification
+        reste manuelle via le bouton « Comparer » (issue #30/#32) ;
       - 'E' si `branche_cible` n'est pas configurée (rien à comparer, on ne
         devine rien) ;
       - 'D' si le commit lui-même ne modifie aucun fichier (backup) ;
@@ -527,6 +555,12 @@ def diagnostiquer_commits_orphelins(repertoire, branche_cible, hashes_orphelins)
 
     Retourne une liste de diagnostics {hash, cas, chaine, orphelins_absorbes},
     un par commit orphelin non absorbé dans la chaîne d'un autre."""
+    if isinstance(branche_cible, list):
+        return [
+            {"hash": h, "cas": "M", "chaine": [], "orphelins_absorbes": []}
+            for h in hashes_orphelins
+        ]
+
     if not branche_cible:
         return [
             {"hash": h, "cas": "E", "chaine": [], "orphelins_absorbes": []}
