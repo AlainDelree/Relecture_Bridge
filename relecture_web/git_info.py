@@ -445,14 +445,38 @@ def get_remote_defaut(repertoire):
     return noms[0] if noms else "origin"
 
 
-def fusionner_worktree(repertoire, branche):
-    """Fusionne `branche` dans la branche courante de `repertoire` (comme un
-    `git merge` manuel lancé depuis le worktree principal), sans jamais
-    pousser. Retourne {ok, erreur, commande} pour affichage transparent."""
-    commande = ["git", "-C", repertoire, "merge", branche]
+def fusionner_worktree(repertoire, branche_cible, branche_source):
+    """Fusionne `branche_source` dans `branche_cible` (comme un `git merge`
+    manuel), sans jamais pousser. Si `branche_cible` n'est pas la branche
+    actuellement extraite dans `repertoire` (projet avec une branche cible
+    de comparaison différente de la branche principale git — voir
+    `get_branche_cible_comparaison`, issue #20), bascule dessus le temps de
+    la fusion puis revient sur la branche d'origine, seule façon de
+    fusionner dans une branche qui n'a pas de worktree dédié déjà extrait
+    dessus. Un conflit laisse volontairement le dépôt sur `branche_cible`
+    en état de fusion non résolue (pas de retour en arrière), pour ne pas
+    perdre l'information. Retourne {ok, erreur, commande} pour affichage
+    transparent."""
+    branche_courante = get_branche_courante(repertoire)
+    doit_basculer = branche_courante is not None and branche_courante != branche_cible
+
+    if doit_basculer:
+        bascule = _lancer_git(repertoire, "checkout", branche_cible)
+        if bascule.returncode != 0:
+            return {
+                "ok": False,
+                "erreur": (bascule.stderr or bascule.stdout).strip(),
+                "commande": f"git -C {repertoire} checkout {branche_cible}",
+            }
+
+    commande = ["git", "-C", repertoire, "merge", branche_source]
     resultat = subprocess.run(
         commande, capture_output=True, text=True, timeout=TIMEOUT_GIT,
     )
+
+    if doit_basculer and resultat.returncode == 0:
+        _lancer_git(repertoire, "checkout", branche_courante)
+
     return {
         "ok": resultat.returncode == 0,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,

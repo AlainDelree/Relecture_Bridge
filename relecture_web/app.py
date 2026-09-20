@@ -255,15 +255,22 @@ def projet_route(nom_projet):
 
     remote = get_remote_defaut(projet["repertoire"])
     branches = get_branches_locales(projet["repertoire"])
+    branche_cible_merge = projet["branche_cible_comparaison"]
     for branche in branches:
         branche["nb_resumes"] = len(resumes_par_branche.get(branche["nom"], []))
         branche["est_principale"] = branche["nom"] == projet["branche_principale"]
         branche["commande_push"] = f"git -C {projet['repertoire']} push {remote} {branche['nom']}"
 
-        branche["peut_merger"] = not branche["est_principale"]
-        branche["commande_merge"] = (
-            f"git -C {projet['repertoire']} merge {branche['nom']}" if branche["peut_merger"] else None
-        )
+        branche["peut_merger"] = branche["nom"] != branche_cible_merge
+        if not branche["peut_merger"]:
+            branche["commande_merge"] = None
+        elif branche_cible_merge == projet["branche_principale"]:
+            branche["commande_merge"] = f"git -C {projet['repertoire']} merge {branche['nom']}"
+        else:
+            branche["commande_merge"] = (
+                f"git -C {projet['repertoire']} checkout {branche_cible_merge} && "
+                f"git merge {branche['nom']} && git checkout {projet['branche_principale']}"
+            )
 
         branche["peut_supprimer"] = (
             branche["a_un_worktree"] and branche["mergee"] and not branche["est_principale"]
@@ -401,8 +408,11 @@ def pousser_branches_route(nom_projet):
 @app.route("/projet/<nom_projet>/merger", methods=["POST"])
 def merger_branches_route(nom_projet):
     """Fusionne chaque branche sélectionnée (case à cocher, niveau 2) dans la
-    branche principale — action rattachée à la sélection de branches plutôt
-    qu'à un worktree affiché individuellement (issue #12)."""
+    branche cible de comparaison configurée pour le projet (repli sur la
+    branche principale git si aucune configuration explicite — voir
+    `get_branche_cible_comparaison`, issue #20 ; issue #24) — action
+    rattachée à la sélection de branches plutôt qu'à un worktree affiché
+    individuellement (issue #12)."""
     noms_branches = request.form.getlist("branches")
     projet, message_erreur = _projet_pret(nom_projet)
     if not projet:
@@ -412,18 +422,18 @@ def merger_branches_route(nom_projet):
         flash("❌ Aucune branche sélectionnée.", "erreur")
         return redirect(url_for("projet_route", nom_projet=nom_projet))
 
-    branche_principale = projet["branche_principale"]
+    branche_cible = projet["branche_cible_comparaison"]
     branches = _branches_par_nom(projet["repertoire"])
     for nom in noms_branches:
         if nom not in branches:
             flash(f"❌ Branche « {nom} » introuvable.", "erreur")
             continue
-        if nom == branche_principale:
-            flash(f"❌ « {nom} » est la branche principale, fusion ignorée.", "erreur")
+        if nom == branche_cible:
+            flash(f"❌ « {nom} » est la branche cible de fusion, fusion ignorée.", "erreur")
             continue
-        resultat = fusionner_worktree(projet["repertoire"], nom)
+        resultat = fusionner_worktree(projet["repertoire"], branche_cible, nom)
         if resultat["ok"]:
-            flash(f"✅ « {nom} » fusionnée dans « {branche_principale} » — {resultat['commande']}", "succes")
+            flash(f"✅ « {nom} » fusionnée dans « {branche_cible} » — {resultat['commande']}", "succes")
         else:
             flash(f"❌ Échec de la fusion de « {nom} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
     return redirect(url_for("projet_route", nom_projet=nom_projet))

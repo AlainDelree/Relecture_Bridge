@@ -127,7 +127,7 @@
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('pousser_branches_route', nom_projet=projet.nom) }}"
             class="bouton bouton--push" id="bouton-push">Push</button>
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('merger_branches_route', nom_projet=projet.nom) }}"
-            class="bouton bouton--merger" id="bouton-merger">Merger dans {{ projet.branche_principale }}</button>
+            class="bouton bouton--merger" id="bouton-merger">Merger dans {{ projet.branche_cible_comparaison }}</button>
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('supprimer_worktrees_route', nom_projet=projet.nom) }}"
             class="bouton bouton--supprimer" id="bouton-supprimer">Supprimer le(s) worktree(s)</button>
   </div>
