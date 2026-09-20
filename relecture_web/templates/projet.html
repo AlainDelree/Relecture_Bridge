@@ -46,6 +46,8 @@
         <span class="badge badge--attention">⚠ peut-être déjà traité sous une autre forme — issue #{{ d.numero_issue }} déjà référencée dans « {{ projet.branche_cible_comparaison }} »</span>
         {% endif %}
         {% elif d.cas == "B" %}<span class="badge badge--doublon">♻️ doublon — nettoyable</span>
+        <a href="{{ url_for('comparer_commit_route', nom_projet=projet.nom, hash_commit=d.hash) }}"
+           class="bouton bouton--comparer lien-bouton">Comparer</a>
         {% elif d.cas == "D" %}<span class="badge badge--info">commit vide — exclu</span>
         {% elif d.cas == "E" %}<span class="badge badge--info">branche cible à configurer</span>
         {% elif d.cas == "F" %}<span class="badge badge--attention">⚠ ambigu — à traiter manuellement</span>

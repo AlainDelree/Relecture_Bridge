@@ -336,6 +336,133 @@ def get_rapport_cherry_brut(repertoire, branche_cible, hash_commit):
     }
 
 
+def get_patch_id_commit(repertoire, hash_commit):
+    """Empreinte de patch (`git patch-id --stable`) du contenu introduit par
+    `hash_commit` — compare le contenu réel du diff, indépendamment du hash
+    ou du message de commit (même principe que `git cherry`, voir
+    `get_chaine_cherry`), utilisée pour retrouver précisément quel commit de
+    la branche cible correspond à un commit orphelin diagnostiqué doublon
+    (cas B, bouton « Comparer », issue #30). Retourne None si le commit est
+    introuvable ou si le calcul échoue."""
+    diff = subprocess.run(
+        ["git", "-C", repertoire, "show", "--no-color", hash_commit],
+        capture_output=True, text=True, timeout=TIMEOUT_GIT,
+    )
+    if diff.returncode != 0:
+        return None
+    patch_id = subprocess.run(
+        ["git", "-C", repertoire, "patch-id", "--stable"],
+        input=diff.stdout, capture_output=True, text=True, timeout=TIMEOUT_GIT,
+    )
+    if patch_id.returncode != 0:
+        return None
+    lignes = patch_id.stdout.strip().splitlines()
+    return lignes[0].split()[0] if lignes else None
+
+
+def trouver_commit_correspondant(repertoire, branche_cible, hash_commit):
+    """Retrouve, dans `branche_cible`, le commit dont le contenu (empreinte
+    de patch, `git patch-id`) correspond exactement à `hash_commit` (bouton
+    « Comparer », issue #30) — répond à la question que le diagnostic cas B
+    (voir `_diagnostiquer_commit`) laisse ouverte : `git cherry` indique
+    qu'un contenu équivalent existe déjà dans `branche_cible` sans jamais
+    dire sous quel hash précis. Ne cherche que parmi les commits propres à
+    `branche_cible` depuis sa base commune avec `hash_commit` (même
+    périmètre de comparaison que celui utilisé par `git cherry` lui-même),
+    pas tout l'historique du dépôt.
+
+    Retourne le hash exact trouvé, ou None si aucune empreinte ne
+    correspond — contenu légèrement retouché entre-temps malgré le verdict
+    « doublon » de `git cherry`, ou branche cible non configurée. À
+    l'appelant de distinguer ce cas plutôt que d'afficher un mauvais
+    candidat (voir `comparer_commit_doublon`)."""
+    if not branche_cible:
+        return None
+
+    base = _lancer_git(repertoire, "merge-base", branche_cible, hash_commit)
+    if base.returncode != 0 or not base.stdout.strip():
+        return None
+    base_commune = base.stdout.strip()
+
+    patch_id_cible = get_patch_id_commit(repertoire, hash_commit)
+    if not patch_id_cible:
+        return None
+
+    log = subprocess.run(
+        ["git", "-C", repertoire, "log", "--no-color", "-p", f"{base_commune}..{branche_cible}"],
+        capture_output=True, text=True, timeout=TIMEOUT_GIT,
+    )
+    if log.returncode != 0 or not log.stdout.strip():
+        return None
+
+    patch_ids = subprocess.run(
+        ["git", "-C", repertoire, "patch-id", "--stable"],
+        input=log.stdout, capture_output=True, text=True, timeout=TIMEOUT_GIT,
+    )
+    if patch_ids.returncode != 0:
+        return None
+
+    for ligne in patch_ids.stdout.splitlines():
+        empreinte, _, sha = ligne.strip().partition(" ")
+        if empreinte == patch_id_cible and sha.strip():
+            return sha.strip()
+    return None
+
+
+def get_diff_entre_commits(repertoire, hash_a, hash_b):
+    """Diff complet entre deux commits (`git diff`), pour affichage brut
+    (bouton « Comparer », issue #30) — pour un vrai doublon détecté par
+    `trouver_commit_correspondant`, attendu vide ou quasi vide. Retourne
+    None si la commande git échoue."""
+    resultat = subprocess.run(
+        ["git", "-C", repertoire, "diff", "--no-color", hash_a, hash_b],
+        capture_output=True, text=True, timeout=TIMEOUT_GIT,
+    )
+    if resultat.returncode != 0:
+        return None
+    return resultat.stdout
+
+
+def comparer_commit_doublon(repertoire, branche_cible, hash_commit):
+    """Assemble la comparaison affichée par le bouton « Comparer » (issue
+    #30) pour un commit orphelin diagnostiqué doublon (cas B) : retrouve le
+    commit correspondant exact de `branche_cible` (via
+    `trouver_commit_correspondant`) et le diff entre les deux (via
+    `get_diff_entre_commits`). Distingue explicitement l'absence de
+    correspondance exacte d'un échec technique, pour ne jamais afficher un
+    mauvais candidat ni échouer silencieusement — décision de principe du
+    chantier : le diagnostic automatique aide à prioriser, il ne doit
+    jamais empêcher une vérification humaine directe.
+
+    Retourne {trouve, hash_correspondant, sujet_correspondant, diff,
+    message_absence}."""
+    hash_correspondant = trouver_commit_correspondant(repertoire, branche_cible, hash_commit)
+    if not hash_correspondant:
+        message_absence = (
+            "Branche cible de comparaison non configurée pour ce projet."
+            if not branche_cible else
+            "Aucun commit correspondant précis n'a pu être identifié automatiquement dans "
+            f"« {branche_cible} » (empreinte de patch différente de tous les commits comparés "
+            "— le contenu a peut-être été légèrement retouché entre-temps, malgré le verdict "
+            "« doublon » de git cherry)."
+        )
+        return {
+            "trouve": False,
+            "hash_correspondant": None,
+            "sujet_correspondant": None,
+            "diff": None,
+            "message_absence": message_absence,
+        }
+
+    return {
+        "trouve": True,
+        "hash_correspondant": hash_correspondant,
+        "sujet_correspondant": get_sujet_commit(repertoire, hash_correspondant),
+        "diff": get_diff_entre_commits(repertoire, hash_commit, hash_correspondant),
+        "message_absence": None,
+    }
+
+
 def get_branches_distantes_contenant(repertoire, hash_commit):
     """Branches distantes (remote-tracking) contenant `hash_commit` (`git
     branch -r --contains`) — pendant côté distant de `get_branches_contenant`,

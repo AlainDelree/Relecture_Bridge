@@ -21,6 +21,7 @@ from flask import Flask, flash, redirect, render_template, request, url_for
 from git_info import (
     ErreurRecuperationProjets,
     collect_etat_projets,
+    comparer_commit_doublon,
     commit_est_securise,
     diagnostiquer_commits_orphelins,
     extraire_numero_issue,
@@ -207,6 +208,31 @@ def rapport_commit_route(nom_projet, hash_commit):
         cherry, branches_locales, branches_distantes, autres_orphelins,
     )
     return render_template("rapport.html", projet=projet, hash_commit=hash_commit, rapport=rapport)
+
+
+@app.route("/projet/<nom_projet>/comparer/<hash_commit>")
+def comparer_commit_route(nom_projet, hash_commit):
+    """Bouton « Comparer » (issue #30) pour un commit orphelin diagnostiqué
+    doublon (cas B) : retrouve le commit exact de la branche cible dont le
+    contenu correspond (empreinte de patch `git patch-id`, voir
+    `comparer_commit_doublon`), et affiche le diff entre les deux — pour une
+    vérification humaine directe, sans deviner de candidat ni lancer de
+    commande manuelle. Route en lecture seule (GET), aucune action git
+    déclenchée."""
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+
+    repertoire = projet["repertoire"]
+    branche_cible = projet["branche_cible_comparaison"]
+    sujet = get_sujet_commit(repertoire, hash_commit)
+    comparaison = comparer_commit_doublon(repertoire, branche_cible, hash_commit)
+
+    return render_template(
+        "comparer.html", projet=projet, hash_commit=hash_commit, sujet=sujet,
+        branche_cible=branche_cible, comparaison=comparaison,
+    )
 
 
 @app.route("/projet/<nom_projet>/orphelin/<hash_commit>/securiser", methods=["POST"])

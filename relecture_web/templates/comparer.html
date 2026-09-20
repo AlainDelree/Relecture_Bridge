@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block body %}
+<a href="{{ url_for('projet_route', nom_projet=projet.nom) }}" class="bouton-precedent">◀ Précédent</a>
+
+<header>
+  <p class="fil-ariane">
+    <a href="{{ url_for('index') }}">Projets</a> /
+    <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}">{{ projet.nom }}</a> /
+    comparer
+  </p>
+  <h1>Comparer — <code class="hash">{{ hash_commit }}</code></h1>
+  <p class="sous-titre">
+    Vérification directe d'un commit orphelin diagnostiqué doublon : recherche,
+    dans « {{ branche_cible or "branche cible non configurée" }} », du commit
+    dont le contenu correspond exactement (empreinte de patch
+    <code>git patch-id</code>), puis diff entre les deux.
+  </p>
+</header>
+
+<p class="dernier-commit">
+  Commit orphelin : <code class="hash">{{ hash_commit }}</code> {{ sujet or "(sujet introuvable)" }}
+</p>
+
+{% if comparaison.trouve %}
+<p class="dernier-commit">
+  Commit correspondant dans « {{ branche_cible }} » :
+  <code class="hash">{{ comparaison.hash_correspondant }}</code>
+  {{ comparaison.sujet_correspondant or "(sujet introuvable)" }}
+</p>
+
+<h2>Diff entre les deux commits</h2>
+{% if comparaison.diff %}
+<pre class="brut">{{ comparaison.diff }}</pre>
+{% else %}
+<p class="statut">Diff vide — contenu strictement identique, doublon confirmé.</p>
+{% endif %}
+{% else %}
+<p class="erreur">❌ {{ comparaison.message_absence }}</p>
+{% endif %}
+
+{% endblock %}
