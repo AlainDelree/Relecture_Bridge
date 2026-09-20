@@ -128,6 +128,7 @@ def est_branche_mergee(repertoire, branche_principale, branche):
     de `repertoire` — c'est-à-dire intégralement fusionnée, condition requise
     avant de proposer la suppression d'un worktree.
 
+
     `branche_principale` peut être une liste (projet à plusieurs cibles
     configurées, issue #41/#50) : `branche` est alors considérée fusionnée
     dès qu'elle est ancêtre d'au moins une des candidates — un

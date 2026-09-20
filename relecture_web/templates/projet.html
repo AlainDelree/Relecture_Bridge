@@ -122,6 +122,7 @@
                data-commande-push="{{ b.commande_push }}"
                data-peut-merger="{{ '1' if b.peut_merger else '0' }}"
                data-commande-merge="{{ b.commande_merge or '' }}"
+               data-commandes-merge='{{ (b.commandes_merge or {})|tojson }}'
                data-peut-supprimer="{{ '1' if b.peut_supprimer else '0' }}"
                data-commande-suppression="{{ b.commande_suppression or '' }}"
                data-peut-supprimer-branche="{{ '1' if b.peut_supprimer_branche_recuperation else '0' }}"
@@ -155,8 +156,21 @@
   <div class="panneau-actions__boutons">
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('pousser_branches_route', nom_projet=projet.nom) }}"
             class="bouton bouton--push" id="bouton-push">Push</button>
+    {% if projet.cibles_merge|length > 1 %}
+    <label class="select-cible-merge">
+      Cible du merge :
+      <select name="cible_merge" form="form-actions-branches" id="select-cible-merge">
+        {% for cible in projet.cibles_merge %}
+        <option value="{{ cible }}">{{ cible }}</option>
+        {% endfor %}
+      </select>
+    </label>
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('merger_branches_route', nom_projet=projet.nom) }}"
-            class="bouton bouton--merger" id="bouton-merger">Merger dans {{ projet.branche_cible_comparaison }}</button>
+            class="bouton bouton--merger" id="bouton-merger">Merger vers la cible choisie</button>
+    {% else %}
+    <button type="submit" form="form-actions-branches" formaction="{{ url_for('merger_branches_route', nom_projet=projet.nom) }}"
+            class="bouton bouton--merger" id="bouton-merger">Merger dans {{ projet.cibles_merge[0] }}</button>
+    {% endif %}
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('supprimer_worktrees_route', nom_projet=projet.nom) }}"
             class="bouton bouton--supprimer" id="bouton-supprimer">Supprimer la/les branche(s) fusionnée(s)</button>
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('comparer_selection_route', nom_projet=projet.nom) }}"
@@ -176,10 +190,29 @@
   var boutonSupprimer = document.getElementById("bouton-supprimer");
   var boutonComparerSelection = document.getElementById("bouton-comparer-selection");
   var boutonSupprimerBranche = document.getElementById("bouton-supprimer-branche-recuperation");
+  var selectCibleMerge = document.getElementById("select-cible-merge");
   var form = document.getElementById("form-actions-branches");
 
   function cochees() {
     return Array.prototype.filter.call(cases, function (c) { return c.checked; });
+  }
+
+  // Projet à une seule cible (issue #20) : data-commande-merge porte déjà la
+  // commande complète. Projet à plusieurs cibles configurées (issue #52) :
+  // data-commande-merge est vide, la commande dépend de la cible choisie
+  // dans #select-cible-merge, précalculée par cible dans data-commandes-merge.
+  function commandeMergePour(c) {
+    if (c.dataset.commandeMerge) {
+      return c.dataset.commandeMerge;
+    }
+    if (!selectCibleMerge || !c.dataset.commandesMerge) {
+      return "";
+    }
+    try {
+      return JSON.parse(c.dataset.commandesMerge)[selectCibleMerge.value] || "";
+    } catch (e) {
+      return "";
+    }
   }
 
   function actualiser() {
@@ -204,7 +237,7 @@
       if (evenement.submitter === boutonPush) {
         lignes.push(c.dataset.commandePush);
       } else if (evenement.submitter === boutonMerger && c.dataset.peutMerger === "1") {
-        lignes.push(c.dataset.commandeMerge);
+        lignes.push(commandeMergePour(c));
       } else if (evenement.submitter === boutonSupprimer && c.dataset.peutSupprimer === "1") {
         lignes.push(c.dataset.commandeSuppression);
       } else if (evenement.submitter === boutonSupprimerBranche && c.dataset.peutSupprimerBranche === "1") {

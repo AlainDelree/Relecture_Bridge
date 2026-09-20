@@ -254,6 +254,19 @@ header h1 { margin-bottom: 0.2rem; }
   gap: 0.5rem;
   flex-wrap: wrap;
 }
+.select-cible-merge {
+  font-size: 0.8rem;
+  color: #555;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.select-cible-merge select {
+  font-size: 0.8rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 5px;
+  border: 1px solid #c3d6f7;
+}
 
 .commit-actions {
   margin-top: 0.6rem;
