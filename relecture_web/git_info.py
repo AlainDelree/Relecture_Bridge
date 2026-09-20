@@ -433,6 +433,37 @@ def _diagnostiquer_commit(repertoire, branche_cible, hash_commit):
     }
 
 
+def extraire_numero_issue(sujet):
+    """Numéro d'issue référencé dans un message de commit (motif `#123`), ou
+    None si absent — indice indépendant de la comparaison de contenu
+    `git cherry`, utilisé pour repérer un cas A potentiellement reformulé
+    (issue #28)."""
+    if not sujet:
+        return None
+    correspondance = re.search(r"#(\d+)", sujet)
+    return correspondance.group(1) if correspondance else None
+
+
+def get_issue_deja_referencee(repertoire, branche_cible, numero_issue):
+    """True si au moins un commit de `branche_cible` référence `numero_issue`
+    dans son message (motif `#<numero_issue>`, bordé pour ne pas confondre
+    `#12` et `#123`) — indice qu'un commit orphelin classé cas A (nouveau,
+    voir `_diagnostiquer_commit`) pourrait en réalité être un doublon
+    reformulé du même sujet (variables renommées, logique réorganisée) que
+    `git cherry` ne peut pas détecter par comparaison de contenu (issue #28).
+    Ne remplace pas la vérification humaine : le numéro peut coïncider avec
+    un sujet réellement différent."""
+    if not branche_cible or not numero_issue:
+        return False
+    resultat = _lancer_git(
+        repertoire, "log", branche_cible, "--oneline", "--extended-regexp",
+        f"--grep=#{numero_issue}([^0-9]|$)",
+    )
+    if resultat.returncode != 0:
+        return False
+    return bool(resultat.stdout.strip())
+
+
 def nom_branche_recuperation(hash_commit):
     """Nom de la branche de sécurisation d'un commit orphelin — même
     convention que le geste manuel déjà pratiqué (issue #23) :

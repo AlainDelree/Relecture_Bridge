@@ -23,11 +23,13 @@ from git_info import (
     collect_etat_projets,
     commit_est_securise,
     diagnostiquer_commits_orphelins,
+    extraire_numero_issue,
     fusionner_worktree,
     get_branches_contenant,
     get_branches_distantes_contenant,
     get_branches_locales,
     get_diagnostic_doublons_branche,
+    get_issue_deja_referencee,
     get_rapport_cherry_brut,
     get_remote_defaut,
     get_sujet_commit,
@@ -89,15 +91,32 @@ def _diagnostiquer_orphelins(projet, resumes_orphelins):
         return []
 
     repertoire = projet["repertoire"]
+    branche_cible = projet["branche_cible_comparaison"]
     resumes_par_hash = {resume["hash"]: resume for resume in resumes_orphelins}
     diagnostics = diagnostiquer_commits_orphelins(
-        repertoire, projet["branche_cible_comparaison"], list(resumes_par_hash.keys())
+        repertoire, branche_cible, list(resumes_par_hash.keys())
     )
     for diagnostic in diagnostics:
         resume = resumes_par_hash.get(diagnostic["hash"])
         diagnostic["sujet"] = resume["sujet"] if resume else get_sujet_commit(repertoire, diagnostic["hash"])
         for maillon in diagnostic["chaine"]:
             maillon["sujet"] = get_sujet_commit(repertoire, maillon["hash"])
+
+        # Doute sur un cas A (issue #28) : `git cherry` compare le contenu
+        # des diffs, pas les messages — un doublon réimplémenté différemment
+        # (variables renommées, logique réorganisée) est alors classé
+        # « nouveau, sûr » à tort. Le numéro d'issue référencé dans le
+        # message est un indice indépendant : s'il apparaît déjà dans
+        # branche_cible, on ne présente plus ce cas A comme un verdict
+        # tranché. Ne concerne pas les autres cas (B/D/E/F), déjà nuancés ou
+        # déjà signalés comme doublon.
+        diagnostic["numero_issue"] = None
+        diagnostic["doublon_possible"] = False
+        if diagnostic["cas"] == "A":
+            numero_issue = extraire_numero_issue(diagnostic["sujet"])
+            if numero_issue and get_issue_deja_referencee(repertoire, branche_cible, numero_issue):
+                diagnostic["numero_issue"] = numero_issue
+                diagnostic["doublon_possible"] = True
 
         # Sécurisation (issue #23) : indépendante du diagnostic A-F ci-dessus,
         # affichée pour tout commit orphelin, tranché ou non.
