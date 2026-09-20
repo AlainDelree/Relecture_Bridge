@@ -1,0 +1,11 @@
+## Nature du changement
+Introduit un suivi persistant des issues `mode_write` échouées en `needs-human` : nouveau set global `_issues_write_bloquees_needs_human` (avec helpers `_issue_write_bloquee_ajouter/retirer`, `_nb_issues_write_bloquees`) et une fonction `_reconcilier_issues_en_cours_fermees`. Les points d'abandon définitif de `_traiter_issue_synchrone` et `_traiter_creation_projet_ccw` ne retirent plus l'issue de `issues_en_cours` et la comptent dans `MAX_WRITE_PARALLELE`. La logique de dispatch dans `traiter_issue` est refondue (le compteur `actifs + bloquees` gouverne le repli) et un appel de réconciliation est ajouté en tête de boucle `main`. Doc et tests (`337`, `327`) étendus.
+
+## Intention probable
+Répondre à l'issue #576 : empêcher qu'une issue en échec « oubliée » libère silencieusement sa place, pour éviter qu'une issue dépendante démarre sur un état de projet intermédiaire laissé par un échec précédent, jusqu'à intervention manuelle d'Alain.
+
+## Points d'attention
+- **Ordre d'application inter-commits** : ce changement s'appuie explicitement sur le bouton « Relancer » (#574, déjà commité) et les fichiers RELANCE (#516/#572) comme voies de retrait du label ; vérifier que ces mécanismes retirent bien `needs-human` dans le code actuel, sinon une place restera bloquée sans issue de libération.
+- **Fuite de place possible au redémarrage** : le nouveau chemin `LABEL_ECHEC in labels` dans `_traiter_issue_synchrone` ré-ajoute l'issue et la marque bloquée à chaque découverte ; s'assurer qu'aucun cas ne peut ré-ajouter une issue déjà résolue et laisser `MAX_WRITE_PARALLELE` se saturer durablement (avec MAX=1, une seule erreur logique gèle tout le traitement du projet).
+- **Concurrence** : `_reconcilier_issues_en_cours_fermees` lit `issues_en_cours` puis retire hors verrou pendant que des threads d'écriture peuvent tourner ; l'exclusion repose sur le filtre `actifs_threads` — vérifier qu'une fermeture manuelle concomitante à la fin d'un thread ne provoque pas de double retrait ou de retrait prématuré.
+- **Détection du mode** : le comptage dépend de `_deduire_mode(labels) == MODE_ECRITURE` ; un label absent ou modifié entre deux cycles pourrait décorréler l'ajout et le retrait de la place.

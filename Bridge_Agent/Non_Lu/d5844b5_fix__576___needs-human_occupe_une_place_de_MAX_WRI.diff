@@ -1,0 +1,730 @@
+d5844b5
+
+commit d5844b5
+Author: Athanatos123 <79310036+AlainDelree@users.noreply.github.com>
+Date:   Sun Sep 20 15:58:11 2026 +0200
+
+    fix #576 : needs-human occupe une place de MAX_WRITE_PARALLELE jusqu'à résolution manuelle
+    
+    Une issue mode_write abandonnée en needs-human (échec définitif, ou
+    bootstrap CREATION échoué) reste désormais dans issues_en_cours et compte
+    dans MAX_WRITE_PARALLELE tant qu'Alain n'a pas retiré le label (bouton
+    Relancer #574, fichier RELANCE #516/#572, retrait manuel) ou fermé
+    l'issue (détecté séparément par _reconcilier_issues_en_cours_fermees, une
+    issue fermée disparaissant de lister_issues() sans jamais repasser par
+    traiter_issue). Avec MAX_WRITE_PARALLELE=1, une issue needs-human oubliée
+    bloque donc tout traitement mode_write suivant sur le projet — comportement
+    voulu par Alain pour éviter qu'une issue en cascade démarre sur un état de
+    projet intermédiaire laissé par un échec précédent.
+    
+    Tests étendus (test_worktree_parallelisation_337.py) : blocage puis
+    libération après retrait du label (MAX=1), comptage aux côtés d'un thread
+    actif (MAX=2), libération par fermeture manuelle. Doc mise à jour au même
+    endroit que #337/MAX_WRITE_PARALLELE.
+
+diff --git a/BRIDGE_AGENT_DOC.md b/BRIDGE_AGENT_DOC.md
+index fbe5951..eeb8d15 100644
+--- a/BRIDGE_AGENT_DOC.md
++++ b/BRIDGE_AGENT_DOC.md
+@@ -1664,6 +1664,34 @@ séquentiellement dans `REP_TRAVAIL` (hors périmètre de cette issue).
+   entier, défaut **3**) — visible dans l'onglet Journal watcher de
+   l'interface. Aucune notification ntfy/bureau ; le nettoyage reste
+   entièrement manuel (Alain).
++- **`needs-human` occupe sa place jusqu'à résolution manuelle (issue #576,
++  changement de sémantique)** : depuis #576, une issue `mode_write` qui
++  échoue définitivement (label `needs-human` posé — épuisement des
++  tentatives, `SOUS_DOSSIER`/`REPO_CIBLE`/bootstrap CREATION refusé, etc.)
++  **continue d'occuper une place de `MAX_WRITE_PARALLELE`** au lieu d'être
++  libérée aussitôt le thread terminé (comportement d'avant #576). Avec
++  `MAX_WRITE_PARALLELE = 1`, une seule issue `needs-human` oubliée bloque
++  donc tout traitement `mode_write` suivant sur ce projet — comportement
++  voulu, pas un bug : Alain dépose parfois plusieurs issues en cascade
++  potentiellement dépendantes (sans mécanisme de dépendance explicite,
++  volontairement écarté) puis s'absente ; laisser la suivante démarrer sur
++  un état de projet intermédiaire laissé par l'échec serait pire que
++  d'attendre son intervention. Avec une valeur plus haute, l'issue bloquée
++  occupe une place parmi les autres sans empêcher le reste de tourner.
++  La place n'est libérée que par une intervention **explicite** d'Alain,
++  détectée au cycle suivant :
++  - retrait manuel du label `needs-human` sur GitHub (issue toujours
++    ouverte) — détecté par `traiter_issue` à la relecture des labels frais ;
++  - relance via le bouton web « 🔄 Relancer » (#574) ou un fichier
++    `RELANCE` (#516/#572), qui retirent tous deux ce même label ;
++  - fermeture manuelle de l'issue sur GitHub SANS retirer le label — cas
++    distinct, car `lister_issues()` ne renvoie que les issues **ouvertes**
++    et une issue fermée disparaît donc purement et simplement de la liste
++    sans jamais repasser par `traiter_issue` ; détecté séparément par
++    `_reconcilier_issues_en_cours_fermees`, appelée une fois par cycle juste
++    après `lister_issues()`, en tête de boucle principale.
++  Le chemin de succès normal (issue traitée et fermée avec le label `done`)
++  est inchangé : seul le comportement du chemin `needs-human` est affecté.
+ 
+ > Pour le détail du workflow et les procédures de récupération, voir
+ > [`WORKTREES.md`](WORKTREES.md).
+diff --git a/tests/test_lecture_active_327.py b/tests/test_lecture_active_327.py
+index d545c51..e61f0eb 100644
+--- a/tests/test_lecture_active_327.py
++++ b/tests/test_lecture_active_327.py
+@@ -301,7 +301,13 @@ exit 0
+         ).stdout
+         assert statut.strip() == "", f"REP_TRAVAIL aurait dû être restauré à l'identique : {statut!r}"
+ 
+-        assert 9328 not in watcher.issues_en_cours, "l'issue aurait dû être retirée de issues_en_cours"
++        # Issue #576 : une issue needs-human reste désormais suivie dans
++        # issues_en_cours — la place n'est libérée qu'au retrait effectif du
++        # label (bouton Relancer, RELANCE, ou fermeture manuelle).
++        assert 9328 in watcher.issues_en_cours, (
++            "l'issue needs-human aurait dû rester dans issues_en_cours (occupe "
++            "toujours une place tant qu'un humain n'est pas intervenu, issue #576)")
++        watcher.issues_en_cours.discard(9328)
+ 
+         return {"restaure": True, "needs_human": True}
+ 
+diff --git a/tests/test_worktree_parallelisation_337.py b/tests/test_worktree_parallelisation_337.py
+index f684d5e..fdd5715 100644
+--- a/tests/test_worktree_parallelisation_337.py
++++ b/tests/test_worktree_parallelisation_337.py
+@@ -20,6 +20,14 @@ Vérifie :
+ - Non-régression : `MAX_WRITE_PARALLELE = 1` → `traiter_issue` reste
+   strictement synchrone, aucun thread ni worktree créé, comportement
+   identique à avant #337.
++- Issue #576 : une issue mode_write abandonnée en `needs-human` continue
++  d'occuper sa place de `MAX_WRITE_PARALLELE` jusqu'à résolution manuelle
++  (retrait du label, ou fermeture de l'issue) — avec `MAX_WRITE_PARALLELE=1`
++  elle bloque tout traitement mode_write suivant ; avec une valeur plus
++  haute, elle occupe une place parmi les autres sans bloquer le reste. Le
++  retrait du label libère la place au prochain passage dans `traiter_issue` ;
++  une fermeture manuelle (issue absente de `lister_issues()`) est détectée
++  séparément par `_reconcilier_issues_en_cours_fermees`.
+ 
+ `gh` et `claude` sont remplacés par de faux exécutables (même technique que
+ tests/test_lecture_active_327.py) : aucun appel réseau réel. Le faux `claude`
+@@ -32,6 +40,7 @@ Exécution :  python3 tests/test_worktree_parallelisation_337.py
+ Sortie      :  code 0 si tous les scénarios passent, 1 sinon.
+ """
+ 
++import contextlib
+ import logging
+ import os
+ import stat
+@@ -100,16 +109,91 @@ exit 0
+ """
+ 
+ 
+-def _preparer_bin(tmp_path: Path) -> Path:
++# Faux `claude` — issue #576. Contrairement à FAUX_CLAUDE ci-dessus (toujours
++# un succès), échoue (code 1) à la demande pour un numéro d'issue donné —
++# présence du fichier marqueur $TEST_576_DIR/fail-<numero> — pour déclencher
++# le chemin needs-human. Cherche le numéro d'issue dans TOUS les arguments
++# (pas seulement le dernier) : la passe diagnostique (`diagnostiquer_echec`,
++# mode lecture seule) ajoute `--allowedTools ...` APRÈS le prompt, qui n'est
++# donc plus le dernier argument dans ce cas.
++FAUX_CLAUDE_576 = """#!/bin/bash
++if [ "$#" -ge 2 ]; then
++    numero=""
++    for arg in "$@"; do
++        n=$(echo "$arg" | grep -oE 'Issue #[0-9]+' | head -1 | grep -oE '[0-9]+')
++        if [ -n "$n" ]; then
++            numero="$n"
++        fi
++    done
++    if [ -n "$numero" ]; then
++        echo "$PWD" > "$TEST_576_DIR/pwd-$numero"
++        if [ -f "$TEST_576_DIR/fail-$numero" ]; then
++            echo "erreur simulée pour #$numero" >&2
++            exit 1
++        fi
++    fi
++    sleep 0.05
++    echo "✅ Tâche terminée — test #$numero"
++fi
++exit 0
++"""
++
++
++def _preparer_bin(tmp_path: Path, claude_script: str = FAUX_CLAUDE) -> Path:
+     bin_dir = tmp_path / "bin"
+     bin_dir.mkdir(exist_ok=True)
+-    for nom, contenu in (("claude", FAUX_CLAUDE), ("gh", FAUX_GH)):
++    for nom, contenu in (("claude", claude_script), ("gh", FAUX_GH)):
+         chemin = bin_dir / nom
+         chemin.write_text(contenu, encoding="utf-8")
+         chemin.chmod(chemin.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+     return bin_dir
+ 
+ 
++@contextlib.contextmanager
++def _contexte_watcher_isole(tmp_path: Path, **kwargs_config):
++    """Isole tout l'état global mutable de watcher.py pour la durée d'un
++    scénario needs-human (issue #576) — même isolation que
++    `_lancer_deux_issues_paralleles` (verrous fichier, fichiers d'état de
++    calibration, threads/issues en cours), factorisée ici car partagée par
++    plusieurs scénarios qui n'ont pas besoin du dispatch à deux issues.
++    Inclut en plus `_issues_write_bloquees_needs_human` (#576), absent de
++    l'isolation historique de #337."""
++    ancien_cfg                   = watcher.CFG
++    ancien_dossier_verrous       = watcher.DOSSIER_VERROUS
++    ancien_dossier_logs          = watcher.DOSSIER_LOGS
++    ancien_fichier_historique    = watcher.FICHIER_HISTORIQUE
++    ancien_fichier_etat_timeout  = watcher.FICHIER_ETAT_TIMEOUT
++    ancien_fichier_etat_ambiance = watcher.FICHIER_ETAT_AMBIANCE
++    ancien_threads               = list(watcher._threads_ecriture)
++    ancien_issues_en_cours       = set(watcher.issues_en_cours)
++    ancien_bloquees              = set(watcher._issues_write_bloquees_needs_human)
++
++    watcher.DOSSIER_VERROUS = tmp_path / "verrous"
++    watcher.DOSSIER_LOGS = tmp_path / "logs"
++    watcher.FICHIER_HISTORIQUE = watcher.DOSSIER_LOGS / "historique_durees.json"
++    watcher.FICHIER_ETAT_TIMEOUT = watcher.DOSSIER_LOGS / "etat_timeout.json"
++    watcher.FICHIER_ETAT_AMBIANCE = watcher.DOSSIER_LOGS / "etat_ambiance.json"
++    watcher._threads_ecriture.clear()
++    watcher.issues_en_cours.clear()
++    watcher._issues_write_bloquees_needs_human.clear()
++    watcher.CFG = watcher.Config(**kwargs_config)
++    try:
++        yield
++    finally:
++        watcher.CFG = ancien_cfg
++        watcher.DOSSIER_VERROUS = ancien_dossier_verrous
++        watcher.DOSSIER_LOGS = ancien_dossier_logs
++        watcher.FICHIER_HISTORIQUE = ancien_fichier_historique
++        watcher.FICHIER_ETAT_TIMEOUT = ancien_fichier_etat_timeout
++        watcher.FICHIER_ETAT_AMBIANCE = ancien_fichier_etat_ambiance
++        watcher._threads_ecriture.clear()
++        watcher._threads_ecriture.extend(ancien_threads)
++        watcher.issues_en_cours.clear()
++        watcher.issues_en_cours.update(ancien_issues_en_cours)
++        watcher._issues_write_bloquees_needs_human.clear()
++        watcher._issues_write_bloquees_needs_human.update(ancien_bloquees)
++
++
+ def _init_depot_git(rep: Path) -> None:
+     subprocess.run(["git", "init", "-q", "-b", "master", str(rep)], check=True)
+     (rep / "fichier.txt").write_text("original\n", encoding="utf-8")
+@@ -403,6 +487,181 @@ def scenario_non_regression_max_1():
+         return {"sequentiel_preserve": True}
+ 
+ 
++def scenario_needs_human_bloque_max_1():
++    """Issue #576 : avec MAX_WRITE_PARALLELE=1, une issue mode_write abandonnée
++    en needs-human (échec réel après épuisement des tentatives) continue
++    d'occuper l'unique place — une deuxième issue mode_write est différée SANS
++    même être tentée (aucun ACK, aucun appel claude) tant que le label n'est
++    pas retiré. Une fois le label retiré (bouton « Relancer » #574, fichier
++    RELANCE #516/#572, ou retrait manuel — simulé ici par des labels frais
++    sans 'needs-human'), la place est libérée et le traitement reprend
++    normalement pour les deux issues."""
++    with tempfile.TemporaryDirectory() as tmp:
++        tmp_path = Path(tmp)
++        rep_travail = tmp_path / "projet"
++        rep_travail.mkdir()
++        _init_depot_git(rep_travail)
++
++        test_dir = tmp_path / "etat_test"
++        test_dir.mkdir()
++        bin_dir = _preparer_bin(tmp_path, claude_script=FAUX_CLAUDE_576)
++
++        ancien_path = os.environ.get("PATH", "")
++        os.environ["PATH"] = f"{bin_dir}{os.pathsep}{ancien_path}"
++        os.environ["TEST_576_DIR"] = str(test_dir)
++        # FAUX_GH (issue comment/view, marqueur de résultat posté) référence
++        # TEST_337_DIR en dur — même dossier, exposé sous les deux noms.
++        os.environ["TEST_337_DIR"] = str(test_dir)
++
++        numero1, numero2 = 93761, 93762
++        with _contexte_watcher_isole(
++            tmp_path, nom="test576max1", depot="AlainDelree/depot-inexistant-test576",
++            rep_travail=rep_travail, topic_ntfy="test576max1",
++            max_essais=1, timeout_claude=15, notifier_local=False,
++            max_write_parallele=1,
++        ):
++            try:
++                (test_dir / f"fail-{numero1}").touch()
++                issue1 = _issue_minimale(numero1, "Test #576 — échec définitif", ["mode_write"])
++                watcher.traiter_issue(issue1, dry_run=False)
++
++                assert numero1 in watcher.issues_en_cours, \
++                    "l'issue needs-human aurait dû rester dans issues_en_cours (#576)"
++                assert watcher._nb_issues_write_bloquees() == 1, \
++                    "l'issue needs-human aurait dû occuper une place de MAX_WRITE_PARALLELE (#576)"
++                assert not (test_dir / f"marqueur-{numero1}").exists(), \
++                    "aucun résultat de succès n'aurait dû être posté (échec attendu)"
++
++                # Deuxième issue mode_write : la seule place est occupée par
++                # l'issue #1 en needs-human — différée sans même être tentée.
++                issue2 = _issue_minimale(numero2, "Test #576 — différée (place occupée)", ["mode_write"])
++                watcher.traiter_issue(issue2, dry_run=False)
++                assert not (test_dir / f"pwd-{numero2}").exists(), \
++                    "l'issue #2 n'aurait pas dû être tentée : la place unique est occupée par needs-human (#576)"
++                assert numero2 not in watcher.issues_en_cours
++
++                # Résolution : label 'needs-human' retiré (Relancer/RELANCE/manuel)
++                # et cause corrigée — la place doit se libérer et l'issue #1
++                # être retraitée normalement.
++                (test_dir / f"fail-{numero1}").unlink()
++                issue1_relance = _issue_minimale(numero1, "Test #576 — échec définitif", ["mode_write"])
++                watcher.traiter_issue(issue1_relance, dry_run=False)
++                assert numero1 not in watcher.issues_en_cours
++                assert watcher._nb_issues_write_bloquees() == 0, \
++                    "la place aurait dû être libérée après retrait du label needs-human (#576)"
++                assert (test_dir / f"marqueur-{numero1}").exists(), "issue #1 relancée : résultat jamais posté"
++
++                # La place étant libre, l'issue #2 peut maintenant être traitée.
++                watcher.traiter_issue(issue2, dry_run=False)
++                assert (test_dir / f"pwd-{numero2}").exists(), "issue #2 aurait dû être traitée une fois la place libérée"
++                assert (test_dir / f"marqueur-{numero2}").exists(), "issue #2 : résultat jamais posté"
++            finally:
++                if ancien_path:
++                    os.environ["PATH"] = ancien_path
++                else:
++                    os.environ.pop("PATH", None)
++                os.environ.pop("TEST_576_DIR", None)
++                os.environ.pop("TEST_337_DIR", None)
++
++        return {"blocage_puis_liberation_ok": True}
++
++
++def scenario_needs_human_compte_avec_max_superieur():
++    """Issue #576 : avec MAX_WRITE_PARALLELE=2, une issue déjà bloquée en
++    needs-human (simulée directement — le cheminement réel est couvert par
++    `scenario_needs_human_bloque_max_1`) occupe une place parmi les autres :
++    UNE tâche mode_write supplémentaire peut démarrer (place restante), mais
++    une DEUXIÈME est bien différée — needs-human + 1 thread actif = 2 places
++    occupées sur 2."""
++    with tempfile.TemporaryDirectory() as tmp:
++        tmp_path = Path(tmp)
++        rep_travail = tmp_path / "projet"
++        rep_travail.mkdir()
++        _init_depot_git(rep_travail)
++
++        test_dir = tmp_path / "etat_test"
++        test_dir.mkdir()
++        bin_dir = _preparer_bin(tmp_path, claude_script=FAUX_CLAUDE_576)
++
++        ancien_path = os.environ.get("PATH", "")
++        os.environ["PATH"] = f"{bin_dir}{os.pathsep}{ancien_path}"
++        os.environ["TEST_576_DIR"] = str(test_dir)
++        # FAUX_GH (issue comment/view, marqueur de résultat posté) référence
++        # TEST_337_DIR en dur — même dossier, exposé sous les deux noms.
++        os.environ["TEST_337_DIR"] = str(test_dir)
++
++        numero_bloquee, numero1, numero2 = 93763, 93764, 93765
++        with _contexte_watcher_isole(
++            tmp_path, nom="test576max2", depot="AlainDelree/depot-inexistant-test576",
++            rep_travail=rep_travail, topic_ntfy="test576max2",
++            max_essais=1, timeout_claude=15, notifier_local=False,
++            max_write_parallele=2,
++        ):
++            try:
++                watcher._issues_en_cours_ajouter(numero_bloquee)
++                watcher._issue_write_bloquee_ajouter(numero_bloquee)
++
++                issue1 = _issue_minimale(numero1, "Test #576 — place restante", ["mode_write"])
++                watcher.traiter_issue(issue1, dry_run=False)
++                actifs_1 = watcher._threads_ecriture_actifs()
++                assert len(actifs_1) == 1, \
++                    f"1 place restante (2 - 1 bloquée en needs-human) : la tâche aurait dû démarrer : {actifs_1}"
++
++                issue2 = _issue_minimale(numero2, "Test #576 — plus de place", ["mode_write"])
++                watcher.traiter_issue(issue2, dry_run=False)
++                actifs_2 = watcher._threads_ecriture_actifs()
++                assert len(actifs_2) == 1, \
++                    "aucune place restante (1 thread actif + 1 needs-human = 2/2) : la 2e tâche n'aurait pas dû démarrer"
++                assert not (test_dir / f"pwd-{numero2}").exists()
++
++                actifs_1[0]["thread"].join(timeout=15)
++                assert not actifs_1[0]["thread"].is_alive(), f"thread issue #{numero1} toujours actif après 15s"
++            finally:
++                if ancien_path:
++                    os.environ["PATH"] = ancien_path
++                else:
++                    os.environ.pop("PATH", None)
++                os.environ.pop("TEST_576_DIR", None)
++                os.environ.pop("TEST_337_DIR", None)
++
++        return {"place_partagee_ok": True}
++
++
++def scenario_reconciliation_fermeture_manuelle():
++    """Issue #576 (cas 3) : une issue needs-human fermée manuellement sur
++    GitHub — plutôt qu'un simple retrait du label — doit elle aussi libérer sa
++    place. Ce cas n'est PAS détecté par `traiter_issue` (qui ne revoit plus
++    jamais cette issue, absente de `lister_issues()` — état `--state open`
++    uniquement) mais par `_reconcilier_issues_en_cours_fermees`, appelée une
++    fois par cycle en tête de boucle principale sur la liste fraîche des
++    issues ouvertes."""
++    with tempfile.TemporaryDirectory() as tmp:
++        tmp_path = Path(tmp)
++        numero = 93766
++        with _contexte_watcher_isole(
++            tmp_path, nom="test576reconcil", depot="AlainDelree/depot-inexistant-test576",
++            rep_travail=tmp_path / "projet_inexistant", topic_ntfy="test576reconcil",
++        ):
++            watcher._issues_en_cours_ajouter(numero)
++            watcher._issue_write_bloquee_ajouter(numero)
++
++            # Toujours ouverte sur GitHub (présente dans le lot, avec le label
++            # needs-human toujours posé) : rien ne doit bouger.
++            watcher._reconcilier_issues_en_cours_fermees(
++                [{"number": numero, "labels": [{"name": "needs-human"}]}])
++            assert numero in watcher.issues_en_cours
++            assert watcher._nb_issues_write_bloquees() == 1
++
++            # Disparue de la liste des issues ouvertes (fermeture manuelle) :
++            # la place doit être libérée.
++            watcher._reconcilier_issues_en_cours_fermees([])
++            assert numero not in watcher.issues_en_cours, \
++                "la place aurait dû être libérée (issue fermée manuellement, #576)"
++            assert watcher._nb_issues_write_bloquees() == 0
++
++        return {"reconciliation_fermeture_ok": True}
++
++
+ def main():
+     if os.name == "nt":
+         print("  (ignoré : ce test s'appuie sur bash/git POSIX, non applicable sous Windows)")
+@@ -415,6 +674,12 @@ def main():
+         ("parallélisation de 2 issues mode_write : REP_TRAVAIL + worktree dédié, worktree conservé",
+          scenario_parallelisation_deux_issues_mode_write),
+         ("non-régression MAX_WRITE_PARALLELE=1 : aucun thread, aucun worktree", scenario_non_regression_max_1),
++        ("issue #576 — needs-human bloque la seule place (MAX=1) puis la libère après retrait du label",
++         scenario_needs_human_bloque_max_1),
++        ("issue #576 — needs-human compte parmi les places (MAX=2) sans bloquer le reste",
++         scenario_needs_human_compte_avec_max_superieur),
++        ("issue #576 — fermeture manuelle d'une issue needs-human libère sa place",
++         scenario_reconciliation_fermeture_manuelle),
+     ]
+ 
+     logging.getLogger().addHandler(logging.NullHandler())
+diff --git a/watcher.py b/watcher.py
+index 37de8e0..0154406 100644
+--- a/watcher.py
++++ b/watcher.py
+@@ -1945,8 +1945,10 @@ def _traiter_creation_projet_ccw(numero: int, body: str, labels: list[str], dry_
+     déchiffrement), déchiffrement, écriture du fichier de valeurs, appel
+     séquentiel des 2 scripts PowerShell, compte-rendu, puis fermeture ou
+     `needs-human` selon le résultat. Retire `numero` de `issues_en_cours`
+-    dans tous les cas avant de retourner (appelée avec l'entrée déjà ajoutée
+-    par l'appelant)."""
++    (appelée avec l'entrée déjà ajoutée par l'appelant) SAUF en cas d'échec
++    définitif (`needs-human` posé, cf. `_echec` ci-dessous) : l'issue reste
++    alors suivie tant que le label n'est pas retiré manuellement (issue
++    #576, même principe que le reste du fichier)."""
+     log.info(f"→ Issue #{numero} : champ CREATION détecté — bootstrap automatique d'un service CCW dédié (#556).")
+ 
+     def _echec(message: str) -> None:
+@@ -1966,7 +1968,15 @@ def _traiter_creation_projet_ccw(numero: int, body: str, labels: list[str], dry_
+             numero=numero,
+         )
+         notifier_fin_sse(numero)
+-        _issues_en_cours_retirer(numero)
++        # PAS de _issues_en_cours_retirer ici (issue #576) : `needs-human`
++        # vient d'être posé — l'issue reste suivie tant que le label n'est
++        # pas retiré manuellement (voir la réconciliation dans traiter_issue
++        # et en tête de boucle principale). Les issues CREATION portent
++        # toujours le label mode_write (seul émetteur : _creer_issue_gh dans
++        # app/projet_ccw.py) — occupe donc aussi une place de
++        # MAX_WRITE_PARALLELE, comme les autres échecs définitifs mode_write.
++        if _deduire_mode(labels) == MODE_ECRITURE:
++            _issue_write_bloquee_ajouter(numero)
+ 
+     champs = extraire_champs_creation(body)
+     nom_projet    = champs["CREATION_NOM_PROJET"]
+@@ -3196,6 +3206,67 @@ def _issues_en_cours_retirer(numero: int) -> None:
+         issues_en_cours.discard(numero)
+ 
+ 
++# Issues mode_write bloquées en 'needs-human' (issue #576) : sous-ensemble de
++# `issues_en_cours` qui n'ont PLUS de thread actif (l'échec est définitif,
++# `_traiter_issue_synchrone` a déjà retourné) mais doivent malgré tout
++# continuer à occuper une place de MAX_WRITE_PARALLELE tant qu'Alain n'a pas
++# résolu le label manuellement — sans quoi la limite se dégonflerait toute
++# seule dès que le thread en échec se termine. Peuplé UNIQUEMENT aux points
++# d'abandon définitif qui peuvent survenir en mode_write (SOUS_DOSSIER refusé,
++# abandon après épuisement des tentatives, bootstrap CREATION échoué) ; les
++# autres échecs définitifs (garde-fou lecture active, REPO_CIBLE) ne
++# concernent jamais le
++# mode écriture parallélisé et n'y sont donc jamais ajoutés. Verrou partagé
++# avec `issues_en_cours` : mêmes garanties d'atomicité, pas de raison d'en
++# introduire un second.
++_issues_write_bloquees_needs_human: set[int] = set()
++
++
++def _issue_write_bloquee_ajouter(numero: int) -> None:
++    with _verrou_issues_en_cours:
++        _issues_write_bloquees_needs_human.add(numero)
++
++
++def _issue_write_bloquee_retirer(numero: int) -> None:
++    with _verrou_issues_en_cours:
++        _issues_write_bloquees_needs_human.discard(numero)
++
++
++def _nb_issues_write_bloquees() -> int:
++    with _verrou_issues_en_cours:
++        return len(_issues_write_bloquees_needs_human)
++
++
++def _reconcilier_issues_en_cours_fermees(issues: list[dict]) -> None:
++    """Libère les places occupées par des issues fermées MANUELLEMENT sur
++    GitHub pendant qu'elles étaient bloquées en needs-human (issue #576, cas
++    3 de la tâche demandée) — le seul cas où le retrait du label ne suffit
++    pas à détecter la levée : `lister_issues()` ne renvoie que les issues
++    OUVERTES (`--state open`), donc une issue fermée disparaît purement et
++    simplement de `issues` sans jamais repasser par la relecture de labels
++    faite dans `traiter_issue()` (qui suppose l'issue toujours présente dans
++    la liste). Appelée UNE fois par cycle, juste après `lister_issues()`, sur
++    la liste fraîche complète.
++
++    Ne touche PAS aux issues avec un thread mode_write encore actif (#337) :
++    une fermeture manuelle pendant qu'un thread tourne encore ne doit pas
++    interrompre ce thread ni fausser son propre nettoyage en fin de
++    traitement — le thread se charge lui-même de sa place le moment venu."""
++    numeros_ouverts = {i["number"] for i in issues}
++    actifs_threads  = {t["numero"] for t in _threads_ecriture_actifs()}
++    with _verrou_issues_en_cours:
++        suivies = set(issues_en_cours)
++    for numero in suivies:
++        if numero in numeros_ouverts or numero in actifs_threads:
++            continue
++        log.info(
++            f"  Issue #{numero} : disparue des issues ouvertes (fermeture manuelle "
++            f"probable pendant needs-human) — place libérée (issue #576)."
++        )
++        _issues_en_cours_retirer(numero)
++        _issue_write_bloquee_retirer(numero)
++
++
+ # ─── Parallélisation mode_write via git worktrees (issue #337) ─────────────────
+ # But : permettre à plusieurs issues mode_write de tourner EN PARALLÈLE, chacune
+ # dans son propre worktree git (répertoire frère isolé, sur sa propre branche),
+@@ -3702,8 +3773,16 @@ def _traiter_issue_synchrone(issue: dict, dry_run: bool, chemin_worktree: Path |
+ 
+     # Une issue déjà 'needs-human' a échoué définitivement : on ne la retraite
+     # PAS (sinon boucle infinie) tant qu'un humain n'a pas retiré le label.
++    # Suivie malgré tout dans issues_en_cours (issue #576) : occupe une place
++    # tant que la place n'est pas explicitement libérée (retrait du label —
++    # voir la réconciliation dans traiter_issue() et en tête de boucle
++    # principale). Ce chemin couvre notamment la découverte d'une issue déjà
++    # 'needs-human' au redémarrage du watcher (issues_en_cours reparti à vide).
+     if LABEL_ECHEC in labels:
+         log.debug(f"Issue #{numero} déjà marquée '{LABEL_ECHEC}' — ignorée (intervention humaine en attente).")
++        _issues_en_cours_ajouter(numero)
++        if _deduire_mode(labels) == MODE_ECRITURE:
++            _issue_write_bloquee_ajouter(numero)
+         return
+ 
+     # Garde d'idempotence (issue #195). Une issue peut revenir ici OUVERTE alors
+@@ -3793,7 +3872,8 @@ def _traiter_issue_synchrone(issue: dict, dry_run: bool, chemin_worktree: Path |
+                 f"pour relancer."
+             )
+             ajouter_label(numero, LABEL_ECHEC)
+-            _issues_en_cours_retirer(numero)
++            # PAS de retrait de issues_en_cours (issue #576) : `needs-human`
++            # posé, l'issue reste suivie tant que le label n'est pas retiré.
+             return
+ 
+         valide, raison = valider_repo_cible(repo_cible)
+@@ -3807,7 +3887,8 @@ def _traiter_issue_synchrone(issue: dict, dry_run: bool, chemin_worktree: Path |
+                 f"`{LABEL_ECHEC}` pour relancer."
+             )
+             ajouter_label(numero, LABEL_ECHEC)
+-            _issues_en_cours_retirer(numero)
++            # PAS de retrait de issues_en_cours (issue #576) : `needs-human`
++            # posé, l'issue reste suivie tant que le label n'est pas retiré.
+             return
+ 
+         repo_cible_resolu  = Path(repo_cible).resolve()
+@@ -3852,7 +3933,12 @@ def _traiter_issue_synchrone(issue: dict, dry_run: bool, chemin_worktree: Path |
+                     f"label `{LABEL_ECHEC}` pour relancer."
+                 )
+                 ajouter_label(numero, LABEL_ECHEC)
+-                _issues_en_cours_retirer(numero)
++                # PAS de retrait de issues_en_cours (issue #576) : `needs-human`
++                # posé, l'issue reste suivie tant que le label n'est pas retiré.
++                # En mode écriture, elle continue en plus d'occuper une place
++                # de MAX_WRITE_PARALLELE (voir _issue_write_bloquee_ajouter).
++                if mode == MODE_ECRITURE:
++                    _issue_write_bloquee_ajouter(numero)
+                 return
+             cwd_effectif       = chemin_resolu
+             perimetre_effectif = str(chemin_resolu)
+@@ -3900,7 +3986,8 @@ def _traiter_issue_synchrone(issue: dict, dry_run: bool, chemin_worktree: Path |
+                     f"Corrigez puis retirez le label `{LABEL_ECHEC}` pour relancer."
+                 )
+                 ajouter_label(numero, LABEL_ECHEC)
+-                _issues_en_cours_retirer(numero)
++                # PAS de retrait de issues_en_cours (issue #576) : `needs-human`
++                # posé, l'issue reste suivie tant que le label n'est pas retiré.
+                 return
+             statut_rep_travail_avant = _statut_git_rep_travail(cwd_effectif)
+ 
+@@ -3988,7 +4075,11 @@ def _traiter_issue_synchrone(issue: dict, dry_run: bool, chemin_worktree: Path |
+                         numero=numero,
+                     )
+                     notifier_fin_sse(numero)
+-                    _issues_en_cours_retirer(numero)
++                    # PAS de retrait de issues_en_cours (issue #576) : `needs-human`
++                    # posé, l'issue reste suivie tant que le label n'est pas
++                    # retiré. Mode lecture active (jamais MODE_ECRITURE ici,
++                    # cf. `statut_rep_travail_avant` posé uniquement pour ce
++                    # mode) : n'occupe donc jamais de place MAX_WRITE_PARALLELE.
+                     return
+ 
+             if succes:
+@@ -4169,7 +4260,13 @@ def _traiter_issue_synchrone(issue: dict, dry_run: bool, chemin_worktree: Path |
+                         numero=numero,
+                     )
+                     notifier_fin_sse(numero)
+-                    _issues_en_cours_retirer(numero)
++                    # PAS de retrait de issues_en_cours (issue #576) : `needs-human`
++                    # posé, l'issue reste suivie tant que le label n'est pas
++                    # retiré (ou l'issue fermée) manuellement. En mode
++                    # écriture, elle continue en plus d'occuper une place de
++                    # MAX_WRITE_PARALLELE (voir _issue_write_bloquee_ajouter).
++                    if mode == MODE_ECRITURE:
++                        _issue_write_bloquee_ajouter(numero)
+                     return
+ 
+             time.sleep(PAUSE_ENTRE_TENTATIVES)  # backoff entre tentatives
+@@ -4236,18 +4333,42 @@ def traiter_issue(issue: dict, dry_run: bool) -> None:
+         fou — si REP_TRAVAIL est occupé par le premier slot, cette issue est
+         simplement différée au prochain cycle, sans double écriture possible.
+       - À `MAX_WRITE_PARALLELE` déjà atteint → même repli (différée par le
+-        verrou si REP_TRAVAIL est occupé, traitée directement s'il est libre)."""
++        verrou si REP_TRAVAIL est occupé, traitée directement s'il est libre).
++
++    Issue #576 : une issue mode_write bloquée en `needs-human` (échec
++    définitif, sans thread actif) continue d'occuper une place de
++    `MAX_WRITE_PARALLELE` tant qu'Alain n'est pas intervenu — voir
++    `_issue_write_bloquee_ajouter`/`_nb_issues_write_bloquees`. La place n'est
++    libérée que lorsque le label est effectivement retiré (bouton
++    « Relancer » #574, fichier RELANCE #516/#572, ou retrait manuel du label)
++    ET l'issue toujours ouverte — détecté ci-dessous à la relecture des
++    labels frais de CHAQUE cycle. La fermeture manuelle de l'issue (cas où
++    elle disparaît purement et simplement de `lister_issues()`) est traitée
++    séparément, en tête de boucle principale."""
+     numero = issue["number"]
+     labels = [l.get("name", "") for l in issue.get("labels", [])]
+ 
+-    if _issues_en_cours_contient(numero):
+-        return
+-
+     # Déjà en cours dans un thread depuis un cycle précédent (mode_write
+     # parallélisé) : ne pas re-dispatcher, laisser ce thread poursuivre.
+     if any(t["numero"] == numero for t in _threads_ecriture_actifs()):
+         return
+ 
++    if _issues_en_cours_contient(numero):
++        if LABEL_ECHEC in labels:
++            # Toujours 'needs-human' : occupe sa place tant qu'Alain n'est
++            # pas intervenu (issue #576).
++            return
++        # Le label a été retiré depuis le dernier cycle où cette issue était
++        # suivie (bouton « Relancer » #574, fichier RELANCE #516/#572, ou
++        # retrait manuel du label sur GitHub, issue toujours ouverte) : place
++        # libérée, l'issue redevient éligible au traitement ci-dessous.
++        log.info(
++            f"  Issue #{numero} : label '{LABEL_ECHEC}' retiré depuis le dernier cycle — "
++            f"place libérée, issue de nouveau éligible (issue #576)."
++        )
++        _issues_en_cours_retirer(numero)
++        _issue_write_bloquee_retirer(numero)
++
+     # Issue déjà finalisée (échec définitif ou résultat déjà posté) : chemin
+     # rapide direct, pas de worktree à créer pour une issue qui ne va de toute
+     # façon rien exécuter (_traiter_issue_synchrone le détecte immédiatement).
+@@ -4257,32 +4378,46 @@ def traiter_issue(issue: dict, dry_run: bool) -> None:
+ 
+     mode = _deduire_mode(labels)
+ 
+-    if (mode == MODE_ECRITURE and not dry_run and not CFG.perimetre_dynamique
+-            and CFG.max_write_parallele > 1):
+-        actifs = _threads_ecriture_actifs()
+-
+-        if not actifs:
+-            # Premier slot : thread sur REP_TRAVAIL (pas de worktree).
+-            # PAS de _issues_en_cours_ajouter(numero) ICI : c'est
+-            # _traiter_issue_synchrone, exécutée DANS le thread, qui s'en
+-            # charge (comportement historique) — l'ajouter ici bloquerait le
+-            # thread dès sa première ligne (garde d'idempotence en tête de
+-            # _traiter_issue_synchrone). La déduplication inter-cycles est
+-            # déjà assurée par `_threads_ecriture` (vérifié plus haut).
+-            thread = threading.Thread(
+-                target=_lancer_thread_ecriture, args=(issue, dry_run, None),
+-                name=f"ecriture-issue-{numero}", daemon=True,
+-            )
+-            with _verrou_threads_ecriture:
+-                _threads_ecriture.append({"numero": numero, "worktree": None, "thread": thread})
++    if mode == MODE_ECRITURE and not dry_run and not CFG.perimetre_dynamique:
++        actifs   = _threads_ecriture_actifs()
++        bloquees = _nb_issues_write_bloquees()
++        if len(actifs) + bloquees >= CFG.max_write_parallele:
++            # Place(s) toutes occupées — par des threads actifs, et/ou par des
++            # issues mode_write bloquées en needs-human (issue #576). Simple
++            # `return` (pas de repli séquentiel direct comme auparavant dans
++            # le cas plein-de-threads) : on ne sait pas ici si le verrou
++            # REP_TRAVAIL est réellement libre, et le but explicite de #576
++            # est justement d'empêcher ce repli tant qu'une place needs-human
++            # n'est pas libérée.
+             log.info(
+-                f"  Issue #{numero} : lancement dans REP_TRAVAIL en tâche de fond "
+-                f"(1/{CFG.max_write_parallele}) — parallélisation mode_write active (issue #337)."
++                f"  Issue #{numero} : MAX_WRITE_PARALLELE ({CFG.max_write_parallele}) occupé "
++                f"({len(actifs)} thread(s) actif(s) + {bloquees} bloquée(s) en needs-human, "
++                f"issue #576) — traitement différé au prochain cycle."
+             )
+-            thread.start()
+             return
+ 
+-        if len(actifs) < CFG.max_write_parallele:
++        if CFG.max_write_parallele > 1:
++            if not actifs:
++                # Premier slot : thread sur REP_TRAVAIL (pas de worktree).
++                # PAS de _issues_en_cours_ajouter(numero) ICI : c'est
++                # _traiter_issue_synchrone, exécutée DANS le thread, qui s'en
++                # charge (comportement historique) — l'ajouter ici bloquerait
++                # le thread dès sa première ligne (garde d'idempotence en tête
++                # de _traiter_issue_synchrone). La déduplication inter-cycles
++                # est déjà assurée par `_threads_ecriture` (vérifié plus haut).
++                thread = threading.Thread(
++                    target=_lancer_thread_ecriture, args=(issue, dry_run, None),
++                    name=f"ecriture-issue-{numero}", daemon=True,
++                )
++                with _verrou_threads_ecriture:
++                    _threads_ecriture.append({"numero": numero, "worktree": None, "thread": thread})
++                log.info(
++                    f"  Issue #{numero} : lancement dans REP_TRAVAIL en tâche de fond "
++                    f"(1/{CFG.max_write_parallele}) — parallélisation mode_write active (issue #337)."
++                )
++                thread.start()
++                return
++
+             chemin_worktree = _creer_worktree(numero)
+             if chemin_worktree is not None:
+                 # Même remarque que ci-dessus : pas de _issues_en_cours_ajouter ici.
+@@ -4299,11 +4434,6 @@ def traiter_issue(issue: dict, dry_run: bool) -> None:
+                 thread.start()
+                 return
+             # Échec de création du worktree : repli séquentiel ci-dessous.
+-        else:
+-            log.info(
+-                f"  Issue #{numero} : MAX_WRITE_PARALLELE ({CFG.max_write_parallele}) déjà "
+-                f"atteint — traitement séquentiel (différé si REP_TRAVAIL est occupé)."
+-            )
+ 
+     _traiter_issue_synchrone(issue, dry_run)
+ 
+@@ -4407,6 +4537,12 @@ def main():
+             # silencieux sous le plafond — voir verifier_plafond_max_write_parallele().
+             verifier_plafond_max_write_parallele()
+             issues = lister_issues()
++            # Libère les places needs-human dont l'issue a été fermée
++            # manuellement sur GitHub entre deux cycles (issue #576, cas 3) —
++            # AVANT le calcul de travail_a_faire/traiter_issue ci-dessous,
++            # sans quoi une place ainsi libérée resterait comptée jusqu'au
++            # cycle suivant.
++            _reconcilier_issues_en_cours_fermees(issues)
+             # Activité = présence d'au moins une issue réellement traitable (ni
+             # done, ni needs-human). On réarme AVANT le traitement : le cycle qui
+             # suit ne testera l'inactivité qu'une fois ce traitement terminé, donc
