@@ -52,6 +52,7 @@ header h1 { margin-bottom: 0.2rem; }
 .badge--info { background: #eef1f5; color: #55606b; }
 .badge--principal { background: #eef1f5; color: #3a4550; font-weight: 600; }
 .badge--attention { background: #fdecea; color: #a33; font-weight: 600; margin-left: auto; }
+.badge--doublon { background: #f3ecfb; color: #6a3fa0; }
 
 .liste-projets, .liste-branches { list-style: none; padding: 0; margin: 0; }
 
@@ -226,6 +227,33 @@ header h1 { margin-bottom: 0.2rem; }
   font-size: 0.8rem;
   color: #55606b;
 }
+
+.diagnostic-orphelins { margin-bottom: 1.25rem; }
+.diagnostic-orphelins h2 { font-size: 1rem; margin: 0 0 0.15rem 0; }
+.liste-diagnostics { list-style: none; padding: 0; margin: 0.6rem 0 0 0; }
+.ligne-diagnostic {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  margin-bottom: 0.6rem;
+}
+.ligne-diagnostic__entete {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.chaine-commits { list-style: none; padding: 0; margin: 0.4rem 0 0 0; }
+.chaine-commits li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.25rem 0;
+  border-top: 1px dashed #eee;
+}
+.chaine-commits li:first-child { border-top: none; }
 
 pre.brut {
   background: #f4f4f4;

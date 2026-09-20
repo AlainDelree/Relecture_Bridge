@@ -25,7 +25,55 @@
   <p class="statut">Dossier introuvable : {{ projet.repertoire }}</p>
 {% elif projet.statut == "pas_un_depot_git" %}
   <p class="statut">Pas un dépôt git : {{ projet.repertoire }}</p>
-{% elif not projet.branches %}
+{% else %}
+
+{% if projet.diagnostics_orphelins %}
+<section class="diagnostic-orphelins">
+  <h2>Commits orphelins — diagnostic automatique</h2>
+  <p class="sous-titre">
+    Comparaison de contenu (<code>git cherry</code>) contre la branche cible
+    {% if projet.branche_cible_comparaison %}« {{ projet.branche_cible_comparaison }} »{% else %}non configurée{% endif %}
+    — pas par hash ni par message de commit.
+  </p>
+  <ul class="liste-diagnostics">
+    {% for d in projet.diagnostics_orphelins %}
+    <li class="ligne-diagnostic">
+      <div class="ligne-diagnostic__entete">
+        <code class="hash">{{ d.hash }}</code>
+        <span class="sujet">{{ d.sujet or ("commit " ~ d.hash) }}</span>
+        {% if d.cas == "A" %}<span class="badge badge--attente">🆕 nouveau — à merger</span>
+        {% elif d.cas == "B" %}<span class="badge badge--doublon">♻️ doublon — nettoyable</span>
+        {% elif d.cas == "D" %}<span class="badge badge--info">commit vide — exclu</span>
+        {% elif d.cas == "E" %}<span class="badge badge--info">branche cible à configurer</span>
+        {% elif d.cas == "F" %}<span class="badge badge--attention">⚠ ambigu — à traiter manuellement</span>
+        {% endif %}
+        {% if d.orphelins_absorbes %}
+        <span class="badge badge--principal">chaîne de {{ d.chaine|length }} commit(s)</span>
+        {% endif %}
+      </div>
+      {% if d.orphelins_absorbes %}
+      <details class="diff-detail">
+        <summary>Voir la chaîne complète ({{ d.chaine|length }} commit(s))</summary>
+        <ul class="chaine-commits">
+          {% for m in d.chaine %}
+          <li>
+            <code class="hash">{{ m.hash[:7] }}</code>
+            <span class="sujet">{{ m.sujet or "" }}</span>
+            <span class="badge {{ 'badge--attente' if m.statut == 'nouveau' else 'badge--doublon' }}">
+              {{ '🆕 nouveau' if m.statut == 'nouveau' else '♻️ doublon' }}
+            </span>
+          </li>
+          {% endfor %}
+        </ul>
+      </details>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if not projet.branches %}
   <p class="statut">Aucune branche locale détectée.</p>
 {% else %}
 <ul class="liste-branches">
@@ -131,6 +179,7 @@
   });
 })();
 </script>
+{% endif %}
 {% endif %}
 
 {% endblock %}

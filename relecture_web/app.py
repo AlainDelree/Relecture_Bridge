@@ -21,9 +21,11 @@ from flask import Flask, flash, redirect, render_template, request, url_for
 from git_info import (
     ErreurRecuperationProjets,
     collect_etat_projets,
+    diagnostiquer_commits_orphelins,
     fusionner_worktree,
     get_branches_locales,
     get_remote_defaut,
+    get_sujet_commit,
     pousser_branche,
     revert_commit,
     supprimer_worktree,
@@ -67,6 +69,28 @@ def _branches_par_nom(repertoire):
     return {branche["nom"]: branche for branche in get_branches_locales(repertoire)}
 
 
+def _diagnostiquer_orphelins(projet, resumes_orphelins):
+    """Diagnostic automatique (issue #21) des commits orphelins d'un
+    projet : ceux du groupe `None` de `regrouper_resumes_par_branche`
+    (résumés en attente dont aucune branche locale actuelle ne contient le
+    commit). Enrichit chaque diagnostic avec le sujet du commit, pour
+    affichage, sans redemander à l'appelant de le faire."""
+    if not resumes_orphelins:
+        return []
+
+    repertoire = projet["repertoire"]
+    resumes_par_hash = {resume["hash"]: resume for resume in resumes_orphelins}
+    diagnostics = diagnostiquer_commits_orphelins(
+        repertoire, projet["branche_cible_comparaison"], list(resumes_par_hash.keys())
+    )
+    for diagnostic in diagnostics:
+        resume = resumes_par_hash.get(diagnostic["hash"])
+        diagnostic["sujet"] = resume["sujet"] if resume else get_sujet_commit(repertoire, diagnostic["hash"])
+        for maillon in diagnostic["chaine"]:
+            maillon["sujet"] = get_sujet_commit(repertoire, maillon["hash"])
+    return diagnostics
+
+
 @app.route("/")
 def index():
     """Niveau 1 : liste des projets, avec le nombre de résumés en attente
@@ -104,10 +128,12 @@ def projet_route(nom_projet):
 
     if projet["statut"] != "ok":
         projet["branches"] = []
+        projet["diagnostics_orphelins"] = []
         return render_template("projet.html", projet=projet, erreur=erreur)
 
     resumes = collect_resumes_projet(projet["dossier_relecture"], projet["repertoire"])
     resumes_par_branche = regrouper_resumes_par_branche(resumes, projet["repertoire"])
+    projet["diagnostics_orphelins"] = _diagnostiquer_orphelins(projet, resumes_par_branche.get(None, []))
 
     remote = get_remote_defaut(projet["repertoire"])
     branches = get_branches_locales(projet["repertoire"])

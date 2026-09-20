@@ -234,6 +234,112 @@ def get_branches_contenant(repertoire, hash_commit):
     return [l.strip() for l in resultat.stdout.splitlines() if l.strip()]
 
 
+def get_commit_est_vide(repertoire, hash_commit):
+    """True si `hash_commit` ne modifie aucun fichier — un commit de backup
+    (`--allow-empty`, voir post-commit) : toujours exclu du diagnostic
+    `git cherry` (issue #21, case D), même s'il apparaît comme ancêtre dans
+    la chaîne d'un autre commit orphelin."""
+    resultat = _lancer_git(repertoire, "show", "--format=", "--numstat", hash_commit)
+    if resultat.returncode != 0:
+        return False
+    return not resultat.stdout.strip()
+
+
+def get_chaine_cherry(repertoire, branche_cible, hash_commit):
+    """Chaîne de commits entre la base commune avec `branche_cible` et
+    `hash_commit`, classés par `git cherry <branche_cible> <hash_commit>` —
+    qui compare le **contenu** (patch-id) des commits, pas leur hash ni leur
+    message (voir issue #21) : chaque maillon est {hash, statut}, statut
+    'nouveau' (préfixe `+`, contenu absent de `branche_cible`) ou 'doublon'
+    (préfixe `-`, contenu déjà présent sous un autre hash). Les commits vides
+    (backup) sont retirés de la chaîne (case D). Retourne None si
+    `git cherry` échoue ou renvoie une ligne inattendue (case F, ambigu —
+    aucun verdict automatique)."""
+    resultat = _lancer_git(repertoire, "cherry", branche_cible, hash_commit)
+    if resultat.returncode != 0:
+        return None
+
+    chaine = []
+    for ligne in resultat.stdout.splitlines():
+        ligne = ligne.strip()
+        if not ligne:
+            continue
+        prefixe, _, sha = ligne.partition(" ")
+        sha = sha.strip()
+        if prefixe == "+":
+            statut = "nouveau"
+        elif prefixe == "-":
+            statut = "doublon"
+        else:
+            return None
+        if get_commit_est_vide(repertoire, sha):
+            continue
+        chaine.append({"hash": sha, "statut": statut})
+    return chaine
+
+
+def diagnostiquer_commits_orphelins(repertoire, branche_cible, hashes_orphelins):
+    """Classe chaque commit orphelin `hashes_orphelins` (aucune branche
+    locale ne le contient, voir `regrouper_resumes_par_branche`) selon la
+    table de l'issue #21, à l'aide de `git cherry` contre `branche_cible` :
+      - 'E' si `branche_cible` n'est pas configurée (rien à comparer, on ne
+        devine rien) ;
+      - 'D' si le commit lui-même ne modifie aucun fichier (backup) ;
+      - 'F' si `git cherry` échoue ou renvoie une sortie inattendue pour ce
+        commit (ambigu, laissé à un traitement à part) ;
+      - 'A' si le contenu du commit est absent de `branche_cible` (vrai
+        travail non intégré, à merger) ;
+      - 'B' si le contenu est déjà présent dans `branche_cible` sous un
+        autre hash (doublon confirmé, nettoyable comme un commit pushé).
+
+    Un commit orphelin qui apparaît comme ancêtre dans la chaîne d'un autre
+    commit orphelin (case C, chaîne de commits liés) est fusionné dans
+    l'entrée de ce dernier plutôt que signalé séparément — `git cherry`
+    renvoie déjà toute la chaîne depuis la base commune, donc un tel
+    ancêtre apparaît dans `chaine` de l'entrée du commit le plus récent, et
+    son hash est listé dans `orphelins_absorbes` de cette entrée.
+
+    Retourne une liste de diagnostics {hash, cas, chaine, orphelins_absorbes},
+    un par commit orphelin non absorbé dans la chaîne d'un autre."""
+    if not branche_cible:
+        return [
+            {"hash": h, "cas": "E", "chaine": [], "orphelins_absorbes": []}
+            for h in hashes_orphelins
+        ]
+
+    ensemble_orphelins = set(hashes_orphelins)
+    diagnostics = {}
+    absorbes_global = set()
+
+    for h in hashes_orphelins:
+        if get_commit_est_vide(repertoire, h):
+            diagnostics[h] = {"hash": h, "cas": "D", "chaine": [], "orphelins_absorbes": []}
+            continue
+
+        chaine = get_chaine_cherry(repertoire, branche_cible, h)
+        maillon_tip = (
+            next((m for m in chaine if m["hash"].startswith(h)), None) if chaine else None
+        )
+        if chaine is None or maillon_tip is None:
+            diagnostics[h] = {"hash": h, "cas": "F", "chaine": [], "orphelins_absorbes": []}
+            continue
+
+        orphelins_absorbes = [
+            autre for autre in ensemble_orphelins
+            if autre != h and any(m["hash"].startswith(autre) for m in chaine if m is not maillon_tip)
+        ]
+        absorbes_global.update(orphelins_absorbes)
+
+        diagnostics[h] = {
+            "hash": h,
+            "cas": "A" if maillon_tip["statut"] == "nouveau" else "B",
+            "chaine": chaine,
+            "orphelins_absorbes": orphelins_absorbes,
+        }
+
+    return [diag for h, diag in diagnostics.items() if h not in absorbes_global]
+
+
 def get_commit_est_pushe(repertoire, hash_commit):
     """True si `hash_commit` est déjà un ancêtre d'au moins une branche
     distante (`git branch -r --contains`) — donc en sécurité sur le dépôt
