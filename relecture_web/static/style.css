@@ -132,6 +132,24 @@ header h1 { margin-bottom: 0.2rem; }
 .bouton--revert:hover { background: #fbe9cf; }
 .bouton--nettoyer { background: #eef1f5; color: #3a4550; border-color: #d7dde5; margin-top: 0.4rem; }
 .bouton--nettoyer:hover { background: #e2e7ee; }
+.bouton--rapport { background: #f3ecfb; color: #6a3fa0; border-color: #ddc9f0; }
+.bouton--rapport:hover { background: #ecdff9; }
+.lien-bouton { display: inline-block; text-decoration: none; }
+
+.rapport-texte {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: #fff;
+  margin-top: 0.6rem;
+  resize: vertical;
+  white-space: pre-wrap;
+}
 .bouton-precedent {
   display: inline-block;
   text-decoration: none;

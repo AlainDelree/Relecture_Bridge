@@ -278,6 +278,39 @@ def get_chaine_cherry(repertoire, branche_cible, hash_commit):
     return chaine
 
 
+def get_rapport_cherry_brut(repertoire, branche_cible, hash_commit):
+    """Sortie brute de `git cherry <branche_cible> <hash_commit>` (issue #22,
+    bouton « Générer rapport »), indépendante du parsing de
+    `get_chaine_cherry` : donne à l'humain exactement ce que verrait
+    quelqu'un lançant la commande à la main, y compris le message d'erreur
+    en cas d'échec — c'est précisément ce qu'un diagnostic classé en cas F
+    (ambigu, voir `diagnostiquer_commits_orphelins`) ne peut pas interpréter
+    automatiquement."""
+    if not branche_cible:
+        return {"commande": None, "sortie": None, "erreur": "Branche cible de comparaison non configurée pour ce projet."}
+    commande = ["git", "-C", repertoire, "cherry", branche_cible, hash_commit]
+    resultat = subprocess.run(commande, capture_output=True, text=True, timeout=TIMEOUT_GIT)
+    return {
+        "commande": " ".join(commande),
+        "sortie": resultat.stdout.strip() if resultat.returncode == 0 else None,
+        "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
+    }
+
+
+def get_branches_distantes_contenant(repertoire, hash_commit):
+    """Branches distantes (remote-tracking) contenant `hash_commit` (`git
+    branch -r --contains`) — pendant côté distant de `get_branches_contenant`,
+    pour le rapport de diagnostic manuel (issue #22) : l'absence de branche
+    locale ne dit rien de ce qui existe déjà côté distant."""
+    resultat = _lancer_git(
+        repertoire, "branch", "-r", "--list", "--contains", hash_commit,
+        "--format=%(refname:short)",
+    )
+    if resultat.returncode != 0:
+        return []
+    return [l.strip() for l in resultat.stdout.splitlines() if l.strip()]
+
+
 def diagnostiquer_commits_orphelins(repertoire, branche_cible, hashes_orphelins):
     """Classe chaque commit orphelin `hashes_orphelins` (aucune branche
     locale ne le contient, voir `regrouper_resumes_par_branche`) selon la

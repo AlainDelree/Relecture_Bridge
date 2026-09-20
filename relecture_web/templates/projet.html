@@ -46,6 +46,8 @@
         {% elif d.cas == "D" %}<span class="badge badge--info">commit vide — exclu</span>
         {% elif d.cas == "E" %}<span class="badge badge--info">branche cible à configurer</span>
         {% elif d.cas == "F" %}<span class="badge badge--attention">⚠ ambigu — à traiter manuellement</span>
+        <a href="{{ url_for('rapport_commit_route', nom_projet=projet.nom, hash_commit=d.hash) }}"
+           class="bouton bouton--rapport lien-bouton">Générer rapport</a>
         {% endif %}
         {% if d.orphelins_absorbes %}
         <span class="badge badge--principal">chaîne de {{ d.chaine|length }} commit(s)</span>

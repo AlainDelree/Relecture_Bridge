@@ -116,6 +116,10 @@ def collect_resumes_projet(dossier_relecture_projet, repertoire=None):
             chemin = os.path.join(dossier_non_lu, entree["resume"])
             with open(chemin, encoding="utf-8", errors="replace") as f:
                 contenu_resume = f.read()
+            # Gardé même quand le format en trois sections est reconnu, pour
+            # le rapport de diagnostic manuel (issue #22) qui a besoin du
+            # texte brut du résumé, pas du rendu HTML de `sections`.
+            entree["contenu_resume_brut"] = contenu_resume
             sections = _parser_sections_resume(contenu_resume)
             if any(sections.values()):
                 entree["sections"] = {cle: _rendu_leger(texte) for cle, texte in sections.items()}

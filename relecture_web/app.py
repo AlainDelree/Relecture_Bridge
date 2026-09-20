@@ -23,7 +23,10 @@ from git_info import (
     collect_etat_projets,
     diagnostiquer_commits_orphelins,
     fusionner_worktree,
+    get_branches_contenant,
+    get_branches_distantes_contenant,
     get_branches_locales,
+    get_rapport_cherry_brut,
     get_remote_defaut,
     get_sujet_commit,
     pousser_branche,
@@ -89,6 +92,85 @@ def _diagnostiquer_orphelins(projet, resumes_orphelins):
         for maillon in diagnostic["chaine"]:
             maillon["sujet"] = get_sujet_commit(repertoire, maillon["hash"])
     return diagnostics
+
+
+def _construire_rapport_commit(
+    projet, hash_commit, sujet, resume_texte, branche_cible,
+    cherry, branches_locales, branches_distantes, autres_orphelins,
+):
+    """Assemble le texte du rapport de diagnostic manuel (issue #22) —
+    tout ce qui est déjà disponible côté relecture_bridge pour un commit que
+    le diagnostic automatique n'a pas pu trancher, prêt à coller dans une
+    conversation Claude Chat dédiée au projet concerné."""
+    lignes = [
+        "=== Rapport de diagnostic — commit non tranché automatiquement ===",
+        f"Projet : {projet['nom']} ({projet['depot']})",
+        f"Répertoire : {projet['repertoire']}",
+        f"Branche cible de comparaison configurée : {branche_cible or 'non configurée'}",
+        "",
+        f"Commit : {hash_commit}",
+        f"Message : {sujet or '(sujet introuvable)'}",
+        "",
+        "--- Résumé déjà généré ---",
+        resume_texte.strip() if resume_texte and resume_texte.strip() else "Aucun résumé disponible pour ce commit.",
+        "",
+        f"--- git cherry {branche_cible or '<branche cible>'} {hash_commit} ---",
+        f"Échec : {cherry['erreur']}" if cherry["erreur"]
+        else (cherry["sortie"] or "(sortie vide — aucun commit entre la base commune et ce hash)"),
+        "",
+        "--- Branches locales contenant ce commit ---",
+        ", ".join(branches_locales) if branches_locales else "aucune",
+        "",
+        "--- Branches distantes contenant ce commit ---",
+        ", ".join(branches_distantes) if branches_distantes else "aucune",
+        "",
+        "--- Autres commits orphelins actuellement en attente (ce projet) ---",
+    ]
+    if autres_orphelins:
+        lignes.extend(f"{h} — {s or '(sujet introuvable)'}" for h, s in autres_orphelins)
+    else:
+        lignes.append("aucun autre")
+    return "\n".join(lignes)
+
+
+@app.route("/projet/<nom_projet>/rapport/<hash_commit>")
+def rapport_commit_route(nom_projet, hash_commit):
+    """Rapport texte prêt à copier pour un commit que le diagnostic
+    automatique ne peut pas trancher (typiquement cas F, issue #22) :
+    rassemble hash/message/résumé déjà généré, sortie brute de `git cherry`,
+    branches locales/distantes le contenant, et le contexte déjà disponible
+    (branche cible configurée, autres commits orphelins en attente) — pour
+    coller le tout dans une conversation Claude Chat dédiée au projet.
+    Route en lecture seule (GET), aucune action git déclenchée."""
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+
+    repertoire = projet["repertoire"]
+    branche_cible = projet["branche_cible_comparaison"]
+    sujet = get_sujet_commit(repertoire, hash_commit)
+
+    resumes = collect_resumes_projet(projet["dossier_relecture"], repertoire)
+    resume_entree = next((r for r in resumes if r["hash"] == hash_commit), None)
+    resume_texte = None
+    if resume_entree:
+        resume_texte = resume_entree.get("contenu_resume_brut") or resume_entree.get("contenu_annote")
+
+    cherry = get_rapport_cherry_brut(repertoire, branche_cible, hash_commit)
+    branches_locales = get_branches_contenant(repertoire, hash_commit)
+    branches_distantes = get_branches_distantes_contenant(repertoire, hash_commit)
+
+    resumes_orphelins = regrouper_resumes_par_branche(resumes, repertoire).get(None, [])
+    autres_orphelins = [
+        (r["hash"], r.get("sujet")) for r in resumes_orphelins if r["hash"] != hash_commit
+    ]
+
+    rapport = _construire_rapport_commit(
+        projet, hash_commit, sujet, resume_texte, branche_cible,
+        cherry, branches_locales, branches_distantes, autres_orphelins,
+    )
+    return render_template("rapport.html", projet=projet, hash_commit=hash_commit, rapport=rapport)
 
 
 @app.route("/")

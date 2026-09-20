@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block body %}
+<a href="{{ url_for('projet_route', nom_projet=projet.nom) }}" class="bouton-precedent">◀ Précédent</a>
+
+<header>
+  <p class="fil-ariane">
+    <a href="{{ url_for('index') }}">Projets</a> /
+    <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}">{{ projet.nom }}</a> /
+    rapport
+  </p>
+  <h1>Rapport — <code class="hash">{{ hash_commit }}</code></h1>
+  <p class="sous-titre">
+    Texte prêt à coller dans une conversation Claude Chat dédiée à
+    « {{ projet.nom }} », pour une analyse humaine de ce commit que le
+    diagnostic automatique n'a pas pu trancher.
+  </p>
+</header>
+
+<button type="button" id="bouton-copier-rapport" class="bouton bouton--rapport">Copier le rapport</button>
+<textarea id="texte-rapport" class="rapport-texte" readonly rows="28" spellcheck="false">{{ rapport }}</textarea>
+
+<script>
+(function () {
+  var bouton = document.getElementById("bouton-copier-rapport");
+  var zone = document.getElementById("texte-rapport");
+
+  bouton.addEventListener("click", function () {
+    zone.select();
+    var texteOriginal = bouton.textContent;
+    function confirmerCopie() {
+      bouton.textContent = "Copié !";
+      setTimeout(function () { bouton.textContent = texteOriginal; }, 2000);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(zone.value).then(confirmerCopie, function () {
+        document.execCommand("copy");
+        confirmerCopie();
+      });
+    } else {
+      document.execCommand("copy");
+      confirmerCopie();
+    }
+  });
+})();
+</script>
+{% endblock %}
