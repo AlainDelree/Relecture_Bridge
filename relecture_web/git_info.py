@@ -602,6 +602,38 @@ def supprimer_worktree(repertoire, chemin_worktree):
     }
 
 
+def supprimer_branche_recuperation(repertoire, nom_branche):
+    """Supprime définitivement une branche de récupération (`git branch -D
+    <nom_branche>`) — contrairement à `supprimer_worktree`, ces branches
+    (créées par `securiser_commit_orphelin`, issue #23) n'ont jamais de
+    worktree associé, donc `git worktree remove` échoue sans effet dessus
+    (issue #29).
+
+    Protection structurelle : refuse toute branche dont le nom ne suit pas
+    exactement la convention `recuperation-<hash>` (via
+    `hash_depuis_branche_recuperation`), sans même tenter la commande git —
+    indépendant du diagnostic de doublons affiché côté template, pour que
+    `dev`, `main` ou une branche de travail ordinaire ne puissent jamais
+    passer par cette fonction, même en cas d'erreur de diagnostic amont.
+    Retourne {ok, erreur, commande} pour affichage transparent."""
+    if hash_depuis_branche_recuperation(nom_branche) is None:
+        return {
+            "ok": False,
+            "erreur": f"« {nom_branche} » ne suit pas la convention recuperation-<hash>, suppression refusée.",
+            "commande": None,
+        }
+
+    commande = ["git", "-C", repertoire, "branch", "-D", nom_branche]
+    resultat = subprocess.run(
+        commande, capture_output=True, text=True, timeout=TIMEOUT_GIT,
+    )
+    return {
+        "ok": resultat.returncode == 0,
+        "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
+        "commande": " ".join(commande),
+    }
+
+
 def revert_commit(repertoire, hash_commit):
     """Annule `hash_commit` via `git revert --no-edit` : crée un nouveau
     commit d'annulation, indépendant des autres commits de la branche

@@ -103,7 +103,9 @@
                data-peut-merger="{{ '1' if b.peut_merger else '0' }}"
                data-commande-merge="{{ b.commande_merge or '' }}"
                data-peut-supprimer="{{ '1' if b.peut_supprimer else '0' }}"
-               data-commande-suppression="{{ b.commande_suppression or '' }}">
+               data-commande-suppression="{{ b.commande_suppression or '' }}"
+               data-peut-supprimer-branche="{{ '1' if b.peut_supprimer_branche_recuperation else '0' }}"
+               data-commande-suppression-branche="{{ b.commande_suppression_branche_recuperation or '' }}">
       </label>
       <a href="{{ url_for('branche_route', nom_projet=projet.nom, nom_branche=b.nom) }}" class="lien-branche">
         <span class="nom-branche">{{ b.nom }}</span>
@@ -136,6 +138,8 @@
             class="bouton bouton--merger" id="bouton-merger">Merger dans {{ projet.branche_cible_comparaison }}</button>
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('supprimer_worktrees_route', nom_projet=projet.nom) }}"
             class="bouton bouton--supprimer" id="bouton-supprimer">Supprimer le(s) worktree(s)</button>
+    <button type="submit" form="form-actions-branches" formaction="{{ url_for('supprimer_branches_recuperation_route', nom_projet=projet.nom) }}"
+            class="bouton bouton--supprimer" id="bouton-supprimer-branche-recuperation">Supprimer la/les branche(s) de récupération</button>
   </div>
 </div>
 
@@ -147,6 +151,7 @@
   var boutonPush = document.getElementById("bouton-push");
   var boutonMerger = document.getElementById("bouton-merger");
   var boutonSupprimer = document.getElementById("bouton-supprimer");
+  var boutonSupprimerBranche = document.getElementById("bouton-supprimer-branche-recuperation");
   var form = document.getElementById("form-actions-branches");
 
   function cochees() {
@@ -159,6 +164,7 @@
     compteur.textContent = selection.length;
     boutonMerger.disabled = !selection.some(function (c) { return c.dataset.peutMerger === "1"; });
     boutonSupprimer.disabled = !selection.some(function (c) { return c.dataset.peutSupprimer === "1"; });
+    boutonSupprimerBranche.disabled = !selection.some(function (c) { return c.dataset.peutSupprimerBranche === "1"; });
   }
 
   cases.forEach(function (c) { c.addEventListener("change", actualiser); });
@@ -176,6 +182,8 @@
         lignes.push(c.dataset.commandeMerge);
       } else if (evenement.submitter === boutonSupprimer && c.dataset.peutSupprimer === "1") {
         lignes.push(c.dataset.commandeSuppression);
+      } else if (evenement.submitter === boutonSupprimerBranche && c.dataset.peutSupprimerBranche === "1") {
+        lignes.push(c.dataset.commandeSuppressionBranche);
       }
     });
 
@@ -187,6 +195,7 @@
 
     var verbe = evenement.submitter === boutonPush ? "pousser"
       : evenement.submitter === boutonMerger ? "fusionner"
+      : evenement.submitter === boutonSupprimerBranche ? "supprimer définitivement la branche de récupération de"
       : "supprimer le worktree de";
     var confirmation = "Confirmer : " + verbe + " " + lignes.length + " branche(s) ({{ projet.nom }}) ?\n\n"
       + "Commande(s) équivalente(s) :\n" + lignes.join("\n");

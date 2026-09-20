@@ -33,10 +33,12 @@ from git_info import (
     get_rapport_cherry_brut,
     get_remote_defaut,
     get_sujet_commit,
+    hash_depuis_branche_recuperation,
     nom_branche_recuperation,
     pousser_branche,
     revert_commit,
     securiser_commit_orphelin,
+    supprimer_branche_recuperation,
     supprimer_worktree,
 )
 from resumes_info import collect_resumes_projet, lister_fichiers_resumes_pushes, regrouper_resumes_par_branche
@@ -308,6 +310,19 @@ def projet_route(nom_projet):
             f"git -C {projet['repertoire']} worktree remove {branche['chemin_worktree']}"
             if branche["peut_supprimer"] else None
         )
+
+        # Suppression de branche de récupération (issue #29) : seule la
+        # convention de nom `recuperation-<hash>` conditionne la
+        # disponibilité de l'action, indépendamment du badge de diagnostic
+        # ci-dessus — ces branches n'ont jamais de worktree, donc
+        # `peut_supprimer` (qui exige `a_un_worktree`) ne les couvre jamais.
+        branche["peut_supprimer_branche_recuperation"] = (
+            hash_depuis_branche_recuperation(branche["nom"]) is not None
+        )
+        branche["commande_suppression_branche_recuperation"] = (
+            f"git -C {projet['repertoire']} branch -D {branche['nom']}"
+            if branche["peut_supprimer_branche_recuperation"] else None
+        )
     projet["branches"] = branches
     projet["worktree_par_branche"] = {
         worktree["branch"]: worktree for worktree in projet["worktrees"] if worktree["branch"]
@@ -513,6 +528,40 @@ def supprimer_worktrees_route(nom_projet):
         resultat = supprimer_worktree(projet["repertoire"], branche["chemin_worktree"])
         if resultat["ok"]:
             flash(f"✅ Worktree de « {nom} » supprimé — {resultat['commande']}", "succes")
+        else:
+            flash(f"❌ Échec de la suppression de « {nom} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+
+@app.route("/projet/<nom_projet>/supprimer-branche-recuperation", methods=["POST"])
+def supprimer_branches_recuperation_route(nom_projet):
+    """Supprime définitivement (`git branch -D`) chaque branche de
+    récupération sélectionnée (case à cocher, niveau 2) — ces branches
+    (issue #23) n'ont pas de worktree, donc distinct de
+    `supprimer_worktrees_route`. Revérifiée ici indépendamment de la case
+    cochée côté template : seule la convention de nom
+    `recuperation-<hash>` (issue #26) autorise la suppression, jamais le
+    badge de diagnostic (issue #29)."""
+    noms_branches = request.form.getlist("branches")
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+    if not noms_branches:
+        flash("❌ Aucune branche sélectionnée.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    branches = _branches_par_nom(projet)
+    for nom in noms_branches:
+        if nom not in branches:
+            flash(f"❌ Branche « {nom} » introuvable.", "erreur")
+            continue
+        if hash_depuis_branche_recuperation(nom) is None:
+            flash(f"❌ « {nom} » ne suit pas la convention recuperation-<hash>, suppression refusée.", "erreur")
+            continue
+        resultat = supprimer_branche_recuperation(projet["repertoire"], nom)
+        if resultat["ok"]:
+            flash(f"✅ Branche « {nom} » supprimée — {resultat['commande']}", "succes")
         else:
             flash(f"❌ Échec de la suppression de « {nom} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
     return redirect(url_for("projet_route", nom_projet=nom_projet))
