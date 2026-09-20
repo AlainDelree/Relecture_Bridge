@@ -133,6 +133,7 @@ header h1 { margin-bottom: 0.2rem; }
 
 .dernier-commit { margin: 0.3rem 0 0 0; font-size: 0.85rem; color: #555; }
 .hash { font-size: 0.85rem; color: #444; }
+.date-commit { font-size: 0.85rem; color: #777; white-space: nowrap; }
 
 .commit-carte {
   background: #fff;

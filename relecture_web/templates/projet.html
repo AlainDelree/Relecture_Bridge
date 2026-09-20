@@ -54,6 +54,7 @@
         <code class="hash">{{ d.hash }}</code>
         <button type="button" class="bouton-copier" data-copier="{{ d.hash }}" title="Copier le hash">📋</button>
         <span class="sujet">{{ d.sujet or ("commit " ~ d.hash) }}</span>
+        {% if d.date %}<span class="date-commit">{{ d.date }}</span>{% endif %}
         {% if d.cas == "A" %}<span class="badge badge--attente">🆕 nouveau — à merger</span>
         {% if d.doublon_possible %}
         <span class="badge badge--attention">⚠ peut-être déjà traité sous une autre forme — issue #{{ d.numero_issue }} déjà référencée dans « {{ projet.branche_cible_comparaison }} »</span>

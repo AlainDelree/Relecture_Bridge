@@ -241,6 +241,20 @@ def get_sujet_commit(repertoire, hash_commit):
     return resultat.stdout.strip() or None
 
 
+def get_date_commit(repertoire, hash_commit):
+    """Date (+ heure) de création d'un commit donné, au format lisible
+    jj/mm/aaaa hh:mm — même pattern que `get_sujet_commit`. La date réelle du
+    commit vient toujours de git, jamais de la date du fichier `.diff` dans
+    `Non_Lu/` (trompeuse : un déplacement manuel entre dossiers change la
+    date du fichier sans changer celle du commit, voir issue #48)."""
+    resultat = _lancer_git(
+        repertoire, "show", "-s", "--date=format:%d/%m/%Y %H:%M", "--format=%cd", hash_commit
+    )
+    if resultat.returncode != 0:
+        return None
+    return resultat.stdout.strip() or None
+
+
 def get_branches_contenant(repertoire, hash_commit):
     """Branches locales contenant `hash_commit` (`git branch --contains`) —
     un commit déjà fusionné peut apparaître dans plusieurs branches ; une

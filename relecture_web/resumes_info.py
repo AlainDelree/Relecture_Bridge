@@ -14,7 +14,7 @@ import html
 import os
 import re
 
-from git_info import get_branches_contenant, get_commit_est_pushe, get_sujet_commit
+from git_info import get_branches_contenant, get_commit_est_pushe, get_date_commit, get_sujet_commit
 
 # relecture_web/ est un sous-dossier direct de la racine Relecture_Bridge, là
 # où le hook post-commit crée <projet>/Non_Lu/ (DOSSIER_RELECTURE="$HOME/Relecture_Bridge").
@@ -84,7 +84,9 @@ def collect_resumes_projet(dossier_relecture_projet, repertoire=None):
     Si `repertoire` (chemin du dépôt) est fourni, chaque entrée reçoit aussi
     le sujet réel du commit (`sujet`, via `git show`) — utilisé pour afficher
     hash + message sur une carte de commit repliée, plutôt que le nom de
-    fichier `.diff` qui n'est qu'un slug."""
+    fichier `.diff` qui n'est qu'un slug — ainsi que sa date réelle (`date`,
+    voir `get_date_commit`), jamais la date de fichier de `Non_Lu/` (issue
+    #48)."""
     dossier_non_lu = os.path.join(DOSSIER_RELECTURE, dossier_relecture_projet, "Non_Lu")
     if not os.path.isdir(dossier_non_lu):
         return []
@@ -110,6 +112,7 @@ def collect_resumes_projet(dossier_relecture_projet, repertoire=None):
     for hash_commit, entree in par_hash.items():
         entree["hash"] = hash_commit
         entree["sujet"] = get_sujet_commit(repertoire, hash_commit) if repertoire else None
+        entree["date"] = get_date_commit(repertoire, hash_commit) if repertoire else None
         entree["a_attention"] = False
 
         if entree["resume"]:

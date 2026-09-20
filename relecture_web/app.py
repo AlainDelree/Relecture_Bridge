@@ -31,6 +31,7 @@ from git_info import (
     get_branches_distantes_contenant,
     get_branches_locales,
     get_chaine_cherry,
+    get_date_commit,
     get_diagnostic_doublons_branche,
     get_issue_deja_referencee,
     get_rapport_cherry_brut,
@@ -105,8 +106,9 @@ def _diagnostiquer_orphelins(projet, resumes_orphelins):
     """Diagnostic automatique (issue #21) des commits orphelins d'un
     projet : ceux du groupe `None` de `regrouper_resumes_par_branche`
     (résumés en attente dont aucune branche locale actuelle ne contient le
-    commit). Enrichit chaque diagnostic avec le sujet du commit, pour
-    affichage, sans redemander à l'appelant de le faire."""
+    commit). Enrichit chaque diagnostic avec le sujet et la date réelle du
+    commit (`get_date_commit`, jamais la date du fichier dans `Non_Lu/`, voir
+    issue #48), pour affichage, sans redemander à l'appelant de le faire."""
     if not resumes_orphelins:
         return []
 
@@ -119,6 +121,7 @@ def _diagnostiquer_orphelins(projet, resumes_orphelins):
     for diagnostic in diagnostics:
         resume = resumes_par_hash.get(diagnostic["hash"])
         diagnostic["sujet"] = resume["sujet"] if resume else get_sujet_commit(repertoire, diagnostic["hash"])
+        diagnostic["date"] = resume["date"] if resume else get_date_commit(repertoire, diagnostic["hash"])
         for maillon in diagnostic["chaine"]:
             maillon["sujet"] = get_sujet_commit(repertoire, maillon["hash"])
 

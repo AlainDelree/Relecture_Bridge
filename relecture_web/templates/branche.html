@@ -31,6 +31,7 @@
     <code class="hash">{{ r.hash }}</code>
     <button type="button" class="bouton-copier" data-copier="{{ r.hash }}" title="Copier le hash">📋</button>
     <span class="sujet">{{ r.sujet or r.diff or ("commit " ~ r.hash) }}</span>
+    {% if r.date %}<span class="date-commit">{{ r.date }}</span>{% endif %}
     {% if r.a_attention %}<span class="badge badge--attention">⚠ point d'attention</span>{% endif %}
     <div class="commit-actions--summary" onclick="event.stopPropagation();">
       <a href="{{ url_for('comparer_commit_route', nom_projet=projet.nom, hash_commit=r.hash, nom_branche=nom_branche) }}"

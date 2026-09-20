@@ -68,10 +68,10 @@ L'interface est organisée en trois niveaux, chacun avec sa page :
    qu'apparaît, en haut, la section **diagnostic automatique des
    commits orphelins** (section 3) quand il y en a.
 3. **Commits d'une branche** (`/projet/<nom_projet>/branche/<nom_branche>`)
-   — chaque commit est une carte repliée (hash + message), qui se
-   déplie au clic pour révéler le résumé fonctionnel en trois sections
-   (nature du changement / intention probable / points d'attention) et
-   le diff complet.
+   — chaque commit est une carte repliée (hash + message + date/heure
+   réelle du commit, issue #48), qui se déplie au clic pour révéler le
+   résumé fonctionnel en trois sections (nature du changement / intention
+   probable / points d'attention) et le diff complet.
 
 Pages supplémentaires, atteintes depuis des boutons plutôt que depuis la
 navigation principale : **Comparer**, **Rapport** (section 5), et
