@@ -197,7 +197,7 @@
 
     var verbe = evenement.submitter === boutonPush ? "pousser"
       : evenement.submitter === boutonMerger ? "fusionner"
-      : evenement.submitter === boutonSupprimerBranche ? "supprimer définitivement la branche de récupération de"
+      : evenement.submitter === boutonSupprimerBranche ? "supprimer définitivement la branche de récupération (et son résumé Non_Lu associé) de"
       : "supprimer le worktree de";
     var confirmation = "Confirmer : " + verbe + " " + lignes.length + " branche(s) ({{ projet.nom }}) ?\n\n"
       + "Commande(s) équivalente(s) :\n" + lignes.join("\n");

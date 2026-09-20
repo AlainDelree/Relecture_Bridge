@@ -171,6 +171,25 @@ def lister_fichiers_resumes_pushes(dossier_relecture_projet, repertoire):
     return fichiers
 
 
+def lister_fichiers_resumes_hash(dossier_relecture_projet, hash_commit):
+    """Liste les chemins de fichiers de Non_Lu/ (diff + résumé/annote) dont le
+    hash correspond exactement à `hash_commit` — utilisé pour supprimer le
+    résumé d'un commit en même temps que sa branche de récupération (issue
+    #31) : sans ce nettoyage, le commit redevient orphelin non sécurisé dès
+    la suppression de `recuperation-<hash_commit>` (voir
+    `supprimer_branche_recuperation`)."""
+    dossier_non_lu = os.path.join(DOSSIER_RELECTURE, dossier_relecture_projet, "Non_Lu")
+    if not os.path.isdir(dossier_non_lu):
+        return []
+
+    fichiers = []
+    for nom_fichier in os.listdir(dossier_non_lu):
+        chemin = os.path.join(dossier_non_lu, nom_fichier)
+        if os.path.isfile(chemin) and _extraire_hash(nom_fichier) == hash_commit:
+            fichiers.append(chemin)
+    return fichiers
+
+
 def regrouper_resumes_par_branche(resumes, repertoire):
     """Regroupe une liste de résumés déjà lus (retournée par
     `collect_resumes_projet`) par branche locale contenant leur commit, via

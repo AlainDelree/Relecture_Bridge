@@ -42,7 +42,12 @@ from git_info import (
     supprimer_branche_recuperation,
     supprimer_worktree,
 )
-from resumes_info import collect_resumes_projet, lister_fichiers_resumes_pushes, regrouper_resumes_par_branche
+from resumes_info import (
+    collect_resumes_projet,
+    lister_fichiers_resumes_hash,
+    lister_fichiers_resumes_pushes,
+    regrouper_resumes_par_branche,
+)
 
 PORT = 5057
 
@@ -562,12 +567,17 @@ def supprimer_worktrees_route(nom_projet):
 @app.route("/projet/<nom_projet>/supprimer-branche-recuperation", methods=["POST"])
 def supprimer_branches_recuperation_route(nom_projet):
     """Supprime définitivement (`git branch -D`) chaque branche de
-    récupération sélectionnée (case à cocher, niveau 2) — ces branches
-    (issue #23) n'ont pas de worktree, donc distinct de
-    `supprimer_worktrees_route`. Revérifiée ici indépendamment de la case
-    cochée côté template : seule la convention de nom
+    récupération sélectionnée (case à cocher, niveau 2), ainsi que ses
+    fichiers Non_Lu/ associés (`lister_fichiers_resumes_hash`, même hash que
+    la branche) — ces branches (issue #23) n'ont pas de worktree, donc
+    distinct de `supprimer_worktrees_route`. Revérifiée ici indépendamment de
+    la case cochée côté template : seule la convention de nom
     `recuperation-<hash>` (issue #26) autorise la suppression, jamais le
-    badge de diagnostic (issue #29)."""
+    badge de diagnostic (issue #29).
+
+    Les deux suppressions (branche + résumés) sont faites dans le même geste
+    car aucun cas n'a de sens à supprimer l'une sans l'autre : sans elles,
+    le commit redevient orphelin non sécurisé juste après (issue #31)."""
     noms_branches = request.form.getlist("branches")
     projet, message_erreur = _projet_pret(nom_projet)
     if not projet:
@@ -582,14 +592,31 @@ def supprimer_branches_recuperation_route(nom_projet):
         if nom not in branches:
             flash(f"❌ Branche « {nom} » introuvable.", "erreur")
             continue
-        if hash_depuis_branche_recuperation(nom) is None:
+        hash_commit = hash_depuis_branche_recuperation(nom)
+        if hash_commit is None:
             flash(f"❌ « {nom} » ne suit pas la convention recuperation-<hash>, suppression refusée.", "erreur")
             continue
         resultat = supprimer_branche_recuperation(projet["repertoire"], nom)
-        if resultat["ok"]:
-            flash(f"✅ Branche « {nom} » supprimée — {resultat['commande']}", "succes")
-        else:
+        if not resultat["ok"]:
             flash(f"❌ Échec de la suppression de « {nom} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
+            continue
+
+        fichiers = lister_fichiers_resumes_hash(projet["dossier_relecture"], hash_commit)
+        nb_supprimes, nb_echecs = _supprimer_fichiers(fichiers)
+        if nb_echecs:
+            flash(
+                f"⚠️ Branche « {nom} » supprimée ({resultat['commande']}), mais {nb_echecs} "
+                f"fichier(s) Non_Lu/ associé(s) à « {hash_commit} » n'ont pas pu être supprimés.",
+                "erreur",
+            )
+        elif nb_supprimes:
+            flash(
+                f"✅ Branche « {nom} » supprimée — {resultat['commande']} "
+                f"({nb_supprimes} fichier(s) Non_Lu/ associé(s) supprimé(s))",
+                "succes",
+            )
+        else:
+            flash(f"✅ Branche « {nom} » supprimée — {resultat['commande']}", "succes")
     return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 
