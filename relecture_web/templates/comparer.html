@@ -8,7 +8,7 @@
     <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}">{{ projet.nom }}</a> /
     comparer
   </p>
-  <h1>Comparer — <code class="hash">{{ hash_commit }}</code></h1>
+  <h1>Comparer — <code class="hash">{{ hash_commit }}</code><button type="button" class="bouton-copier" data-copier="{{ hash_commit }}" title="Copier le hash">📋</button></h1>
   <p class="sous-titre">
     Vérification directe d'un commit orphelin diagnostiqué doublon : recherche,
     dans « {{ branche_cible or "branche cible non configurée" }} », du commit
@@ -18,13 +18,13 @@
 </header>
 
 <p class="dernier-commit">
-  Commit orphelin : <code class="hash">{{ hash_commit }}</code> {{ sujet or "(sujet introuvable)" }}
+  Commit orphelin : <code class="hash">{{ hash_commit }}</code><button type="button" class="bouton-copier" data-copier="{{ hash_commit }}" title="Copier le hash">📋</button> {{ sujet or "(sujet introuvable)" }}
 </p>
 
 {% if comparaison.trouve %}
 <p class="dernier-commit">
   Commit correspondant dans « {{ branche_cible }} » :
-  <code class="hash">{{ comparaison.hash_correspondant }}</code>
+  <code class="hash">{{ comparaison.hash_correspondant }}</code><button type="button" class="bouton-copier" data-copier="{{ comparaison.hash_correspondant }}" title="Copier le hash">📋</button>
   {{ comparaison.sujet_correspondant or "(sujet introuvable)" }}
 </p>
 

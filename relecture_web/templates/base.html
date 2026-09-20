@@ -9,5 +9,49 @@
 </head>
 <body>
 {% block body %}{% endblock %}
+<script>
+(function () {
+  function copierAncienneMethode(texte) {
+    var zone = document.createElement("textarea");
+    zone.value = texte;
+    zone.style.position = "fixed";
+    zone.style.opacity = "0";
+    document.body.appendChild(zone);
+    zone.focus();
+    zone.select();
+    document.execCommand("copy");
+    document.body.removeChild(zone);
+  }
+
+  document.addEventListener("click", function (evenement) {
+    var bouton = evenement.target.closest(".bouton-copier");
+    if (!bouton) return;
+    evenement.preventDefault();
+    evenement.stopPropagation();
+
+    var texte = bouton.dataset.copier || "";
+    var original = bouton.textContent;
+
+    function confirmerCopie() {
+      bouton.textContent = "✓";
+      bouton.classList.add("bouton-copier--copie");
+      setTimeout(function () {
+        bouton.textContent = original;
+        bouton.classList.remove("bouton-copier--copie");
+      }, 1200);
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(texte).then(confirmerCopie, function () {
+        copierAncienneMethode(texte);
+        confirmerCopie();
+      });
+    } else {
+      copierAncienneMethode(texte);
+      confirmerCopie();
+    }
+  });
+})();
+</script>
 </body>
 </html>

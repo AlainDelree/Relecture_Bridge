@@ -29,6 +29,7 @@
 <details class="commit-carte {{ 'commit-carte--attention' if r.a_attention }}">
   <summary>
     <code class="hash">{{ r.hash }}</code>
+    <button type="button" class="bouton-copier" data-copier="{{ r.hash }}" title="Copier le hash">📋</button>
     <span class="sujet">{{ r.sujet or r.diff or ("commit " ~ r.hash) }}</span>
     {% if r.a_attention %}<span class="badge badge--attention">⚠ point d'attention</span>{% endif %}
     <div class="commit-actions--summary" onclick="event.stopPropagation();">

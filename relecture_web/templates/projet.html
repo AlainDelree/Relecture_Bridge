@@ -40,6 +40,7 @@
     <li class="ligne-diagnostic">
       <div class="ligne-diagnostic__entete">
         <code class="hash">{{ d.hash }}</code>
+        <button type="button" class="bouton-copier" data-copier="{{ d.hash }}" title="Copier le hash">📋</button>
         <span class="sujet">{{ d.sujet or ("commit " ~ d.hash) }}</span>
         {% if d.cas == "A" %}<span class="badge badge--attente">🆕 nouveau — à merger</span>
         {% if d.doublon_possible %}
@@ -74,6 +75,7 @@
           {% for m in d.chaine %}
           <li>
             <code class="hash">{{ m.hash[:7] }}</code>
+            <button type="button" class="bouton-copier" data-copier="{{ m.hash }}" title="Copier le hash">📋</button>
             <span class="sujet">{{ m.sujet or "" }}</span>
             <span class="badge {{ 'badge--attente' if m.statut == 'nouveau' else 'badge--doublon' }}">
               {{ '🆕 nouveau' if m.statut == 'nouveau' else '♻️ doublon' }}
@@ -111,6 +113,7 @@
       </label>
       <a href="{{ url_for('branche_route', nom_projet=projet.nom, nom_branche=b.nom) }}" class="lien-branche">
         <span class="nom-branche">{{ b.nom }}</span>
+        <button type="button" class="bouton-copier" data-copier="{{ b.nom }}" title="Copier le nom de branche">📋</button>
         <span class="compteur">({{ b.nb_resumes }})</span>
         {% if b.est_principale %}<span class="badge badge--principal">principale</span>{% endif %}
         {% if b.a_un_worktree %}<span class="badge badge--info">worktree</span>{% endif %}
@@ -125,7 +128,7 @@
         {% endif %}
       </a>
     </div>
-    <p class="dernier-commit"><code class="hash">{{ b.dernier_commit.hash }}</code> {{ b.dernier_commit.sujet }}</p>
+    <p class="dernier-commit"><code class="hash">{{ b.dernier_commit.hash }}</code><button type="button" class="bouton-copier" data-copier="{{ b.dernier_commit.hash }}" title="Copier le hash">📋</button> {{ b.dernier_commit.sujet }}</p>
   </li>
   {% endfor %}
 </ul>

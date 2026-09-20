@@ -277,6 +277,20 @@ header h1 { margin-bottom: 0.2rem; }
 }
 .chaine-commits li:first-child { border-top: none; }
 
+.bouton-copier {
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  border: 1px solid #d7dde5;
+  background: #eef1f5;
+  color: #55606b;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.bouton-copier:hover { background: #e2e7ee; }
+.bouton-copier--copie { background: #e6f4ea; color: #1e7b34; border-color: #b7ddc3; }
+
 pre.brut {
   background: #f4f4f4;
   border: 1px solid #e0e0e0;
