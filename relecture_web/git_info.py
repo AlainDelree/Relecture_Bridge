@@ -23,6 +23,10 @@ TIMEOUT_GIT = 10
 TIMEOUT_PUSH = 30
 MAX_COMMITS_AFFICHES = 30
 
+# Config par projet, à éditer à la main (voir charger_branches_cibles) —
+# dans relecture_bridge, pas dans configs/ de bridge_agent (hors périmètre).
+CHEMIN_BRANCHES_CIBLES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "branches_cibles.conf")
+
 
 class ErreurRecuperationProjets(Exception):
     """La liste des projets n'a pas pu être récupérée depuis BRIDGE_AGENT_DOC.md."""
@@ -125,6 +129,45 @@ def est_branche_mergee(repertoire, branche_principale, branche):
         repertoire, "merge-base", "--is-ancestor", branche, branche_principale
     )
     return resultat.returncode == 0
+
+
+def charger_branches_cibles():
+    """Lit `branches_cibles.conf` (une ligne `nom_projet = branche` par
+    entrée, `#` pour les commentaires) — configure, projet par projet, la
+    branche à utiliser comme référence pour savoir si un commit orphelin ou
+    en attente est déjà intégré, quand ce n'est pas la branche principale du
+    dépôt (ex. un projet qui travaille sur `dev` avant de merger vers
+    `main` : comparer contre `main` donnerait un écart de commits trompeur).
+    `nom_projet` est le champ "nom" de BRIDGE_AGENT_DOC.md (ex.
+    "ff_galerie"), pas le nom de dossier. Fichier absent ou entrée manquante
+    pour un projet : aucune surcharge, comportement inchangé."""
+    branches_cibles = {}
+    try:
+        with open(CHEMIN_BRANCHES_CIBLES, encoding="utf-8") as fichier:
+            contenu = fichier.read()
+    except FileNotFoundError:
+        return branches_cibles
+
+    for ligne in contenu.splitlines():
+        ligne = ligne.split("#", 1)[0].strip()
+        if not ligne or "=" not in ligne:
+            continue
+        nom_projet, branche = ligne.split("=", 1)
+        nom_projet, branche = nom_projet.strip(), branche.strip()
+        if nom_projet and branche:
+            branches_cibles[nom_projet] = branche
+    return branches_cibles
+
+
+def get_branche_cible_comparaison(nom_projet, branche_principale, branches_cibles=None):
+    """Branche cible de comparaison d'un projet : la valeur configurée dans
+    `branches_cibles.conf` si elle existe, sinon `branche_principale` (repli
+    par défaut, comportement inchangé pour les projets sans configuration
+    explicite). `branches_cibles` peut être fourni déjà chargé pour éviter
+    de relire le fichier à chaque projet dans une boucle."""
+    if branches_cibles is None:
+        branches_cibles = charger_branches_cibles()
+    return branches_cibles.get(nom_projet, branche_principale)
 
 
 def get_branches_locales(repertoire):
@@ -301,6 +344,7 @@ def collect_etat_projets():
     """Assemble, pour chaque projet de BRIDGE_AGENT_DOC.md, ses worktrees et
     leurs commits en attente de push."""
     projets = fetch_projets()
+    branches_cibles = charger_branches_cibles()
     resultat = []
     for projet in projets:
         entree = dict(projet, worktrees=[])
@@ -324,6 +368,9 @@ def collect_etat_projets():
         entree["statut"] = "ok"
         branche_principale = get_branche_courante(repertoire)
         entree["branche_principale"] = branche_principale
+        entree["branche_cible_comparaison"] = get_branche_cible_comparaison(
+            projet["nom"], branche_principale, branches_cibles
+        )
         chemin_principal = os.path.realpath(repertoire)
         for worktree in get_worktrees(repertoire):
             worktree.update(get_commits_en_attente(worktree["path"]))
