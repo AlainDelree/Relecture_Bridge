@@ -35,6 +35,10 @@
     {% if projet.branche_cible_comparaison %}« {{ projet.branche_cible_comparaison }} »{% else %}non configurée{% endif %}
     — pas par hash ni par message de commit.
   </p>
+  <form method="post" action="{{ url_for('securiser_tous_orphelins_route', nom_projet=projet.nom) }}"
+        onsubmit="return confirm('Sécuriser tous les commits orphelins de {{ projet.nom }} ?\n\nGeste défensif pur : ne fusionne ni ne modifie rien. Les commits déjà sécurisés sont simplement ignorés.');">
+    <button type="submit" class="bouton bouton--securiser">🔒 Sécuriser tous les commits orphelins</button>
+  </form>
   <ul class="liste-diagnostics">
     {% for d in projet.diagnostics_orphelins %}
     <li class="ligne-diagnostic">

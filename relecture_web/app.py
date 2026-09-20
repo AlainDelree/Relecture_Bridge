@@ -265,6 +265,52 @@ def securiser_orphelin_route(nom_projet, hash_commit):
     return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 
+@app.route("/projet/<nom_projet>/orphelins/securiser-tous", methods=["POST"])
+def securiser_tous_orphelins_route(nom_projet):
+    """Sécurise en un seul geste tous les commits orphelins affichés pour ce
+    projet (issue #34), en appliquant `securiser_commit_orphelin` (issue #23)
+    à chacun — même action défensive pure que le bouton individuel, mais sans
+    répéter la confirmation commit par commit : contrairement à un merge, il
+    n'y a jamais de cas où il faudrait choisir de ne pas sécuriser. Rapporte
+    le résultat par commit (succès / déjà sécurisé / échec), comme le fait
+    déjà `nettoyer_tous_les_projets_route` (issue #17) pour son propre
+    rapport multi-éléments."""
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+
+    resumes = collect_resumes_projet(projet["dossier_relecture"], projet["repertoire"])
+    resumes_orphelins = regrouper_resumes_par_branche(resumes, projet["repertoire"]).get(None, [])
+    hashes_orphelins = [r["hash"] for r in resumes_orphelins]
+    if not hashes_orphelins:
+        flash("ℹ️ Aucun commit orphelin à sécuriser.", "succes")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    nb_crees, nb_deja_securises, echecs = 0, 0, []
+    for hash_commit in hashes_orphelins:
+        resultat = securiser_commit_orphelin(projet["repertoire"], hash_commit)
+        if resultat["deja_securise"]:
+            nb_deja_securises += 1
+        elif resultat["ok"]:
+            nb_crees += 1
+        else:
+            echecs.append(f"{hash_commit} ({resultat['erreur']})")
+
+    if echecs:
+        flash(
+            f"⚠️ {nb_crees} sécurisé(s), {nb_deja_securises} déjà sécurisé(s) — "
+            f"échec sur {len(echecs)} commit(s) : " + ", ".join(echecs),
+            "erreur",
+        )
+    else:
+        flash(
+            f"✅ {nb_crees} commit(s) orphelin(s) sécurisé(s) ({nb_deja_securises} déjà sécurisé(s)).",
+            "succes",
+        )
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+
 @app.route("/")
 def index():
     """Niveau 1 : liste des projets, avec le nombre de résumés en attente
