@@ -126,13 +126,22 @@ def get_branche_courante(repertoire):
 def est_branche_mergee(repertoire, branche_principale, branche):
     """True si `branche` est un ancêtre de `branche_principale` dans le dépôt
     de `repertoire` — c'est-à-dire intégralement fusionnée, condition requise
-    avant de proposer la suppression d'un worktree."""
+    avant de proposer la suppression d'un worktree.
+
+    `branche_principale` peut être une liste (projet à plusieurs cibles
+    configurées, issue #41/#50) : `branche` est alors considérée fusionnée
+    dès qu'elle est ancêtre d'au moins une des candidates — un
+    `git merge-base --is-ancestor` par candidate, répété au pire une poignée
+    de fois (nombre de cibles configurées), sans commune mesure avec le coût
+    d'un `git cherry`/calcul de distance sur tout l'historique qui avait
+    déjà provoqué un timeout (issue #42)."""
     if not branche_principale or not branche:
         return False
-    resultat = _lancer_git(
-        repertoire, "merge-base", "--is-ancestor", branche, branche_principale
+    candidates = branche_principale if isinstance(branche_principale, list) else [branche_principale]
+    return any(
+        _lancer_git(repertoire, "merge-base", "--is-ancestor", branche, candidate).returncode == 0
+        for candidate in candidates
     )
-    return resultat.returncode == 0
 
 
 def charger_branches_cibles():
@@ -195,7 +204,9 @@ def get_branches_locales(repertoire, branche_cible=None):
     (via `est_branche_mergee`) dans `branche_cible` — la branche cible de
     comparaison configurée (issue #20) si fournie, sinon la branche
     principale git par défaut (repli, comportement inchangé pour les
-    projets sans configuration explicite — issue #26)."""
+    projets sans configuration explicite — issue #26). `branche_cible` peut
+    être une liste (projet à plusieurs cibles configurées, issue #41) :
+    `est_branche_mergee` gère elle-même ce cas (issue #50)."""
     resultat = _lancer_git(
         repertoire, "for-each-ref", "refs/heads/",
         "--format=%(refname:short)%09%(objectname:short)%09"
@@ -333,7 +344,21 @@ def get_diagnostic_doublons_branche(repertoire, branche_cible, branche):
     sur la chaîne complète renvoyée par `git cherry` (commits vides de
     backup déjà exclus par `get_chaine_cherry`) — False si `branche` n'a
     aucun commit propre (déjà fusionnée, rien à signaler ici), ou si `git
-    cherry` échoue (ambigu, laissé au jugement manuel comme le cas F)."""
+    cherry` échoue (ambigu, laissé au jugement manuel comme le cas F).
+
+    `branche_cible` peut être une liste (projet à plusieurs cibles
+    configurées, issue #41) : contrairement à `est_branche_mergee`
+    (`git merge-base --is-ancestor`, peu coûteux), ce diagnostic repose sur
+    `git cherry` sur toute la chaîne de la branche — répété pour chaque
+    branche locale de la page projet (pas juste les commits orphelins,
+    beaucoup moins nombreux), ce coût cumulé est le même qui a déjà fait
+    échouer par timeout une tentative similaire (`scrabble`, issue #42/#46).
+    Même parti pris que le cas 'M' de `diagnostiquer_commits_orphelins` :
+    on ne devine rien, aucun `git cherry` supplémentaire n'est lancé, la
+    vérification reste manuelle (issue #50)."""
+    if isinstance(branche_cible, list):
+        return False
+
     if not branche_cible:
         return False
 

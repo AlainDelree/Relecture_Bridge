@@ -292,17 +292,19 @@ non.
   retournent une **liste** de branches plutôt qu'une chaîne unique
   (repli inchangé — chaîne unique — pour les projets à une seule
   cible ou sans configuration).
-  Le diagnostic des commits orphelins (cas M ci-dessus, issue #46) et le
-  bouton Comparer (essaie chaque branche candidate tour à tour, issue #46)
-  savent gérer une liste sans deviner ni planter. **Le reste de la logique
-  en aval (liste des branches d'un projet, badge « fusionnée », fusion
-  d'une branche — `get_branches_locales`, `est_branche_mergee`,
-  `get_diagnostic_doublons_branche`) ne sait, elle, pas encore choisir
-  entre plusieurs cibles** : déclarer plusieurs branches pour un projet
-  fait toujours planter la génération de la page `/projet/<nom>` (qui
-  affiche aussi cette liste de branches) tant que cette suite (issue
-  séparée) n'est pas traitée — ne pas activer une entrée multi-cibles
-  avant que l'ensemble de la page soit couvert.
+  Le diagnostic des commits orphelins (cas M ci-dessus, issue #46), le
+  bouton Comparer (essaie chaque branche candidate tour à tour, issue #46),
+  le badge « fusionnée » de la liste des branches (`est_branche_mergee`,
+  fusionnée si ancêtre d'au moins une candidate, issue #50) et le
+  diagnostic « ne contient que des doublons » (`get_diagnostic_doublons_branche`,
+  toujours False si `branche_cible` est une liste — même parti pris que le
+  cas M, on ne devine rien plutôt que de multiplier les `git cherry` sur
+  toute branche locale, issue #50) savent tous gérer une liste sans
+  deviner ni planter — la page `/projet/<nom>` d'un projet à plusieurs
+  cibles s'affiche donc sans erreur. Reste non traité : la commande de
+  fusion affichée (`commande_merge`) pour une branche d'un tel projet ne
+  choisit pas non plus automatiquement entre les cibles (affichage à
+  vérifier manuellement avant exécution dans ce cas précis).
 - **Ce fichier suit le même statut que les `configs/*.conf` de
   Bridge_Agent** : CCL ne le modifie jamais de sa propre initiative,
   même sur demande explicite d'une issue — seul Alain l'édite à la
