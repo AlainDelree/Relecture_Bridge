@@ -15,6 +15,7 @@ new_issue.py).
 """
 
 import os
+import subprocess
 
 from flask import Flask, flash, redirect, render_template, request, url_for
 
@@ -530,7 +531,18 @@ def pousser_branches_route(nom_projet):
         if nom not in branches:
             flash(f"❌ Branche « {nom} » introuvable.", "erreur")
             continue
-        resultat = pousser_branche(projet["repertoire"], nom)
+        try:
+            resultat = pousser_branche(projet["repertoire"], nom)
+        except subprocess.TimeoutExpired:
+            flash(
+                f"⚠️ Le push de « {nom} » a dépassé le délai, mais a pu se terminer "
+                "entre-temps — vérifiez manuellement si besoin.",
+                "erreur",
+            )
+            continue
+        except Exception as exc:
+            flash(f"❌ Erreur inattendue lors du push de « {nom} » : {exc}", "erreur")
+            continue
         if resultat["ok"]:
             flash(f"✅ « {nom} » poussée — {resultat['commande']}", "succes")
         else:
@@ -570,7 +582,18 @@ def merger_branches_route(nom_projet):
                 "erreur",
             )
             continue
-        resultat = fusionner_worktree(projet["repertoire"], branche_cible, nom)
+        try:
+            resultat = fusionner_worktree(projet["repertoire"], branche_cible, nom)
+        except subprocess.TimeoutExpired:
+            flash(
+                f"⚠️ La fusion de « {nom} » a dépassé le délai, mais a pu se terminer "
+                "entre-temps — vérifiez manuellement si besoin.",
+                "erreur",
+            )
+            continue
+        except Exception as exc:
+            flash(f"❌ Erreur inattendue lors de la fusion de « {nom} » : {exc}", "erreur")
+            continue
         if resultat["ok"]:
             flash(f"✅ « {nom} » fusionnée dans « {branche_cible} » — {resultat['commande']}", "succes")
         else:

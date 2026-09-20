@@ -20,7 +20,11 @@ FIN_TABLEAU = "<!-- FIN:TABLEAU_PROJETS_ACTIFS"
 
 TIMEOUT_RESEAU = 20
 TIMEOUT_GIT = 10
-TIMEOUT_PUSH = 30
+# Opérations git potentiellement longues (push vers le remote, merge sur un
+# historique volumineux) — un dépôt avec beaucoup de commits accumulés ou une
+# connexion lente peut largement dépasser TIMEOUT_GIT sans que la commande
+# ait réellement échoué (issue #39).
+TIMEOUT_GIT_LONG = 120
 MAX_COMMITS_AFFICHES = 30
 
 # Config par projet, à éditer à la main (voir charger_branches_cibles) —
@@ -701,7 +705,7 @@ def fusionner_worktree(repertoire, branche_cible, branche_source):
 
     commande = ["git", "-C", repertoire, "merge", branche_source]
     resultat = subprocess.run(
-        commande, capture_output=True, text=True, timeout=TIMEOUT_GIT,
+        commande, capture_output=True, text=True, timeout=TIMEOUT_GIT_LONG,
     )
 
     if doit_basculer and resultat.returncode == 0:
@@ -785,7 +789,7 @@ def pousser_branche(repertoire, branche):
     remote = get_remote_defaut(repertoire)
     commande = ["git", "-C", repertoire, "push", remote, branche]
     resultat = subprocess.run(
-        commande, capture_output=True, text=True, timeout=TIMEOUT_PUSH,
+        commande, capture_output=True, text=True, timeout=TIMEOUT_GIT_LONG,
     )
     return {
         "ok": resultat.returncode == 0,
