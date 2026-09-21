@@ -1032,32 +1032,33 @@ _MARQUEUR_BASE = "|||||||"
 _MARQUEUR_FIN = ">>>>>>>"
 
 
-def _extraire_blocs_conflit(contenu):
-    """Découpe le contenu d'un fichier en conflit en segments alternant
-    texte de contexte et blocs de conflit (issue #55) — le texte hors
-    conflit doit s'afficher normalement autour, pour donner le contexte
-    (demande explicite de l'issue). Un éventuel bloc de base commune
-    (marqueur `|||||||`, présent seulement si `merge.conflictStyle=diff3`
-    est configuré) est ignoré : seules les deux versions en conflit sont
-    affichées, pas la base à trois voies.
+def _trouver_blocs_conflit(lignes):
+    """Repère chaque bloc de conflit dans une liste de lignes déjà découpée
+    (`str.splitlines(keepends=True)`) — factorise le parcours entre
+    l'affichage (`_extraire_blocs_conflit`, issue #55) et la résolution
+    (`resoudre_bloc_conflit`, issue #56), pour que les deux emploient
+    exactement la même numérotation de blocs (0-based, ordre d'apparition
+    dans le fichier) et qu'une résolution ne puisse jamais toucher le
+    mauvais bloc. Un éventuel bloc de base commune (marqueur `|||||||`,
+    présent seulement si `merge.conflictStyle=diff3` est configuré) est
+    ignoré : seules les deux versions en conflit sont retenues, pas la base
+    à trois voies. Un marqueur ouvert sans fermeture (fichier
+    tronqué/corrompu) n'est pas compté comme un bloc.
 
-    Retourne une liste de segments : {type: 'contexte', texte} ou
-    {type: 'conflit', entete_ours, texte_ours, entete_theirs, texte_theirs}.
-    Un marqueur ouvert sans fermeture (fichier tronqué/corrompu) rattache le
-    fragment orphelin au contexte plutôt que d'échouer."""
-    lignes = contenu.splitlines(keepends=True)
-    segments = []
-    contexte = []
+    Retourne une liste de dicts {debut, fin, entete_ours, texte_ours,
+    entete_theirs, texte_theirs} — `debut`/`fin` sont des index dans
+    `lignes` ([debut:fin[ couvre tout le bloc, marqueurs compris), pour
+    permettre à l'appelant de le remplacer par simple slicing."""
+    blocs = []
     i, n = 0, len(lignes)
 
     while i < n:
         ligne = lignes[i]
         if not ligne.startswith(_MARQUEUR_DEBUT):
-            contexte.append(ligne)
             i += 1
             continue
 
-        depart = i
+        debut = i
         entete_ours = ligne.rstrip("\n")
         i += 1
         ours = []
@@ -1069,7 +1070,6 @@ def _extraire_blocs_conflit(contenu):
             while i < n and not lignes[i].startswith(_MARQUEUR_SEPARATEUR):
                 i += 1
         if i >= n:
-            contexte.extend(lignes[depart:])
             break
         i += 1  # ligne =======
         theirs = []
@@ -1077,24 +1077,53 @@ def _extraire_blocs_conflit(contenu):
             theirs.append(lignes[i])
             i += 1
         if i >= n:
-            contexte.extend(lignes[depart:])
             break
         entete_theirs = lignes[i].rstrip("\n")
         i += 1
 
-        if contexte:
-            segments.append({"type": "contexte", "texte": "".join(contexte)})
-            contexte = []
-        segments.append({
-            "type": "conflit",
-            "entete_ours": entete_ours,
-            "texte_ours": "".join(ours),
-            "entete_theirs": entete_theirs,
-            "texte_theirs": "".join(theirs),
+        blocs.append({
+            "debut": debut, "fin": i,
+            "entete_ours": entete_ours, "texte_ours": "".join(ours),
+            "entete_theirs": entete_theirs, "texte_theirs": "".join(theirs),
         })
 
-    if contexte:
-        segments.append({"type": "contexte", "texte": "".join(contexte)})
+    return blocs
+
+
+def _extraire_blocs_conflit(contenu):
+    """Découpe le contenu d'un fichier en conflit en segments alternant
+    texte de contexte et blocs de conflit (issue #55), via
+    `_trouver_blocs_conflit` — le texte hors conflit doit s'afficher
+    normalement autour, pour donner le contexte (demande explicite de
+    l'issue). Un marqueur ouvert sans fermeture (fichier tronqué/corrompu)
+    rattache le fragment orphelin au contexte plutôt que d'échouer.
+
+    Retourne une liste de segments : {type: 'contexte', texte} ou
+    {type: 'conflit', index, entete_ours, texte_ours, entete_theirs,
+    texte_theirs} — `index` (0-based) est la numérotation stable du bloc,
+    à renvoyer telle quelle lors d'une résolution (issue #56)."""
+    lignes = contenu.splitlines(keepends=True)
+    blocs = _trouver_blocs_conflit(lignes)
+
+    segments = []
+    position = 0
+    for index_bloc, bloc in enumerate(blocs):
+        contexte = "".join(lignes[position:bloc["debut"]])
+        if contexte:
+            segments.append({"type": "contexte", "texte": contexte})
+        segments.append({
+            "type": "conflit",
+            "index": index_bloc,
+            "entete_ours": bloc["entete_ours"],
+            "texte_ours": bloc["texte_ours"],
+            "entete_theirs": bloc["entete_theirs"],
+            "texte_theirs": bloc["texte_theirs"],
+        })
+        position = bloc["fin"]
+
+    reste = "".join(lignes[position:])
+    if reste:
+        segments.append({"type": "contexte", "texte": reste})
     return segments
 
 
@@ -1116,6 +1145,84 @@ def lire_conflits_fichier(repertoire, chemin_relatif):
     segments = _extraire_blocs_conflit(contenu)
     nb_blocs = sum(1 for segment in segments if segment["type"] == "conflit")
     return {"segments": segments, "nb_blocs": nb_blocs, "erreur": None}
+
+
+def resoudre_bloc_conflit(repertoire, chemin_relatif, index_bloc, texte_final):
+    """Remplace le bloc de conflit numéro `index_bloc` (0-based, même
+    numérotation que `lire_conflits_fichier`, via `_trouver_blocs_conflit`)
+    par `texte_final` dans le fichier réel (issue #56) — marqueurs
+    `<<<<<<<`/`=======`/`>>>>>>>` compris, le reste du fichier intact. Si le
+    fichier ne contient plus aucun bloc de conflit après ce remplacement,
+    lance `git add <chemin_relatif>` pour marquer sa résolution (jamais de
+    commit ni de push, qui restent des gestes manuels d'Alain).
+
+    Lecture stricte en UTF-8 (contrairement à `lire_conflits_fichier`, qui
+    tolère les octets invalides avec `errors="replace"` puisqu'elle
+    n'écrit jamais) : ici une écriture suit la lecture, remplacer les
+    octets invalides par des caractères de substitution les perdrait
+    définitivement — mieux vaut échouer proprement sur un fichier non
+    UTF-8 que corrompre son contenu.
+
+    `index_bloc` doit provenir du même état de fichier que ce qui a été
+    affiché (voir la route appelante) : si le fichier a changé entre-temps
+    au point que ce numéro ne corresponde plus à un bloc existant (bloc
+    déjà traité, fichier modifié en dehors de relecture_web...), retourne
+    une erreur plutôt que d'écrire à l'aveugle sur le mauvais bloc.
+
+    Retourne {ok, erreur, nb_blocs_restants, fichier_resolu, git_add} —
+    `git_add` est None si `git add` n'a pas été nécessaire (blocs
+    restants), sinon {ok, erreur} de la commande elle-même."""
+    chemin_absolu = os.path.join(repertoire, chemin_relatif)
+    try:
+        with open(chemin_absolu, encoding="utf-8") as fichier:
+            contenu = fichier.read()
+    except (OSError, UnicodeDecodeError) as exc:
+        return {
+            "ok": False, "erreur": str(exc), "nb_blocs_restants": 0,
+            "fichier_resolu": False, "git_add": None,
+        }
+
+    lignes = contenu.splitlines(keepends=True)
+    blocs = _trouver_blocs_conflit(lignes)
+    if not (0 <= index_bloc < len(blocs)):
+        return {
+            "ok": False,
+            "erreur": (
+                f"bloc n°{index_bloc} introuvable — le fichier a changé depuis "
+                "l'affichage (bloc déjà traité, ou modifié en dehors de "
+                "relecture_web). Recharge la page pour repartir des blocs actuels."
+            ),
+            "nb_blocs_restants": len(blocs), "fichier_resolu": False, "git_add": None,
+        }
+
+    bloc = blocs[index_bloc]
+    if texte_final and not texte_final.endswith("\n"):
+        texte_final += "\n"
+    nouvelles_lignes = lignes[:bloc["debut"]] + ([texte_final] if texte_final else []) + lignes[bloc["fin"]:]
+
+    try:
+        with open(chemin_absolu, "w", encoding="utf-8") as fichier:
+            fichier.write("".join(nouvelles_lignes))
+    except OSError as exc:
+        return {
+            "ok": False, "erreur": str(exc), "nb_blocs_restants": len(blocs),
+            "fichier_resolu": False, "git_add": None,
+        }
+
+    nb_blocs_restants = len(blocs) - 1
+    fichier_resolu = nb_blocs_restants == 0
+    git_add = None
+    if fichier_resolu:
+        resultat = _lancer_git(repertoire, "add", "--", chemin_relatif)
+        git_add = {
+            "ok": resultat.returncode == 0,
+            "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
+        }
+
+    return {
+        "ok": True, "erreur": None, "nb_blocs_restants": nb_blocs_restants,
+        "fichier_resolu": fichier_resolu, "git_add": git_add,
+    }
 
 
 def collect_etat_projets():

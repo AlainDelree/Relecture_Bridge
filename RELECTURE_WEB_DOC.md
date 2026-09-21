@@ -357,7 +357,7 @@ silencieuse.
 | **Générer rapport** | Un commit non tranché (cas F, ou tout commit affiché sur une branche), en lecture seule. | `git cherry`, `git branch --contains`, `git branch -r --contains` (assemblés en texte) | Aucune modification — voir section 5. |
 | **Nettoyer tous les projets** | Tous les projets accessibles. | suppression de fichiers `Non_Lu/` (pas de commande git) | Ne supprime que les résumés dont le commit est déjà un ancêtre d'une branche **distante** (`git branch -r --contains`) — jamais un résumé dont le commit n'est pas encore réellement en sécurité sur GitHub. |
 
-## 10. Détecter et afficher les conflits de fusion (issue #55)
+## 10. Détecter, afficher et résoudre les conflits de fusion (issues #55, #56)
 
 Quand un `git merge` déclenché depuis le panneau d'actions (section 9)
 échoue par conflit, le dépôt reste volontairement en état de fusion non
@@ -383,14 +383,34 @@ supplémentaire `|||||||` pour la base commune), la base est ignorée :
 seules les deux versions en conflit sont affichées, pas la base à trois
 voies.
 
-**Strictement en lecture seule** : cette page ne modifie jamais le
-fichier ni ne lance de commande git d'écriture. Le chemin de fichier
-demandé n'est accepté que s'il figure dans la liste actuelle des
-fichiers en conflit renvoyée par `git status` — jamais construit à
-l'aveugle à partir du seul paramètre d'URL. Choisir/éditer le texte
-final et l'écrire fait l'objet d'une issue de suivi séparée : cet outil
-aide seulement à *voir* le conflit sans repasser par `grep`/`sed` en
-terminal, il ne le résout pas encore.
+Le chemin de fichier demandé n'est accepté que s'il figure dans la
+liste actuelle des fichiers en conflit renvoyée par `git status` —
+jamais construit à l'aveugle à partir du seul paramètre d'URL.
+
+**Résolution bloc par bloc (issue #56)** : à côté des deux versions en
+lecture seule, chaque bloc affiche un `<textarea>` éditable pré-rempli
+avec la version « ours », dans lequel Alain compose le texte final à
+garder (copie d'une des deux versions, combinaison des deux, ou tout
+autre texte — y compris vide, pour supprimer le bloc). Un bouton
+« Traiter ce bloc » (avec confirmation JS, aperçu du texte inclus)
+remplace ce bloc précis — marqueurs `<<<<<<<`/`=======`/`>>>>>>>`
+compris — par ce texte dans le fichier réel, en local uniquement.
+
+La numérotation des blocs (0-based, ordre d'apparition dans le
+fichier) est calculée par la même fonction que l'affichage
+(`_trouver_blocs_conflit`), pour que le bloc traité soit toujours
+exactement celui affiché. Si le fichier a changé entre l'affichage et
+la soumission (bloc déjà traité, fichier modifié ailleurs) au point que
+ce numéro ne corresponde plus, la résolution échoue proprement avec un
+message d'erreur plutôt que d'écrire sur le mauvais bloc — Alain doit
+recharger la page.
+
+Une fois le dernier bloc d'un fichier traité, `git add <fichier>` est
+lancé automatiquement pour marquer sa résolution, avec un message flash
+clair — **le commit et le push restent des gestes manuels**, volontai-
+rement non automatisés. Tant qu'il reste des blocs, la page se
+recharge sur le même fichier (le bloc suivant apparaît naturellement en
+premier).
 
 ## 11. Comment interpréter une capture ou un export de `relecture_web`
 

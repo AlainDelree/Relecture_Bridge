@@ -10,13 +10,27 @@
   </p>
   <h1>Conflit — <code class="chemin-fichier">{{ chemin_relatif }}</code> <span class="badge badge--attention">{{ code }}</span></h1>
   <p class="sous-titre">
-    Lecture seule : {{ lecture.nb_blocs }} bloc(s) de conflit détecté(s) entre
+    {{ lecture.nb_blocs }} bloc(s) de conflit détecté(s) entre
     <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code>, <code>=======</code> et
     <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</code>. Le texte hors conflit s'affiche
-    normalement autour, pour donner le contexte. Choisir/éditer le texte
-    final et l'écrire se fait encore manuellement (issue séparée).
+    normalement autour, pour donner le contexte. Les deux versions
+    ci-dessous restent en lecture seule ; composez le texte final à garder
+    dans le champ éditable de chaque bloc (copie d'une des deux versions,
+    combinaison des deux, ou tout autre texte), puis « Traiter » l'applique
+    directement au fichier. Une fois tous les blocs traités, le fichier est
+    automatiquement ajouté (<code>git add</code>) — le commit reste manuel.
   </p>
 </header>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+  <ul class="messages">
+    {% for categorie, message in messages %}
+    <li class="message message--{{ categorie }}">{{ message }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+{% endwith %}
 
 {% if lecture.erreur %}
 <p class="erreur">❌ {{ lecture.erreur }}</p>
@@ -32,9 +46,30 @@
     <pre class="conflit-bloc__texte conflit-bloc__texte--ours">{{ segment.texte_ours }}</pre>
     <p class="conflit-bloc__entete conflit-bloc__entete--theirs">{{ segment.entete_theirs }}</p>
     <pre class="conflit-bloc__texte conflit-bloc__texte--theirs">{{ segment.texte_theirs }}</pre>
+    <form method="post"
+          action="{{ url_for('traiter_bloc_conflit_route', nom_projet=projet.nom, chemin_relatif=chemin_relatif) }}"
+          class="conflit-bloc__formulaire"
+          onsubmit="return confirmerTraitementBloc(this, {{ segment.index }});">
+      <input type="hidden" name="index_bloc" value="{{ segment.index }}">
+      <label class="conflit-bloc__label" for="texte-final-{{ segment.index }}">Texte final à garder pour ce bloc :</label>
+      <textarea id="texte-final-{{ segment.index }}" name="texte_final" class="conflit-bloc__textarea"
+                rows="6" spellcheck="false">{{ segment.texte_ours }}</textarea>
+      <button type="submit" class="bouton bouton--traiter">Traiter ce bloc</button>
+    </form>
   </div>
   {% endif %}
 {% endfor %}
 {% endif %}
+
+<script>
+function confirmerTraitementBloc(formulaire, indexBloc) {
+  var texte = formulaire.querySelector("textarea[name='texte_final']").value;
+  var apercu = texte.length > 300 ? texte.slice(0, 300) + "…" : texte;
+  return confirm(
+    "Remplacer le bloc de conflit n°" + indexBloc + " de « {{ chemin_relatif }} » par ce texte ?\n\n" + apercu
+    + "\n\nSi c'est le dernier bloc du fichier, « git add » sera lancé automatiquement."
+  );
+}
+</script>
 
 {% endblock %}

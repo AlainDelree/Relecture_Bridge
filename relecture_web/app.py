@@ -42,6 +42,7 @@ from git_info import (
     lire_conflits_fichier,
     nom_branche_recuperation,
     pousser_branche,
+    resoudre_bloc_conflit,
     revert_commit,
     securiser_commit_orphelin,
     supprimer_branche,
@@ -295,8 +296,9 @@ def conflit_fichier_route(nom_projet, chemin_relatif):
     à un `<textarea>`, qui ne supporte pas le texte en couleur), avec le
     texte hors conflit autour pour donner le contexte. Route en lecture
     seule (GET), aucune commande git de modification — la résolution
-    elle-même (choisir/éditer le texte final et l'écrire) fait l'objet d'une
-    issue séparée.
+    elle-même se fait via `traiter_bloc_conflit_route` (issue #56), un
+    `<textarea>` éditable par bloc affiché juste à côté de cette lecture
+    seule.
 
     `chemin_relatif` n'est accepté que s'il figure dans la liste actuelle
     des fichiers en conflit du projet, recalculée ici (pas depuis le cache
@@ -322,6 +324,75 @@ def conflit_fichier_route(nom_projet, chemin_relatif):
         "conflit.html", projet=projet, chemin_relatif=chemin_relatif,
         code=fichier["code"], lecture=lecture,
     )
+
+
+@app.route("/projet/<nom_projet>/conflit/<path:chemin_relatif>/traiter", methods=["POST"])
+def traiter_bloc_conflit_route(nom_projet, chemin_relatif):
+    """Applique le texte final composé par Alain pour un bloc de conflit
+    précis (issue #56) : remplace ce bloc (marqueurs compris) par le
+    contenu du `<textarea>` soumis, dans le fichier réel (voir
+    `resoudre_bloc_conflit`). Si le fichier ne contient plus aucun bloc de
+    conflit après coup, `git add` a déjà été lancé dessus par
+    `resoudre_bloc_conflit` — le commit et le push restent des gestes
+    manuels d'Alain. Revalide que `chemin_relatif` est toujours un fichier
+    en conflit du projet avant d'écrire, comme la route de lecture voisine.
+
+    Redirige vers la même page de conflit s'il reste des blocs (elle les
+    recalcule à l'affichage, donc le bloc suivant apparaît naturellement en
+    premier), ou vers la page du projet avec un message clair si le fichier
+    vient d'être entièrement résolu."""
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+
+    fichiers_conflit = get_fichiers_en_conflit(projet["repertoire"])
+    fichier = next((f for f in fichiers_conflit if f["chemin"] == chemin_relatif), None)
+    if not fichier:
+        flash(
+            f"❌ « {chemin_relatif} » n'est pas (ou plus) un fichier en conflit pour « {nom_projet} ».",
+            "erreur",
+        )
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    try:
+        index_bloc = int(request.form.get("index_bloc", ""))
+    except ValueError:
+        flash("❌ Numéro de bloc invalide.", "erreur")
+        return redirect(url_for("conflit_fichier_route", nom_projet=nom_projet, chemin_relatif=chemin_relatif))
+
+    texte_final = request.form.get("texte_final", "")
+
+    resultat = resoudre_bloc_conflit(projet["repertoire"], chemin_relatif, index_bloc, texte_final)
+    if not resultat["ok"]:
+        flash(
+            f"❌ Échec du traitement du bloc n°{index_bloc} de « {chemin_relatif} » : {resultat['erreur']}",
+            "erreur",
+        )
+        return redirect(url_for("conflit_fichier_route", nom_projet=nom_projet, chemin_relatif=chemin_relatif))
+
+    if resultat["fichier_resolu"]:
+        git_add = resultat["git_add"]
+        if git_add and git_add["ok"]:
+            flash(
+                f"✅ « {chemin_relatif} » entièrement résolu (dernier bloc traité) — "
+                "`git add` effectué, prêt pour le commit (manuel).",
+                "succes",
+            )
+        elif git_add:
+            flash(
+                f"⚠️ « {chemin_relatif} » entièrement résolu (plus aucun bloc de conflit), "
+                f"mais `git add` a échoué : {git_add['erreur']}",
+                "erreur",
+            )
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    flash(
+        f"✅ Bloc n°{index_bloc} de « {chemin_relatif} » traité — "
+        f"{resultat['nb_blocs_restants']} bloc(s) restant(s).",
+        "succes",
+    )
+    return redirect(url_for("conflit_fichier_route", nom_projet=nom_projet, chemin_relatif=chemin_relatif))
 
 
 @app.route("/projet/<nom_projet>/orphelin/<hash_commit>/securiser", methods=["POST"])

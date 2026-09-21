@@ -362,6 +362,32 @@ header h1 { margin-bottom: 0.2rem; }
 }
 .conflit-bloc__texte--ours { background: #e8f0fe; }
 .conflit-bloc__texte--theirs { background: #fff4e5; }
+.conflit-bloc__formulaire {
+  padding: 0.6rem;
+  border-top: 1px solid #ddd;
+  background: #fafafa;
+}
+.conflit-bloc__label {
+  display: block;
+  font-size: 0.78rem;
+  color: #555;
+  margin-bottom: 0.3rem;
+}
+.conflit-bloc__textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  padding: 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+  resize: vertical;
+  margin-bottom: 0.5rem;
+}
+.bouton--traiter { background: #eafaf1; color: #1e7b34; border-color: #b7ddc3; }
+.bouton--traiter:hover { background: #d9f3e4; }
 
 .diagnostic-orphelins { margin-bottom: 1.25rem; }
 .diagnostic-orphelins h2 { font-size: 1rem; margin: 0 0 0.15rem 0; }
