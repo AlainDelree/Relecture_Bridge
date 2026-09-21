@@ -356,6 +356,7 @@ silencieuse.
 | **Comparer la sélection** | Une ou plusieurs branches `recuperation-<hash>` sélectionnées, en lecture seule. | `comparer_commit_doublon` (donc `git diff`/`git patch-id`) relancé pour chacune | Aucune modification — voir section 5. Branche hors convention `recuperation-<hash>` ignorée. Le bouton de suppression groupée proposé sur le résultat ne couvre que les branches confirmées diff vide. |
 | **Générer rapport** | Un commit non tranché (cas F, ou tout commit affiché sur une branche), en lecture seule. | `git cherry`, `git branch --contains`, `git branch -r --contains` (assemblés en texte) | Aucune modification — voir section 5. |
 | **Nettoyer tous les projets** | Tous les projets accessibles. | suppression de fichiers `Non_Lu/` (pas de commande git) | Ne supprime que les résumés dont le commit est déjà un ancêtre d'une branche **distante** (`git branch -r --contains`) — jamais un résumé dont le commit n'est pas encore réellement en sécurité sur GitHub. |
+| **Finaliser le merge** | Le merge en cours du projet (page « branches d'un projet »). | `git commit --no-edit` | Voir section 10 — n'apparaît que si un merge est réellement en cours (`MERGE_HEAD` présent) ET qu'il ne reste plus aucun fichier en conflit ; revalidé côté serveur à partir de l'état git actuel, jamais de commit partiel. |
 
 ## 10. Détecter, afficher et résoudre les conflits de fusion (issues #55, #56, #59)
 
@@ -425,10 +426,33 @@ recharger la page.
 
 Une fois le dernier bloc d'un fichier traité, `git add <fichier>` est
 lancé automatiquement pour marquer sa résolution, avec un message flash
-clair — **le commit et le push restent des gestes manuels**, volontai-
-rement non automatisés. Tant qu'il reste des blocs, la page se
-recharge sur le même fichier (le bloc suivant apparaît naturellement en
-premier).
+clair — **le push reste un geste manuel**, volontairement non
+automatisé. Tant qu'il reste des blocs, la page se recharge sur le
+même fichier (le bloc suivant apparaît naturellement en premier).
+
+**Finaliser le merge (issue #61)** : une fois que `git status` ne
+signale plus aucun chemin non fusionné, la section « Fusion en
+conflit » de la page projet ne liste plus de fichiers — elle affiche à
+la place un unique bouton « ✅ Finaliser le merge », qui exécute
+`git commit --no-edit` (équivalent non-interactif de `git commit` sans
+`-m` : accepte tel quel le message déjà préparé par git dans
+`.git/MERGE_MSG`, impossible à éditer depuis une page web). Avant
+cette issue, ce commit restait la seule étape encore manuelle du flux
+de résolution — obligeant à rebasculer en terminal juste pour ça.
+
+Deux conditions cumulatives, revérifiées côté serveur à partir de
+l'état git actuel (pas de la seule page déjà affichée) avant toute
+exécution :
+- un merge est réellement en cours (`git rev-parse --verify --quiet
+  MERGE_HEAD` réussit — distingue un vrai merge en cours d'un simple
+  conflit `UU` isolé, par exemple un cherry-pick ou un revert en
+  conflit, qui ne créent jamais `MERGE_HEAD`) ;
+- `get_fichiers_en_conflit` ne renvoie plus aucun fichier.
+
+Si l'une des deux conditions n'est pas remplie (bouton absent, ou
+formulaire soumis depuis une page obsolète après qu'un fichier a été
+modifié en dehors de `relecture_web`), l'action est refusée par message
+flash plutôt que de tenter un commit partiel.
 
 ## 11. Comment interpréter une capture ou un export de `relecture_web`
 

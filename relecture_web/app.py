@@ -26,6 +26,7 @@ from git_info import (
     commit_est_securise,
     diagnostiquer_commits_orphelins,
     extraire_numero_issue,
+    finaliser_commit_merge,
     fusionner_worktree,
     get_branches_contenant,
     get_branches_distantes_contenant,
@@ -35,6 +36,7 @@ from git_info import (
     get_diagnostic_doublons_branche,
     get_fichiers_en_conflit,
     get_issue_deja_referencee,
+    get_merge_en_cours,
     get_rapport_cherry_brut,
     get_remote_defaut,
     get_sujet_commit,
@@ -395,6 +397,50 @@ def traiter_bloc_conflit_route(nom_projet, chemin_relatif):
     return redirect(url_for("conflit_fichier_route", nom_projet=nom_projet, chemin_relatif=chemin_relatif))
 
 
+@app.route("/projet/<nom_projet>/finaliser-merge", methods=["POST"])
+def finaliser_merge_route(nom_projet):
+    """Finalise le commit de merge une fois tous les conflits résolus (issue
+    #61) — jusqu'ici une étape manuelle en terminal (`git commit` sans `-m`,
+    pour accepter le message déjà préparé par git) malgré le fait que chaque
+    fichier résolu via `traiter_bloc_conflit_route` fasse déjà le `git add`
+    automatiquement, ce qui cassait le flux : commencer la résolution dans
+    `relecture_web`, puis devoir basculer en terminal pour la conclure.
+
+    Revalide à partir de l'état git actuel (pas de la seule page déjà
+    affichée, qui a pu être ouverte avant la résolution du dernier fichier)
+    qu'un merge est bien en cours et qu'aucun fichier ne reste en conflit,
+    avant d'appeler `finaliser_commit_merge` — jamais de commit partiel,
+    même sur un formulaire soumis depuis une page obsolète."""
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+
+    if not get_merge_en_cours(projet["repertoire"]):
+        flash(f"❌ « {nom_projet} » n'est pas en état de fusion non finalisée — rien à commiter.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    fichiers_conflit = get_fichiers_en_conflit(projet["repertoire"])
+    if fichiers_conflit:
+        flash(
+            f"❌ {len(fichiers_conflit)} fichier(s) encore en conflit pour « {nom_projet} » — "
+            "résolvez-les tous avant de finaliser le merge.",
+            "erreur",
+        )
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    resultat = finaliser_commit_merge(projet["repertoire"])
+    if resultat["ok"]:
+        flash(f"✅ Merge finalisé pour « {nom_projet} » — {resultat['commande']}", "succes")
+    else:
+        flash(
+            f"❌ Échec de la finalisation du merge de « {nom_projet} » ({resultat['commande']}) : "
+            f"{resultat['erreur']}",
+            "erreur",
+        )
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+
 @app.route("/projet/<nom_projet>/orphelin/<hash_commit>/securiser", methods=["POST"])
 def securiser_orphelin_route(nom_projet, hash_commit):
     """Sécurise un commit orphelin (issue #23) en créant une branche
@@ -505,12 +551,24 @@ def projet_route(nom_projet):
         projet["branches"] = []
         projet["diagnostics_orphelins"] = []
         projet["fichiers_conflit"] = []
+        projet["merge_en_cours"] = False
+        projet["peut_finaliser_merge"] = False
+        projet["commande_finaliser_merge"] = None
         return render_template("projet.html", projet=projet, erreur=erreur)
 
     resumes = collect_resumes_projet(projet["dossier_relecture"], projet["repertoire"])
     resumes_par_branche = regrouper_resumes_par_branche(resumes, projet["repertoire"])
     projet["diagnostics_orphelins"] = _diagnostiquer_orphelins(projet, resumes_par_branche.get(None, []))
     projet["fichiers_conflit"] = get_fichiers_en_conflit(projet["repertoire"])
+
+    # Bouton « Finaliser le merge » (issue #61) : proposé seulement quand un
+    # merge est réellement en cours (MERGE_HEAD présent) ET qu'il ne reste
+    # plus aucun fichier en conflit — jamais de tentative de commit partiel.
+    projet["merge_en_cours"] = get_merge_en_cours(projet["repertoire"])
+    projet["peut_finaliser_merge"] = projet["merge_en_cours"] and not projet["fichiers_conflit"]
+    projet["commande_finaliser_merge"] = (
+        f"git -C {projet['repertoire']} commit --no-edit" if projet["peut_finaliser_merge"] else None
+    )
 
     remote = get_remote_defaut(projet["repertoire"])
     cible_merge_configuree = projet["branche_cible_comparaison"]

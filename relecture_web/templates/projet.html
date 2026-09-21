@@ -27,8 +27,9 @@
   <p class="statut">Pas un dépôt git : {{ projet.repertoire }}</p>
 {% else %}
 
-{% if projet.fichiers_conflit %}
+{% if projet.merge_en_cours %}
 <section class="conflits-fusion">
+  {% if projet.fichiers_conflit %}
   <h2>⚠ Fusion en conflit — {{ projet.fichiers_conflit|length }} fichier(s)</h2>
   <p class="sous-titre">
     Le dépôt est actuellement en état de fusion non résolue (<code>git status</code>
@@ -46,6 +47,18 @@
     </li>
     {% endfor %}
   </ul>
+  {% elif projet.peut_finaliser_merge %}
+  <h2>✅ Fusion prête à finaliser</h2>
+  <p class="sous-titre">
+    Tous les fichiers en conflit ont été résolus (plus aucun chemin non
+    fusionné selon <code>git status</code>). Il ne reste que le commit du
+    merge lui-même — jusqu'ici un geste manuel en terminal.
+  </p>
+  <form method="post" action="{{ url_for('finaliser_merge_route', nom_projet=projet.nom) }}"
+        onsubmit="return confirm('Finaliser le merge de {{ projet.nom }} ?\n\nExécute git commit avec le message par défaut déjà préparé par git (celui pré-rempli par un git commit sans -m).\n\nCommande équivalente :\n{{ projet.commande_finaliser_merge }}');">
+    <button type="submit" class="bouton bouton--merger">✅ Finaliser le merge</button>
+  </form>
+  {% endif %}
 </section>
 {% endif %}
 

@@ -1159,6 +1159,43 @@ def _extraire_blocs_conflit(contenu):
     return segments
 
 
+def get_merge_en_cours(repertoire):
+    """True si le dépôt de `repertoire` est actuellement en état de fusion
+    non finalisée (`MERGE_HEAD` présent, issue #61) — précondition du bouton
+    « Finaliser le merge », distincte de `get_fichiers_en_conflit` : celle-ci
+    détecte des chemins non fusionnés dans `git status`, mais rien n'indique
+    par elle seule qu'un merge est en cours (un revert ou un cherry-pick en
+    conflit produit les mêmes codes `UU`/`AA`/etc. sans jamais créer
+    `MERGE_HEAD`)."""
+    resultat = _lancer_git(repertoire, "rev-parse", "--verify", "--quiet", "MERGE_HEAD")
+    return resultat.returncode == 0
+
+
+def finaliser_commit_merge(repertoire):
+    """Finalise un merge dont tous les fichiers en conflit ont déjà été
+    résolus (issue #61) : lance `git commit --no-edit`, l'équivalent
+    non-interactif de `git commit` sans `-m` — accepte tel quel le message
+    déjà préparé par git dans `.git/MERGE_MSG` (résumé des branches
+    fusionnées), sans ouvrir d'éditeur, impossible à piloter depuis cette
+    interface web.
+
+    Ne revérifie pas elle-même les préconditions (voir `get_merge_en_cours`
+    et `get_fichiers_en_conflit`) : à charge de l'appelant de ne l'invoquer
+    que lorsque le bouton est réellement proposé, jamais à l'aveugle sur un
+    merge partiellement résolu.
+
+    Retourne {ok, erreur, commande} pour affichage transparent."""
+    commande = ["git", "-C", repertoire, "commit", "--no-edit"]
+    resultat = subprocess.run(
+        commande, capture_output=True, text=True, timeout=TIMEOUT_GIT,
+    )
+    return {
+        "ok": resultat.returncode == 0,
+        "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
+        "commande": " ".join(commande),
+    }
+
+
 def lire_conflits_fichier(repertoire, chemin_relatif):
     """Lit un fichier en conflit et le découpe en segments contexte/conflit
     (issue #55) — lecture seule stricte, aucune écriture. `chemin_relatif`
