@@ -37,12 +37,12 @@ class ErreurRecuperationProjets(Exception):
     """La liste des projets n'a pas pu être récupérée depuis BRIDGE_AGENT_DOC.md."""
 
 
-def fetch_projets():
-    """Récupère et parse le tableau des projets actifs depuis BRIDGE_AGENT_DOC.md."""
-    # Résolution forcée en IPv4 pour cet appel précis : sur la connexion
-    # d'Alain, la résolution IPv6 (tentée en premier par urllib) échoue
-    # lentement et retente plusieurs adresses en série avant de retomber sur
-    # IPv4 — jusqu'à 4x TIMEOUT_RESEAU (80s) au lieu de 0,4s (issue #57).
+def _telecharger_doc_projets(forcer_ipv4):
+    """Télécharge DOC_URL, en forçant éventuellement la résolution IPv4."""
+    if not forcer_ipv4:
+        with urllib.request.urlopen(DOC_URL, timeout=TIMEOUT_RESEAU) as reponse:
+            return reponse.read().decode("utf-8")
+
     getaddrinfo_original = socket.getaddrinfo
 
     def _getaddrinfo_ipv4_uniquement(hote, port, famille=0, type_socket=0, proto=0, flags=0):
@@ -51,13 +51,32 @@ def fetch_projets():
     socket.getaddrinfo = _getaddrinfo_ipv4_uniquement
     try:
         with urllib.request.urlopen(DOC_URL, timeout=TIMEOUT_RESEAU) as reponse:
-            contenu = reponse.read().decode("utf-8")
-    except Exception as exc:
-        raise ErreurRecuperationProjets(
-            f"Impossible de récupérer BRIDGE_AGENT_DOC.md ({exc})"
-        ) from exc
+            return reponse.read().decode("utf-8")
     finally:
         socket.getaddrinfo = getaddrinfo_original
+
+
+def fetch_projets():
+    """Récupère et parse le tableau des projets actifs depuis BRIDGE_AGENT_DOC.md."""
+    # Résolution forcée en IPv4 pour cet appel précis : sur la connexion
+    # d'Alain, la résolution IPv6 (tentée en premier par urllib) échoue
+    # lentement et retente plusieurs adresses en série avant de retomber sur
+    # IPv4 — jusqu'à 4x TIMEOUT_RESEAU (80s) au lieu de 0,4s (issue #57).
+    try:
+        contenu = _telecharger_doc_projets(forcer_ipv4=True)
+    except Exception:
+        # Filet de secours (issue #58) : le forçage IPv4 n'a plus de repli si
+        # LUI-MÊME échoue (coupure réseau ponctuelle, IPv4 momentanément
+        # indisponible...) — avant l'issue #57, un tel échec aurait pu
+        # retomber sur IPv6 (lentement, mais sans échec total). On retente
+        # donc une seconde fois en laissant urllib choisir normalement,
+        # au prix d'une lenteur exceptionnelle plutôt qu'un échec complet.
+        try:
+            contenu = _telecharger_doc_projets(forcer_ipv4=False)
+        except Exception as exc:
+            raise ErreurRecuperationProjets(
+                f"Impossible de récupérer BRIDGE_AGENT_DOC.md ({exc})"
+            ) from exc
 
     debut = contenu.find(DEBUT_TABLEAU)
     fin = contenu.find(FIN_TABLEAU)
