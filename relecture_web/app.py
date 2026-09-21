@@ -33,11 +33,13 @@ from git_info import (
     get_chaine_cherry,
     get_date_commit,
     get_diagnostic_doublons_branche,
+    get_fichiers_en_conflit,
     get_issue_deja_referencee,
     get_rapport_cherry_brut,
     get_remote_defaut,
     get_sujet_commit,
     hash_depuis_branche_recuperation,
+    lire_conflits_fichier,
     nom_branche_recuperation,
     pousser_branche,
     revert_commit,
@@ -285,6 +287,43 @@ def comparer_commit_route(nom_projet, hash_commit):
     )
 
 
+@app.route("/projet/<nom_projet>/conflit/<path:chemin_relatif>")
+def conflit_fichier_route(nom_projet, chemin_relatif):
+    """Détail d'un fichier en conflit de fusion non résolue (issue #55) :
+    localise chaque bloc entre `<<<<<<<`/`=======`/`>>>>>>>` et l'affiche en
+    lecture seule, les deux versions distinguées visuellement (contrairement
+    à un `<textarea>`, qui ne supporte pas le texte en couleur), avec le
+    texte hors conflit autour pour donner le contexte. Route en lecture
+    seule (GET), aucune commande git de modification — la résolution
+    elle-même (choisir/éditer le texte final et l'écrire) fait l'objet d'une
+    issue séparée.
+
+    `chemin_relatif` n'est accepté que s'il figure dans la liste actuelle
+    des fichiers en conflit du projet, recalculée ici (pas depuis le cache
+    mémoïsé par requête) : jamais construit à l'aveugle à partir du seul
+    paramètre d'URL, pour ne jamais lire un fichier hors de ce périmètre
+    précis."""
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+
+    fichiers_conflit = get_fichiers_en_conflit(projet["repertoire"])
+    fichier = next((f for f in fichiers_conflit if f["chemin"] == chemin_relatif), None)
+    if not fichier:
+        flash(
+            f"❌ « {chemin_relatif} » n'est pas (ou plus) un fichier en conflit pour « {nom_projet} ».",
+            "erreur",
+        )
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    lecture = lire_conflits_fichier(projet["repertoire"], chemin_relatif)
+    return render_template(
+        "conflit.html", projet=projet, chemin_relatif=chemin_relatif,
+        code=fichier["code"], lecture=lecture,
+    )
+
+
 @app.route("/projet/<nom_projet>/orphelin/<hash_commit>/securiser", methods=["POST"])
 def securiser_orphelin_route(nom_projet, hash_commit):
     """Sécurise un commit orphelin (issue #23) en créant une branche
@@ -394,11 +433,13 @@ def projet_route(nom_projet):
     if projet["statut"] != "ok":
         projet["branches"] = []
         projet["diagnostics_orphelins"] = []
+        projet["fichiers_conflit"] = []
         return render_template("projet.html", projet=projet, erreur=erreur)
 
     resumes = collect_resumes_projet(projet["dossier_relecture"], projet["repertoire"])
     resumes_par_branche = regrouper_resumes_par_branche(resumes, projet["repertoire"])
     projet["diagnostics_orphelins"] = _diagnostiquer_orphelins(projet, resumes_par_branche.get(None, []))
+    projet["fichiers_conflit"] = get_fichiers_en_conflit(projet["repertoire"])
 
     remote = get_remote_defaut(projet["repertoire"])
     cible_merge_configuree = projet["branche_cible_comparaison"]

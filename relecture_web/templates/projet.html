@@ -27,6 +27,28 @@
   <p class="statut">Pas un dépôt git : {{ projet.repertoire }}</p>
 {% else %}
 
+{% if projet.fichiers_conflit %}
+<section class="conflits-fusion">
+  <h2>⚠ Fusion en conflit — {{ projet.fichiers_conflit|length }} fichier(s)</h2>
+  <p class="sous-titre">
+    Le dépôt est actuellement en état de fusion non résolue (<code>git status</code>
+    signale des chemins non fusionnés). Cliquez sur un fichier pour voir chaque
+    bloc de conflit en lecture seule — choisir/éditer le texte final et l'écrire
+    se fait encore manuellement.
+  </p>
+  <ul class="liste-fichiers-conflit">
+    {% for f in projet.fichiers_conflit %}
+    <li class="ligne-fichier-conflit">
+      <a href="{{ url_for('conflit_fichier_route', nom_projet=projet.nom, chemin_relatif=f.chemin) }}" class="lien-fichier-conflit">
+        <code class="chemin-fichier">{{ f.chemin }}</code>
+        <span class="badge badge--attention">{{ f.code }}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
 {% if projet.diagnostics_orphelins %}
 <section class="diagnostic-orphelins">
   <h2>Commits orphelins — diagnostic automatique</h2>

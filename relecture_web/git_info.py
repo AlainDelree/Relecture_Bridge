@@ -990,6 +990,134 @@ def get_commits_en_attente(chemin_worktree):
     return {"amont": nom_amont, "commits": commits, "erreur": None}
 
 
+# Codes à deux lettres que `git status --porcelain=v1` utilise pour un
+# chemin « non fusionné » (issue #55) — `UU` (modifié des deux côtés) est
+# de loin le plus fréquent en pratique sur ce dépôt (worktrees fusionnés en
+# parallèle), mais les combinaisons ajout/suppression en conflit existent
+# aussi et sont tout autant des conflits de fusion non résolue.
+CODES_CONFLIT_FUSION = {"DD", "AU", "UD", "UA", "DU", "AA", "UU"}
+
+
+def get_fichiers_en_conflit(repertoire):
+    """Fichiers en conflit de fusion non résolue dans `repertoire` (issue
+    #55) — lecture seule pure, aucune commande git de modification. Détecte
+    via `git status --porcelain=v1` : chaque ligne commence par un code à
+    deux lettres (XY) suivi d'un espace puis du chemin ; un des codes de
+    `CODES_CONFLIT_FUSION` signale un chemin non fusionné. Retourne une
+    liste vide si le dépôt n'est pas en état de fusion non résolue, ou si
+    la commande échoue."""
+    resultat = _lancer_git(repertoire, "status", "--porcelain=v1")
+    if resultat.returncode != 0:
+        return []
+
+    fichiers = []
+    for ligne in resultat.stdout.splitlines():
+        if len(ligne) < 4:
+            continue
+        code, chemin = ligne[:2], ligne[3:]
+        if code not in CODES_CONFLIT_FUSION:
+            continue
+        if chemin.startswith('"') and chemin.endswith('"'):
+            # git status entoure de guillemets (et échappe) les chemins
+            # contenant des caractères spéciaux — retire juste les
+            # guillemets, cas rare sur ces projets.
+            chemin = chemin[1:-1]
+        fichiers.append({"chemin": chemin, "code": code})
+    return fichiers
+
+
+_MARQUEUR_DEBUT = "<<<<<<<"
+_MARQUEUR_SEPARATEUR = "======="
+_MARQUEUR_BASE = "|||||||"
+_MARQUEUR_FIN = ">>>>>>>"
+
+
+def _extraire_blocs_conflit(contenu):
+    """Découpe le contenu d'un fichier en conflit en segments alternant
+    texte de contexte et blocs de conflit (issue #55) — le texte hors
+    conflit doit s'afficher normalement autour, pour donner le contexte
+    (demande explicite de l'issue). Un éventuel bloc de base commune
+    (marqueur `|||||||`, présent seulement si `merge.conflictStyle=diff3`
+    est configuré) est ignoré : seules les deux versions en conflit sont
+    affichées, pas la base à trois voies.
+
+    Retourne une liste de segments : {type: 'contexte', texte} ou
+    {type: 'conflit', entete_ours, texte_ours, entete_theirs, texte_theirs}.
+    Un marqueur ouvert sans fermeture (fichier tronqué/corrompu) rattache le
+    fragment orphelin au contexte plutôt que d'échouer."""
+    lignes = contenu.splitlines(keepends=True)
+    segments = []
+    contexte = []
+    i, n = 0, len(lignes)
+
+    while i < n:
+        ligne = lignes[i]
+        if not ligne.startswith(_MARQUEUR_DEBUT):
+            contexte.append(ligne)
+            i += 1
+            continue
+
+        depart = i
+        entete_ours = ligne.rstrip("\n")
+        i += 1
+        ours = []
+        while i < n and not lignes[i].startswith(_MARQUEUR_SEPARATEUR) and not lignes[i].startswith(_MARQUEUR_BASE):
+            ours.append(lignes[i])
+            i += 1
+        if i < n and lignes[i].startswith(_MARQUEUR_BASE):
+            i += 1
+            while i < n and not lignes[i].startswith(_MARQUEUR_SEPARATEUR):
+                i += 1
+        if i >= n:
+            contexte.extend(lignes[depart:])
+            break
+        i += 1  # ligne =======
+        theirs = []
+        while i < n and not lignes[i].startswith(_MARQUEUR_FIN):
+            theirs.append(lignes[i])
+            i += 1
+        if i >= n:
+            contexte.extend(lignes[depart:])
+            break
+        entete_theirs = lignes[i].rstrip("\n")
+        i += 1
+
+        if contexte:
+            segments.append({"type": "contexte", "texte": "".join(contexte)})
+            contexte = []
+        segments.append({
+            "type": "conflit",
+            "entete_ours": entete_ours,
+            "texte_ours": "".join(ours),
+            "entete_theirs": entete_theirs,
+            "texte_theirs": "".join(theirs),
+        })
+
+    if contexte:
+        segments.append({"type": "contexte", "texte": "".join(contexte)})
+    return segments
+
+
+def lire_conflits_fichier(repertoire, chemin_relatif):
+    """Lit un fichier en conflit et le découpe en segments contexte/conflit
+    (issue #55) — lecture seule stricte, aucune écriture. `chemin_relatif`
+    doit être un chemin déjà validé par l'appelant (présent dans le retour
+    actuel de `get_fichiers_en_conflit`) : cette fonction ne revérifie pas
+    elle-même que le fichier est en conflit, seulement qu'il est lisible.
+    Retourne {segments, nb_blocs, erreur} — `erreur` non None si le fichier
+    est illisible (supprimé entre-temps, permissions, etc.)."""
+    chemin_absolu = os.path.join(repertoire, chemin_relatif)
+    try:
+        with open(chemin_absolu, encoding="utf-8", errors="replace") as fichier:
+            contenu = fichier.read()
+    except OSError as exc:
+        return {"segments": [], "nb_blocs": 0, "erreur": str(exc)}
+
+    segments = _extraire_blocs_conflit(contenu)
+    nb_blocs = sum(1 for segment in segments if segment["type"] == "conflit")
+    return {"segments": segments, "nb_blocs": nb_blocs, "erreur": None}
+
+
 def collect_etat_projets():
     """Assemble, pour chaque projet de BRIDGE_AGENT_DOC.md, ses worktrees et
     leurs commits en attente de push."""

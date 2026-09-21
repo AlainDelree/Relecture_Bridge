@@ -74,10 +74,12 @@ L'interface est organisée en trois niveaux, chacun avec sa page :
    probable / points d'attention) et le diff complet.
 
 Pages supplémentaires, atteintes depuis des boutons plutôt que depuis la
-navigation principale : **Comparer**, **Rapport** (section 5), et
+navigation principale : **Comparer**, **Rapport** (section 5),
 **Comparer la sélection** (issue #47, section 5) — cette dernière
 uniquement depuis le panneau d'actions du niveau 2, sur une sélection de
-branches `recuperation-<hash>`.
+branches `recuperation-<hash>` — et **Conflit** (issue #55, section
+10), atteinte depuis la section « Fusion en conflit » du niveau 2
+quand le dépôt est en état de fusion non résolue.
 
 Une **barre latérale gauche**, présente sur toutes les pages (`base.html`),
 liste les noms de tous les projets avec un lien direct vers leur page
@@ -355,7 +357,42 @@ silencieuse.
 | **Générer rapport** | Un commit non tranché (cas F, ou tout commit affiché sur une branche), en lecture seule. | `git cherry`, `git branch --contains`, `git branch -r --contains` (assemblés en texte) | Aucune modification — voir section 5. |
 | **Nettoyer tous les projets** | Tous les projets accessibles. | suppression de fichiers `Non_Lu/` (pas de commande git) | Ne supprime que les résumés dont le commit est déjà un ancêtre d'une branche **distante** (`git branch -r --contains`) — jamais un résumé dont le commit n'est pas encore réellement en sécurité sur GitHub. |
 
-## 10. Comment interpréter une capture ou un export de `relecture_web`
+## 10. Détecter et afficher les conflits de fusion (issue #55)
+
+Quand un `git merge` déclenché depuis le panneau d'actions (section 9)
+échoue par conflit, le dépôt reste volontairement en état de fusion non
+résolue plutôt que de revenir en arrière (voir action **Merger**,
+section 9). Sur la page « branches d'un projet », une section **⚠
+Fusion en conflit** apparaît alors en tête de page, listant chaque
+fichier concerné avec son code `git status --porcelain` à deux lettres
+(le plus courant : `UU`, modifié des deux côtés ; les combinaisons
+ajout/suppression `AA`/`DD`/`AU`/`UA`/`DU`/`UD` sont aussi détectées).
+
+Cliquer sur un fichier ouvre une page dédiée qui localise chaque bloc
+entre les marqueurs `<<<<<<<`, `=======` et `>>>>>>>`, et affiche :
+
+- le texte hors conflit normalement, pour donner le contexte autour de
+  chaque bloc ;
+- pour chaque bloc, les deux versions en conflit l'une après l'autre,
+  dans des blocs de texte à fond coloré distinct (bleu pour « ours »/
+  `HEAD`, orange pour « theirs »/la branche entrante) — volontairement
+  pas un `<textarea>`, qui ne permet pas ce code couleur.
+
+Si le dépôt a été fusionné avec `merge.conflictStyle=diff3` (marqueur
+supplémentaire `|||||||` pour la base commune), la base est ignorée :
+seules les deux versions en conflit sont affichées, pas la base à trois
+voies.
+
+**Strictement en lecture seule** : cette page ne modifie jamais le
+fichier ni ne lance de commande git d'écriture. Le chemin de fichier
+demandé n'est accepté que s'il figure dans la liste actuelle des
+fichiers en conflit renvoyée par `git status` — jamais construit à
+l'aveugle à partir du seul paramètre d'URL. Choisir/éditer le texte
+final et l'écrire fait l'objet d'une issue de suivi séparée : cet outil
+aide seulement à *voir* le conflit sans repasser par `grep`/`sed` en
+terminal, il ne le résout pas encore.
+
+## 11. Comment interpréter une capture ou un export de `relecture_web`
 
 Si Alain montre une capture d'écran ou un texte copié depuis
 `relecture_web` dans une conversation Claude Chat d'un autre projet
