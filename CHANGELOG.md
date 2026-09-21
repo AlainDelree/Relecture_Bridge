@@ -1,0 +1,260 @@
+# CHANGELOG — relecture_bridge
+
+Historique complet des évolutions du projet, une section par issue, la
+plus récente en premier.
+
+Convention d'ajout : voir §10 de `BRIDGE_AGENT_DOC.md`.
+## 2026-09-21 — issue #60 (relecture_web)
+
+- Correction du chevauchement visuel dans l'en-tête de la page **Conflit**
+  (`conflit.html`) constaté après le passage à la vue à deux panneaux
+  (issue #59) : le libellé « Résultat final — éditable » du panneau droit
+  se superposait avec le bouton de navigation « Bloc suivant » (►) et le
+  compteur de position (« Bloc n / total »).
+  - Cause : la colonne centrale de la grille CSS partagée par l'en-tête
+    et le corps (`.conflit-vue__entetes`, `.conflit-vue__corps`) était
+    fixée à `72px`, largeur suffisante pour les trois petites flèches du
+    corps mais trop étroite pour contenir les boutons de navigation
+    (◀ / ▶) et le texte « Bloc n / total » de l'en-tête — ce contenu
+    débordait donc visuellement sur la colonne de droite.
+  - Correctif (`static/style.css`) : l'en-tête (`.conflit-vue__entetes`)
+    utilise désormais sa propre largeur de colonne centrale,
+    `minmax(96px, auto)`, qui s'élargit automatiquement pour accueillir
+    la navigation sans jamais empiéter sur les colonnes voisines ; le
+    corps (`.conflit-vue__corps`, les trois flèches par bloc) conserve
+    sa colonne fixe de `72px`, inchangée. Ajout de `min-width: 0` et
+    `overflow-wrap: break-word` sur les libellés (`.conflit-vue__entete-titre`)
+    et de `flex-wrap: wrap` sur le conteneur de navigation
+    (`.conflit-vue__entete-titre--milieu`) pour rester lisible sans
+    chevauchement même à largeur de fenêtre réduite.
+
+## 2026-09-21 — issue #59 (relecture_web)
+
+- Page **Conflit** (issues #55, #56) refondue en vue à deux panneaux
+  synchronisés, remplaçant entièrement l'ancien bloc isolé + textarea
+  séparé (pas un mode alternatif en plus) :
+  - Panneau gauche : le fichier complet en lecture seule, bloc de
+    conflit affiché à sa vraie place dans le texte environnant (HEAD en
+    bleu, version locale en orange), inchangé sur ce point.
+  - Panneau droit : le même fichier complet, éditable, avec à
+    l'emplacement de chaque bloc le `<textarea>` de composition du
+    texte final (mécanisme de résolution par bloc de l'issue #56
+    inchangé côté serveur — `resoudre_bloc_conflit` et la route
+    `traiter_bloc_conflit_route` ne bougent pas).
+  - Trois flèches par bloc entre les deux panneaux : bleue (copie
+    « ours »/HEAD dans le résultat), orange (copie « theirs »/version
+    locale), verte (vide le résultat). Le texte reste modifiable à la
+    main après un transfert — jamais une copie figée.
+  - Boutons « ◀ » / « ▶ » dans l'en-tête pour naviguer entre les blocs
+    d'un même fichier sans quitter la page (position affichée « Bloc
+    n / total », bloc ciblé mis en évidence et centré à l'écran).
+- Défilement synchronisé obtenu par construction : les deux panneaux et
+  leurs en-têtes partagent une seule grille CSS à trois colonnes
+  (gauche / flèches / droite), construite ligne par ligne à partir des
+  mêmes segments — une seule barre de défilement pour toute la page,
+  pas deux volets indépendants à recaler en JS.
+- `base.html` : ajout du bloc Jinja `classe_contenu` (vide par défaut)
+  pour permettre à une page de s'afficher plus large ; `conflit.html`
+  l'utilise (`contenu-principal--large`, 1500px) pour donner de la
+  place aux deux panneaux côte à côte.
+- Aucun changement côté serveur (`app.py`, `git_info.py`) : uniquement
+  `conflit.html`, `base.html` et `style.css`.
+- `RELECTURE_WEB_DOC.md` section 10 mise à jour pour décrire la
+  nouvelle vue à deux panneaux (issue #59).
+- Vérifié : le template Jinja se parse sans erreur ; relecture visuelle
+  du HTML/CSS/JS généré (pas de serveur de test disponible dans ce
+  périmètre pour un essai navigateur complet).
+
+## Issue #58 — fetch_projets() doit se replier sur la résolution normale si le forçage IPv4 échoue
+
+- `relecture_web/git_info.py` : extraction du téléchargement de
+  `DOC_URL` dans `_telecharger_doc_projets(forcer_ipv4)`, réutilisable
+  avec ou sans le monkeypatch IPv4 introduit par l'issue #57.
+  `fetch_projets()` tente d'abord l'appel avec IPv4 forcé (rapide dans
+  le cas normal) ; s'il échoue pour n'importe quelle raison (coupure
+  réseau ponctuelle, IPv4 momentanément indisponible...), une seconde
+  tentative est faite en résolution normale (IPv4 ou IPv6, au choix
+  d'`urllib`) avant d'abandonner avec `ErreurRecuperationProjets`. Une
+  perturbation réseau passagère ne provoque donc plus d'échec total du
+  chargement de la liste des projets — au pire un chargement plus lent
+  cette fois-là.
+
+## Issue #57 — fetch_projets() met 80s au lieu de 0,4s (résolution IPv6)
+
+- `relecture_web/git_info.py` : `fetch_projets()` force désormais la
+  résolution IPv4 le temps de l'appel `urlopen(DOC_URL)`, en remplaçant
+  temporairement `socket.getaddrinfo` par une variante qui filtre sur
+  `socket.AF_INET`, restaurée dans un `finally` juste après l'appel réseau.
+  Corrige un ralentissement de 80s (4x `TIMEOUT_RESEAU`, retries IPv6 en
+  série) à 0,2-0,4s, sans toucher aux commandes `git` (qui n'utilisent pas
+  ce mécanisme) ni au reste de l'application.
+
+## 2026-09-21 — issue #56 (relecture_web)
+
+- Page **Conflit** (issue #55) : à côté de chaque bloc affiché en
+  lecture seule, ajout d'un `<textarea>` éditable pré-rempli avec la
+  version « ours », dans lequel Alain compose le texte final à garder
+  (copie d'une des deux versions, combinaison, ou tout autre texte, y
+  compris vide pour supprimer le bloc). Bouton « Traiter ce bloc »
+  (confirmation JS avec aperçu du texte) qui remplace ce bloc précis —
+  marqueurs `<<<<<<<`/`=======`/`>>>>>>>` compris — par ce texte dans
+  le fichier réel, en local uniquement.
+- Nouvelle route `POST /projet/<nom_projet>/conflit/<chemin>/traiter` :
+  revalide que le fichier est toujours en conflit avant d'écrire, comme
+  la route de lecture voisine. Redirige vers la même page de conflit
+  s'il reste des blocs (le suivant apparaît naturellement en premier),
+  ou vers la page du projet avec un message clair une fois le fichier
+  entièrement résolu.
+- `git_info.py` : `_extraire_blocs_conflit` (issue #55) factorisée avec
+  une nouvelle `_trouver_blocs_conflit`, partagée avec la nouvelle
+  `resoudre_bloc_conflit` — garantit que la numérotation des blocs
+  (0-based, ordre d'apparition) est strictement identique entre
+  affichage et résolution, pour qu'une soumission ne puisse jamais
+  toucher le mauvais bloc. Si le fichier a changé entre l'affichage et
+  la soumission au point que le numéro de bloc ne corresponde plus
+  (bloc déjà traité, fichier modifié ailleurs), `resoudre_bloc_conflit`
+  échoue proprement avec un message d'erreur plutôt que d'écrire à
+  l'aveugle. Lecture/écriture strictement UTF-8 (contrairement à la
+  lecture seule d'issue #55, qui tolère les octets invalides puisqu'elle
+  n'écrit jamais).
+- Une fois le dernier bloc d'un fichier traité, `git add <fichier>` est
+  lancé automatiquement pour marquer sa résolution — le commit et le
+  push restent des gestes manuels d'Alain, volontairement non
+  automatisés.
+- `RELECTURE_WEB_DOC.md` section 10 mise à jour (titre et contenu :
+  détection **et résolution**, suppression de la mention "strictement
+  en lecture seule" devenue fausse).
+- Testé manuellement (dépôt de test jetable hors périmètre) : bloc
+  unique, blocs multiples, texte final vide (suppression du bloc),
+  index de bloc obsolète (erreur propre sans écriture) — tous les cas
+  se comportent comme attendu, `git add` ne se déclenche qu'au dernier
+  bloc.
+
+## 2026-09-21 — issue #55 (relecture_web)
+
+- Nouvelle section **⚠ Fusion en conflit** sur la page « branches d'un
+  projet » : détecte, via `git status --porcelain` (codes `UU`, `AA`,
+  `DD`, `AU`, `UA`, `DU`, `UD`), les fichiers en conflit d'une fusion
+  non résolue et les liste, sans avoir à taper `git status`/`grep` en
+  terminal.
+- Nouvelle page **Conflit** (`/projet/<nom_projet>/conflit/<chemin>`)
+  pour un fichier sélectionné : localise chaque bloc entre `<<<<<<<`,
+  `=======` et `>>>>>>>`, affiche les deux versions dans des blocs de
+  texte à fond coloré distinct (bleu « ours »/`HEAD`, orange « theirs »
+  — volontairement pas un `<textarea>`, qui ne supporte pas le texte en
+  couleur), et le texte hors conflit normalement autour pour le
+  contexte. Un éventuel marqueur de base commune diff3 (`|||||||`) est
+  ignoré, seules les deux versions en conflit sont affichées.
+- Strictement en lecture seule : aucune écriture sur le fichier. Le
+  chemin demandé n'est accepté que s'il figure dans la liste actuelle
+  des fichiers en conflit renvoyée par `git status` (recalculée à
+  chaque requête), jamais construit à l'aveugle depuis le paramètre
+  d'URL — protège aussi contre un chemin en dehors du dépôt du projet.
+  La résolution (choisir/éditer le texte final et l'écrire) fait
+  l'objet d'une issue de suivi séparée.
+- `git_info.py` : `get_fichiers_en_conflit`, `_extraire_blocs_conflit`,
+  `lire_conflits_fichier`.
+- `RELECTURE_WEB_DOC.md` mise à jour (nouvelle section 10, ancienne
+  section 10 renumérotée 11, mention dans la navigation section 2).
+
+## 2026-09-20 — issue #54 (relecture_web)
+
+- Pour une branche fusionnée sélectionnée dont le worktree est encore
+  actif, le bouton « Supprimer » enchaîne désormais `git worktree
+  remove` puis `git branch -D` dans le même clic — plus besoin de
+  recliquer une seconde fois pour que la branche, alors sans worktree
+  détecté, tombe sous le second cas (issue #43). Comportement inchangé
+  pour une branche déjà sans worktree (suppression directe de la
+  branche).
+- Si le retrait du worktree échoue (modifications non commitées), la
+  branche n'est pas touchée — même garde-fou qu'avant, juste enchaîné.
+  Si le worktree est retiré mais que la suppression de branche échoue
+  pour une autre raison, un message flash distinct rapporte cet état
+  intermédiaire.
+- Message flash rapportant les deux étapes en une seule ligne (même
+  principe que la suppression combinée branche + fichiers `Non_Lu/`,
+  issues #31/#40). Aperçu de confirmation JavaScript mis à jour pour
+  afficher les deux commandes équivalentes.
+- `RELECTURE_WEB_DOC.md` mise à jour (tableau des actions, section 9).
+
+## Issue #53 — 2026-09-20
+
+- Doc : `RELECTURE_WEB_DOC.md` section 7 (`branches_cibles.conf`)
+  corrigée — le passage affirmait encore que déclarer plusieurs
+  branches cibles pour un projet « fait toujours planter la génération
+  de la page `/projet/<nom>` », ce que l'issue #50 a corrigé
+  (`est_branche_mergee` et `get_diagnostic_doublons_branche` gèrent
+  désormais une liste de cibles). Le texte reflète maintenant l'état
+  réel : la page s'affiche sans erreur, le badge « fusionnée » est
+  correct (vrai si fusionnée dans au moins une cible) ; seul le bouton
+  **Merger** reste à corriger, renvoi explicite vers l'issue #51 pour
+  ce point précis.
+
+## 2026-09-20 — issue #52 (relecture_web)
+
+- Projet à plusieurs branches cibles configurées (`branches_cibles.conf`,
+  ex. `scrabble = master, feature/moteur-strategique`) : le bouton
+  Merger ne devine plus aucune cible par défaut — un sélecteur « Cible
+  du merge » apparaît dans le panneau d'actions, à choisir explicitement
+  avant que la fusion ne soit possible (refus par message flash sinon,
+  côté serveur). La confirmation JavaScript affiche la commande
+  équivalente correspondant à la cible réellement choisie.
+- `est_branche_mergee` accepte désormais une liste de cibles (fusionnée
+  si ancêtre d'au moins une d'entre elles), pour que la page
+  `/projet/<nom>` ne plante plus pour un projet à plusieurs cibles.
+- Comportement inchangé pour un projet à une seule cible configurée (ou
+  sans configuration) : pas de sélecteur, bouton Merger identique à
+  avant cette issue.
+- `RELECTURE_WEB_DOC.md` mise à jour (section 7, tableau des actions
+  section 9).
+
+## 20 septembre 2026 — issue #51
+
+Fusion automatique de `CHANGELOG-<N>.md` lors d'un merge depuis
+`relecture_web`.
+
+- `fusionner_worktree` (`relecture_web/git_info.py`) appelle désormais
+  `fusionner_changelog_worktree` juste après un merge réussi, pendant que
+  la branche cible est encore extraite dans le dépôt (avant toute bascule
+  de retour) : si la branche fusionnée a introduit un `CHANGELOG-<N>.md` à
+  la racine du dépôt, lance `scripts/fusionner_changelog.py` (déjà présent
+  dans le projet concerné) pour l'intégrer dans `CHANGELOG.md`.
+- Aucun `CHANGELOG-<N>.md` détecté : `changelog` vaut `None`, aucun message
+  supplémentaire affiché.
+- Résultat de cette étape rapporté par un message flash séparé dans
+  `merger_branches_route` (`relecture_web/app.py`) — succès, ou message
+  d'erreur explicite (script absent, échec du script) sans jamais faire
+  échouer silencieusement la fusion elle-même.
+- `RELECTURE_WEB_DOC.md` (section 9, ligne « Merger ») mis à jour en
+  conséquence.
+- Vérifié par test manuel dans des dépôts temporaires hors du dépôt réel
+  (merge avec `CHANGELOG-<N>.md` présent et script présent, merge sans
+  `CHANGELOG-<N>.md`, merge avec `CHANGELOG-<N>.md` mais script absent).
+
+## Issue #50 — 2026-09-20
+
+- Fix : `est_branche_mergee` (relecture_web/git_info.py) plantait
+  (`TypeError` dans `subprocess.run`) dès qu'une branche cible configurée
+  dans `branches_cibles.conf` était une liste (plusieurs cibles, issue
+  #41 — cas de `scrabble`). Gère maintenant ce cas : une branche est
+  « fusionnée » si elle est ancêtre d'au moins une des cibles candidates
+  (`git merge-base --is-ancestor` par candidate).
+- Fix connexe (même page, même cause) : `get_diagnostic_doublons_branche`
+  plantait pour la même raison sur `git cherry` — retourne désormais
+  `False` (pas de verdict automatique) quand la cible est une liste, même
+  parti pris que le cas M déjà en place pour le diagnostic des commits
+  orphelins (issue #46), pour ne pas multiplier les `git cherry` coûteux
+  sur chaque branche locale de la page.
+- Résultat : la page `/projet/<nom>` d'un projet à plusieurs cibles
+  configurées (ex. `scrabble`) s'affiche sans erreur, badge « fusionnée »
+  correct.
+- Doc : mise à jour de `RELECTURE_WEB_DOC.md` section 7.
+
+## 2026-09-20 — issue #49 (relecture_web)
+
+- Ajout d'un indicateur visuel « Push en cours... Ns » / « Fusion en
+  cours... Ns » (fenêtre superposée avec spinner et compteur de secondes)
+  affiché juste après la confirmation d'un push ou d'un merge, tant que la
+  page ne s'est pas rechargée avec le résultat. Purement côté navigateur,
+  aucun changement de comportement serveur.
+
