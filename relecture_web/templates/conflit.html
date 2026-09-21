@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block body %}
+<a href="{{ url_for('projet_route', nom_projet=projet.nom) }}" class="bouton-precedent">◀ Précédent</a>
+
+<header>
+  <p class="fil-ariane">
+    <a href="{{ url_for('index') }}">Projets</a> /
+    <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}">{{ projet.nom }}</a> /
+    conflit
+  </p>
+  <h1>Conflit — <code class="chemin-fichier">{{ chemin_relatif }}</code> <span class="badge badge--attention">{{ code }}</span></h1>
+  <p class="sous-titre">
+    Lecture seule : {{ lecture.nb_blocs }} bloc(s) de conflit détecté(s) entre
+    <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code>, <code>=======</code> et
+    <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</code>. Le texte hors conflit s'affiche
+    normalement autour, pour donner le contexte. Choisir/éditer le texte
+    final et l'écrire se fait encore manuellement (issue séparée).
+  </p>
+</header>
+
+{% if lecture.erreur %}
+<p class="erreur">❌ {{ lecture.erreur }}</p>
+{% else %}
+{% for segment in lecture.segments %}
+  {% if segment.type == "contexte" %}
+  {% if segment.texte.strip() %}
+  <pre class="brut contexte-conflit">{{ segment.texte }}</pre>
+  {% endif %}
+  {% else %}
+  <div class="conflit-bloc">
+    <p class="conflit-bloc__entete conflit-bloc__entete--ours">{{ segment.entete_ours }}</p>
+    <pre class="conflit-bloc__texte conflit-bloc__texte--ours">{{ segment.texte_ours }}</pre>
+    <p class="conflit-bloc__entete conflit-bloc__entete--theirs">{{ segment.entete_theirs }}</p>
+    <pre class="conflit-bloc__texte conflit-bloc__texte--theirs">{{ segment.texte_theirs }}</pre>
+  </div>
+  {% endif %}
+{% endfor %}
+{% endif %}
+
+{% endblock %}
