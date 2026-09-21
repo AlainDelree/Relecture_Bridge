@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block classe_contenu %} contenu-principal--large{% endblock %}
 {% block body %}
 <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}" class="bouton-precedent">◀ Précédent</a>
 
@@ -12,12 +13,13 @@
   <p class="sous-titre">
     {{ lecture.nb_blocs }} bloc(s) de conflit détecté(s) entre
     <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code>, <code>=======</code> et
-    <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</code>. Le texte hors conflit s'affiche
-    normalement autour, pour donner le contexte. Les deux versions
-    ci-dessous restent en lecture seule ; composez le texte final à garder
-    dans le champ éditable de chaque bloc (copie d'une des deux versions,
-    combinaison des deux, ou tout autre texte), puis « Traiter » l'applique
-    directement au fichier. Une fois tous les blocs traités, le fichier est
+    <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</code>. À gauche, le fichier complet en
+    lecture seule (HEAD en bleu, version locale en orange, à leur place dans
+    le texte environnant). À droite, le même fichier, éditable : à
+    l'emplacement de chaque bloc, utilisez les flèches pour copier l'une des
+    deux versions dans le résultat, ou composez-le librement — le texte reste
+    modifiable à la main après un transfert. « Traiter ce bloc » applique ce
+    résultat au fichier réel. Une fois tous les blocs traités, le fichier est
     automatiquement ajouté (<code>git add</code>) — le commit reste manuel.
   </p>
 </header>
@@ -35,33 +37,116 @@
 {% if lecture.erreur %}
 <p class="erreur">❌ {{ lecture.erreur }}</p>
 {% else %}
-{% for segment in lecture.segments %}
-  {% if segment.type == "contexte" %}
-  {% if segment.texte.strip() %}
-  <pre class="brut contexte-conflit">{{ segment.texte }}</pre>
-  {% endif %}
-  {% else %}
-  <div class="conflit-bloc">
-    <p class="conflit-bloc__entete conflit-bloc__entete--ours">{{ segment.entete_ours }}</p>
-    <pre class="conflit-bloc__texte conflit-bloc__texte--ours">{{ segment.texte_ours }}</pre>
-    <p class="conflit-bloc__entete conflit-bloc__entete--theirs">{{ segment.entete_theirs }}</p>
-    <pre class="conflit-bloc__texte conflit-bloc__texte--theirs">{{ segment.texte_theirs }}</pre>
-    <form method="post"
-          action="{{ url_for('traiter_bloc_conflit_route', nom_projet=projet.nom, chemin_relatif=chemin_relatif) }}"
-          class="conflit-bloc__formulaire"
-          onsubmit="return confirmerTraitementBloc(this, {{ segment.index }});">
-      <input type="hidden" name="index_bloc" value="{{ segment.index }}">
-      <label class="conflit-bloc__label" for="texte-final-{{ segment.index }}">Texte final à garder pour ce bloc :</label>
-      <textarea id="texte-final-{{ segment.index }}" name="texte_final" class="conflit-bloc__textarea"
-                rows="6" spellcheck="false">{{ segment.texte_ours }}</textarea>
-      <button type="submit" class="bouton bouton--traiter">Traiter ce bloc</button>
-    </form>
+<div class="conflit-vue">
+  <div class="conflit-vue__entetes">
+    <div class="conflit-vue__entete-titre">Fichier actuel — lecture seule</div>
+    <div class="conflit-vue__entete-titre conflit-vue__entete-titre--milieu">
+      {% if lecture.nb_blocs > 0 %}
+      <button type="button" id="bloc-precedent" class="bouton bouton--nav" title="Bloc de conflit précédent">◀</button>
+      <span id="bloc-position" class="conflit-vue__position">Bloc 1 / {{ lecture.nb_blocs }}</span>
+      <button type="button" id="bloc-suivant" class="bouton bouton--nav" title="Bloc de conflit suivant">▶</button>
+      {% endif %}
+    </div>
+    <div class="conflit-vue__entete-titre">Résultat final — éditable</div>
   </div>
-  {% endif %}
-{% endfor %}
+
+  <div class="conflit-vue__corps">
+    {% for segment in lecture.segments %}
+      {% if segment.type == "contexte" %}
+        {% if segment.texte.strip() %}
+        <pre class="brut contexte-conflit conflit-cellule conflit-cellule--gauche">{{ segment.texte }}</pre>
+        <div class="conflit-cellule conflit-cellule--milieu"></div>
+        <pre class="brut contexte-conflit conflit-cellule conflit-cellule--droite">{{ segment.texte }}</pre>
+        {% endif %}
+      {% else %}
+        <div class="conflit-cellule conflit-cellule--gauche conflit-bloc" id="bloc-{{ segment.index }}-gauche" data-bloc-index="{{ segment.index }}">
+          <p class="conflit-bloc__entete conflit-bloc__entete--ours">{{ segment.entete_ours }}</p>
+          <pre class="conflit-bloc__texte conflit-bloc__texte--ours">{{ segment.texte_ours }}</pre>
+          <p class="conflit-bloc__entete conflit-bloc__entete--theirs">{{ segment.entete_theirs }}</p>
+          <pre class="conflit-bloc__texte conflit-bloc__texte--theirs">{{ segment.texte_theirs }}</pre>
+        </div>
+
+        <div class="conflit-cellule conflit-cellule--milieu conflit-fleches" id="bloc-{{ segment.index }}-fleches" data-bloc-index="{{ segment.index }}">
+          <button type="button" class="fleche fleche--ours" data-action="copier-ours" data-bloc-index="{{ segment.index }}" title="Copier la version HEAD dans le résultat">→</button>
+          <button type="button" class="fleche fleche--theirs" data-action="copier-theirs" data-bloc-index="{{ segment.index }}" title="Copier la version locale dans le résultat">→</button>
+          <button type="button" class="fleche fleche--vider" data-action="vider" data-bloc-index="{{ segment.index }}" title="Vider le résultat">✕</button>
+        </div>
+
+        <div class="conflit-cellule conflit-cellule--droite conflit-bloc conflit-bloc--resultat" id="bloc-{{ segment.index }}-droite" data-bloc-index="{{ segment.index }}">
+          <form method="post"
+                action="{{ url_for('traiter_bloc_conflit_route', nom_projet=projet.nom, chemin_relatif=chemin_relatif) }}"
+                class="conflit-bloc__formulaire"
+                onsubmit="return confirmerTraitementBloc(this, {{ segment.index }});">
+            <input type="hidden" name="index_bloc" value="{{ segment.index }}">
+            <label class="conflit-bloc__label" for="texte-final-{{ segment.index }}">Texte final à garder pour ce bloc :</label>
+            <textarea id="texte-final-{{ segment.index }}" name="texte_final" class="conflit-bloc__textarea"
+                      rows="6" spellcheck="false"></textarea>
+            <button type="submit" class="bouton bouton--traiter">Traiter ce bloc</button>
+          </form>
+        </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+</div>
 {% endif %}
 
 <script>
+(function () {
+  var indices = [
+    {% for segment in lecture.segments if segment.type == "conflit" %}{{ segment.index }}{{ "," if not loop.last }}{% endfor %}
+  ];
+  var position = 0;
+
+  function activerBloc(pos, defiler) {
+    if (indices.length === 0) return;
+    position = Math.max(0, Math.min(pos, indices.length - 1));
+    var index = indices[position];
+
+    document.querySelectorAll(".conflit-bloc-actif").forEach(function (el) {
+      el.classList.remove("conflit-bloc-actif");
+    });
+    document.querySelectorAll('[data-bloc-index="' + index + '"]').forEach(function (el) {
+      el.classList.add("conflit-bloc-actif");
+    });
+
+    var positionAffichage = document.getElementById("bloc-position");
+    if (positionAffichage) {
+      positionAffichage.textContent = "Bloc " + (position + 1) + " / " + indices.length;
+    }
+
+    if (defiler !== false) {
+      var cible = document.getElementById("bloc-" + index + "-fleches");
+      if (cible) cible.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
+
+  var boutonPrecedent = document.getElementById("bloc-precedent");
+  var boutonSuivant = document.getElementById("bloc-suivant");
+  if (boutonPrecedent) boutonPrecedent.addEventListener("click", function () { activerBloc(position - 1, true); });
+  if (boutonSuivant) boutonSuivant.addEventListener("click", function () { activerBloc(position + 1, true); });
+
+  document.addEventListener("click", function (evenement) {
+    var bouton = evenement.target.closest(".fleche");
+    if (!bouton) return;
+    var index = bouton.dataset.blocIndex;
+    var zone = document.getElementById("texte-final-" + index);
+    if (!zone) return;
+
+    if (bouton.dataset.action === "copier-ours") {
+      var ours = document.querySelector("#bloc-" + index + "-gauche .conflit-bloc__texte--ours");
+      zone.value = ours ? ours.textContent : "";
+    } else if (bouton.dataset.action === "copier-theirs") {
+      var theirs = document.querySelector("#bloc-" + index + "-gauche .conflit-bloc__texte--theirs");
+      zone.value = theirs ? theirs.textContent : "";
+    } else if (bouton.dataset.action === "vider") {
+      zone.value = "";
+    }
+    zone.focus();
+  });
+
+  if (indices.length > 0) activerBloc(0, false);
+})();
+
 function confirmerTraitementBloc(formulaire, indexBloc) {
   var texte = formulaire.querySelector("textarea[name='texte_final']").value;
   var apercu = texte.length > 300 ? texte.slice(0, 300) + "…" : texte;

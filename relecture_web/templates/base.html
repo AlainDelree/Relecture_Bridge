@@ -22,7 +22,7 @@
       {% endfor %}
     </ul>
   </nav>
-  <div class="contenu-principal">
+  <div class="contenu-principal{% block classe_contenu %}{% endblock %}">
     {% block body %}{% endblock %}
   </div>
 </div>

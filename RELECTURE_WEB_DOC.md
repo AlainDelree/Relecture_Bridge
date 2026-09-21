@@ -357,7 +357,7 @@ silencieuse.
 | **Générer rapport** | Un commit non tranché (cas F, ou tout commit affiché sur une branche), en lecture seule. | `git cherry`, `git branch --contains`, `git branch -r --contains` (assemblés en texte) | Aucune modification — voir section 5. |
 | **Nettoyer tous les projets** | Tous les projets accessibles. | suppression de fichiers `Non_Lu/` (pas de commande git) | Ne supprime que les résumés dont le commit est déjà un ancêtre d'une branche **distante** (`git branch -r --contains`) — jamais un résumé dont le commit n'est pas encore réellement en sécurité sur GitHub. |
 
-## 10. Détecter, afficher et résoudre les conflits de fusion (issues #55, #56)
+## 10. Détecter, afficher et résoudre les conflits de fusion (issues #55, #56, #59)
 
 Quand un `git merge` déclenché depuis le panneau d'actions (section 9)
 échoue par conflit, le dépôt reste volontairement en état de fusion non
@@ -369,14 +369,7 @@ fichier concerné avec son code `git status --porcelain` à deux lettres
 ajout/suppression `AA`/`DD`/`AU`/`UA`/`DU`/`UD` sont aussi détectées).
 
 Cliquer sur un fichier ouvre une page dédiée qui localise chaque bloc
-entre les marqueurs `<<<<<<<`, `=======` et `>>>>>>>`, et affiche :
-
-- le texte hors conflit normalement, pour donner le contexte autour de
-  chaque bloc ;
-- pour chaque bloc, les deux versions en conflit l'une après l'autre,
-  dans des blocs de texte à fond coloré distinct (bleu pour « ours »/
-  `HEAD`, orange pour « theirs »/la branche entrante) — volontairement
-  pas un `<textarea>`, qui ne permet pas ce code couleur.
+entre les marqueurs `<<<<<<<`, `=======` et `>>>>>>>`.
 
 Si le dépôt a été fusionné avec `merge.conflictStyle=diff3` (marqueur
 supplémentaire `|||||||` pour la base commune), la base est ignorée :
@@ -387,14 +380,39 @@ Le chemin de fichier demandé n'est accepté que s'il figure dans la
 liste actuelle des fichiers en conflit renvoyée par `git status` —
 jamais construit à l'aveugle à partir du seul paramètre d'URL.
 
-**Résolution bloc par bloc (issue #56)** : à côté des deux versions en
-lecture seule, chaque bloc affiche un `<textarea>` éditable pré-rempli
-avec la version « ours », dans lequel Alain compose le texte final à
-garder (copie d'une des deux versions, combinaison des deux, ou tout
-autre texte — y compris vide, pour supprimer le bloc). Un bouton
-« Traiter ce bloc » (avec confirmation JS, aperçu du texte inclus)
-remplace ce bloc précis — marqueurs `<<<<<<<`/`=======`/`>>>>>>>`
-compris — par ce texte dans le fichier réel, en local uniquement.
+**Vue à deux panneaux synchronisés (issue #59)** : la page affiche le
+fichier complet en deux colonnes côte à côte plutôt qu'un bloc isolé de
+son contexte.
+
+- **Panneau gauche** (lecture seule) : le fichier complet, avec chaque
+  bloc de conflit affiché à sa vraie place dans le texte environnant —
+  version « ours »/`HEAD` sur fond bleu, version « theirs »/branche
+  entrante sur fond orange — volontairement pas un `<textarea>`, qui ne
+  permet pas ce code couleur.
+- **Panneau droit** (éditable) : le même fichier, avec à l'emplacement
+  de chaque bloc un `<textarea>` où Alain compose le texte final à
+  garder (copie d'une des deux versions, combinaison des deux, ou tout
+  autre texte — y compris vide, pour supprimer le bloc). Trois flèches
+  entre les deux panneaux, une par bloc : bleue (copie « ours » dans le
+  résultat), orange (copie « theirs »), verte (vide le résultat) — le
+  texte reste modifiable à la main après un transfert, ce n'est jamais
+  une copie figée.
+
+Les deux panneaux et leurs en-têtes partagent une seule grille CSS à
+trois colonnes (gauche / flèches / droite) construite ligne par ligne
+à partir des mêmes segments — le défilement est donc synchronisé par
+construction (une seule barre de défilement pour toute la page, pas
+deux volets indépendants à recaler en JS). Des boutons « ◀ » / « ▶ »
+dans l'en-tête (avec position affichée, ex. « Bloc 2 / 5 ») permettent
+de naviguer entre les blocs d'un même fichier sans quitter la page : le
+bloc ciblé est mis en évidence (contour bleu) et amené au centre de
+l'écran par un défilement fluide.
+
+**Résolution bloc par bloc (issue #56)**, inchangée sous cette
+nouvelle vue : un bouton « Traiter ce bloc » (avec confirmation JS,
+aperçu du texte inclus) remplace ce bloc précis — marqueurs
+`<<<<<<<`/`=======`/`>>>>>>>` compris — par le contenu du `<textarea>`
+du panneau droit dans le fichier réel, en local uniquement.
 
 La numérotation des blocs (0-based, ordre d'apparition dans le
 fichier) est calculée par la même fonction que l'affichage

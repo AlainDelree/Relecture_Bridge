@@ -389,6 +389,66 @@ header h1 { margin-bottom: 0.2rem; }
 .bouton--traiter { background: #eafaf1; color: #1e7b34; border-color: #b7ddc3; }
 .bouton--traiter:hover { background: #d9f3e4; }
 
+.contenu-principal--large { max-width: 1500px; }
+
+.conflit-vue { margin-top: 1rem; }
+.conflit-vue__entetes,
+.conflit-vue__corps {
+  display: grid;
+  grid-template-columns: 1fr 72px 1fr;
+  gap: 0.6rem;
+  align-items: start;
+}
+.conflit-vue__entetes {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #fafafa;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #ddd;
+  margin-bottom: 0.6rem;
+}
+.conflit-vue__entete-titre {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #444;
+}
+.conflit-vue__entete-titre--milieu {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  text-align: center;
+}
+.conflit-vue__position { font-size: 0.72rem; font-weight: 400; color: #666; white-space: nowrap; }
+.bouton--nav { background: #eef1f5; color: #3a4550; border-color: #d7dde5; padding: 0.2rem 0.5rem; }
+.bouton--nav:hover { background: #e2e7ee; }
+
+.conflit-cellule { min-width: 0; }
+.conflit-cellule--milieu {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding-top: 0.3rem;
+}
+.conflit-fleches .fleche {
+  width: 2.2rem;
+  font-size: 0.9rem;
+  padding: 0.2rem 0;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.fleche--ours { background: #d9e6fd; color: #1a4fb4; border-color: #c3d6f7; }
+.fleche--ours:hover { background: #c3d6f7; }
+.fleche--theirs { background: #fbe9cf; color: #a35a00; border-color: #f0d7ab; }
+.fleche--theirs:hover { background: #f0d7ab; }
+.fleche--vider { background: #eafaf1; color: #1e7b34; border-color: #b7ddc3; }
+.fleche--vider:hover { background: #d9f3e4; }
+
+.conflit-bloc-actif { outline: 2px solid #1a4fb4; outline-offset: 2px; border-radius: 6px; }
+
 .diagnostic-orphelins { margin-bottom: 1.25rem; }
 .diagnostic-orphelins h2 { font-size: 1rem; margin: 0 0 0.15rem 0; }
 .liste-diagnostics { list-style: none; padding: 0; margin: 0.6rem 0 0 0; }
