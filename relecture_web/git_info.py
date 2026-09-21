@@ -11,6 +11,7 @@ et même tableau qu'installer.sh), pas codée en dur ici.
 
 import os
 import re
+import socket
 import subprocess
 import urllib.request
 
@@ -38,6 +39,16 @@ class ErreurRecuperationProjets(Exception):
 
 def fetch_projets():
     """Récupère et parse le tableau des projets actifs depuis BRIDGE_AGENT_DOC.md."""
+    # Résolution forcée en IPv4 pour cet appel précis : sur la connexion
+    # d'Alain, la résolution IPv6 (tentée en premier par urllib) échoue
+    # lentement et retente plusieurs adresses en série avant de retomber sur
+    # IPv4 — jusqu'à 4x TIMEOUT_RESEAU (80s) au lieu de 0,4s (issue #57).
+    getaddrinfo_original = socket.getaddrinfo
+
+    def _getaddrinfo_ipv4_uniquement(hote, port, famille=0, type_socket=0, proto=0, flags=0):
+        return getaddrinfo_original(hote, port, socket.AF_INET, type_socket, proto, flags)
+
+    socket.getaddrinfo = _getaddrinfo_ipv4_uniquement
     try:
         with urllib.request.urlopen(DOC_URL, timeout=TIMEOUT_RESEAU) as reponse:
             contenu = reponse.read().decode("utf-8")
@@ -45,6 +56,8 @@ def fetch_projets():
         raise ErreurRecuperationProjets(
             f"Impossible de récupérer BRIDGE_AGENT_DOC.md ({exc})"
         ) from exc
+    finally:
+        socket.getaddrinfo = getaddrinfo_original
 
     debut = contenu.find(DEBUT_TABLEAU)
     fin = contenu.find(FIN_TABLEAU)
