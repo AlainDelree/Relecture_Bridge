@@ -400,6 +400,7 @@ header h1 { margin-bottom: 0.2rem; }
   align-items: start;
 }
 .conflit-vue__entetes {
+  grid-template-columns: 1fr minmax(96px, auto) 1fr;
   position: sticky;
   top: 0;
   z-index: 5;
@@ -409,12 +410,15 @@ header h1 { margin-bottom: 0.2rem; }
   margin-bottom: 0.6rem;
 }
 .conflit-vue__entete-titre {
+  min-width: 0;
   font-size: 0.8rem;
   font-weight: 600;
   color: #444;
+  overflow-wrap: break-word;
 }
 .conflit-vue__entete-titre--milieu {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 0.3rem;
