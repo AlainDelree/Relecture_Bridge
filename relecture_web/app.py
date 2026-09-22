@@ -848,7 +848,7 @@ def merger_branches_route(nom_projet):
             )
             continue
         try:
-            resultat = fusionner_worktree(projet["repertoire"], branche_cible, nom)
+            resultat = fusionner_worktree(projet["repertoire"], branche_cible, nom, projet["nom"])
         except subprocess.TimeoutExpired:
             flash(
                 f"⚠️ La fusion de « {nom} » a dépassé le délai, mais a pu se terminer "

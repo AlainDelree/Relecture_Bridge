@@ -9,6 +9,7 @@ La liste des projets est récupérée depuis BRIDGE_AGENT_DOC.md (même source
 et même tableau qu'installer.sh), pas codée en dur ici.
 """
 
+import datetime
 import os
 import re
 import socket
@@ -810,8 +811,34 @@ def get_remote_defaut(repertoire):
 
 MOTIF_CHANGELOG_WORKTREE = re.compile(r"^CHANGELOG-\d+\.md$")
 
+# Journal persistant des tentatives de fusion automatique du CHANGELOG —
+# le message flash (app.py) n'est visible qu'une fois, juste après l'action ;
+# ce fichier permet de vérifier après coup si une fusion a réussi ou échoué
+# pour un merge donné, même si Alain n'a pas regardé le flash au bon moment
+# (issue #62). Propre à relecture_web, pas commité (voir .gitignore).
+CHEMIN_JOURNAL_FUSION_CHANGELOG = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "changelog_fusion.log"
+)
 
-def fusionner_changelog_worktree(repertoire):
+
+def _journaliser_fusion_changelog(nom_projet, commande, ok, erreur):
+    """Ajoute une ligne au journal persistant des tentatives de fusion du
+    CHANGELOG (voir CHEMIN_JOURNAL_FUSION_CHANGELOG). N'échoue jamais de
+    façon visible pour l'utilisateur : une erreur d'écriture du journal ne
+    doit pas faire échouer la fusion elle-même."""
+    horodatage = datetime.datetime.now().isoformat(timespec="seconds")
+    statut = "SUCCES" if ok else "ECHEC"
+    ligne = f"{horodatage} | projet={nom_projet} | commande={commande} | resultat={statut}"
+    if erreur:
+        ligne += f" | erreur={erreur}"
+    try:
+        with open(CHEMIN_JOURNAL_FUSION_CHANGELOG, "a", encoding="utf-8") as fichier:
+            fichier.write(ligne + "\n")
+    except OSError:
+        pass
+
+
+def fusionner_changelog_worktree(repertoire, nom_projet=None):
     """Si la fusion qui vient d'avoir lieu dans `repertoire` a introduit un
     ou plusieurs `CHANGELOG-<N>.md` à la racine du dépôt (chaque worktree
     mode_write écrit le sien plutôt que dans `CHANGELOG.md` directement,
@@ -822,7 +849,10 @@ def fusionner_changelog_worktree(repertoire):
     faire lui-même à chaque merge (issue #51). Retourne None si aucun
     `CHANGELOG-<N>.md` trouvé (rien à fusionner, pas de message nécessaire),
     sinon {ok, erreur, commande} pour affichage transparent — jamais
-    d'échec silencieux même si le script est absent."""
+    d'échec silencieux même si le script est absent. Chaque tentative
+    réellement lancée (script trouvé ou non) est aussi journalisée dans
+    CHEMIN_JOURNAL_FUSION_CHANGELOG, indépendamment du message flash
+    (issue #62)."""
     try:
         presence = any(
             MOTIF_CHANGELOG_WORKTREE.match(nom) for nom in os.listdir(repertoire)
@@ -832,26 +862,33 @@ def fusionner_changelog_worktree(repertoire):
     if not presence:
         return None
 
+    nom_projet = nom_projet or os.path.basename(os.path.normpath(repertoire))
     script = os.path.join(repertoire, "scripts", "fusionner_changelog.py")
     commande = ["python3", script, "--repo", repertoire]
+    commande_str = " ".join(commande)
     if not os.path.isfile(script):
+        erreur = f"script introuvable : {script}"
+        _journaliser_fusion_changelog(nom_projet, commande_str, False, erreur)
         return {
             "ok": False,
-            "erreur": f"script introuvable : {script}",
-            "commande": " ".join(commande),
+            "erreur": erreur,
+            "commande": commande_str,
         }
 
     resultat = subprocess.run(
         commande, capture_output=True, text=True, timeout=TIMEOUT_GIT,
     )
+    ok = resultat.returncode == 0
+    erreur = (resultat.stderr or resultat.stdout).strip() if not ok else None
+    _journaliser_fusion_changelog(nom_projet, commande_str, ok, erreur)
     return {
-        "ok": resultat.returncode == 0,
-        "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
-        "commande": " ".join(commande),
+        "ok": ok,
+        "erreur": erreur,
+        "commande": commande_str,
     }
 
 
-def fusionner_worktree(repertoire, branche_cible, branche_source):
+def fusionner_worktree(repertoire, branche_cible, branche_source, nom_projet=None):
     """Fusionne `branche_source` dans `branche_cible` (comme un `git merge`
     manuel), sans jamais pousser. Si `branche_cible` n'est pas la branche
     actuellement extraite dans `repertoire` (projet avec une branche cible
@@ -888,7 +925,7 @@ def fusionner_worktree(repertoire, branche_cible, branche_source):
 
     resultat_changelog = None
     if resultat.returncode == 0:
-        resultat_changelog = fusionner_changelog_worktree(repertoire)
+        resultat_changelog = fusionner_changelog_worktree(repertoire, nom_projet)
 
     if doit_basculer and resultat.returncode == 0:
         _lancer_git(repertoire, "checkout", branche_courante)
