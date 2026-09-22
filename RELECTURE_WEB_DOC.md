@@ -403,11 +403,21 @@ Les deux panneaux et leurs en-têtes partagent une seule grille CSS à
 trois colonnes (gauche / flèches / droite) construite ligne par ligne
 à partir des mêmes segments — le défilement est donc synchronisé par
 construction (une seule barre de défilement pour toute la page, pas
-deux volets indépendants à recaler en JS). Des boutons « ◀ » / « ▶ »
-dans l'en-tête (avec position affichée, ex. « Bloc 2 / 5 ») permettent
-de naviguer entre les blocs d'un même fichier sans quitter la page : le
-bloc ciblé est mis en évidence (contour bleu) et amené au centre de
-l'écran par un défilement fluide.
+deux volets indépendants à recaler en JS). Pour que ça tienne, les
+segments de contexte de cette page ne doivent jamais porter de hauteur
+plafonnée avec défilement interne (la règle générique `pre.brut`,
+utilisée ailleurs comme `branche.html`, est volontairement neutralisée
+ici) — sinon chaque segment redevient un volet à défiler pour
+lui-même, gauche et droite se désynchronisent, et il n'y a plus de
+grille unique à faire défiler (bug corrigé par l'issue #65). Des
+boutons « ◀ » / « ▶ » dans l'en-tête (avec position affichée, ex.
+« Bloc 2 / 5 ») permettent de naviguer entre les blocs d'un même
+fichier sans quitter la page : le bloc ciblé est mis en évidence
+(contour bleu) et amené au centre de l'écran par un défilement fluide.
+Une marge de respiration (`padding-bottom: 50vh` sous la grille)
+garantit qu'il reste toujours assez d'espace de défilement sous le
+dernier bloc du fichier pour le centrer réellement à l'écran, y
+compris quand il n'a que peu de contenu après lui (issue #65).
 
 **Résolution bloc par bloc (issue #56)**, inchangée sous cette
 nouvelle vue : un bouton « Traiter ce bloc » (avec confirmation JS,

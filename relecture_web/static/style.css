@@ -336,6 +336,17 @@ header h1 { margin-bottom: 0.2rem; }
 .chemin-fichier { font-size: 0.85rem; color: #333; }
 
 .contexte-conflit { background: #fff; }
+/* pre.brut plafonne la hauteur et scrolle en interne (branche.html,
+   comparer.html) : sur la page conflit, cela transforme chaque segment de
+   contexte en volet à défilement indépendant, désynchronisant gauche/droite
+   et empêchant la grille unique de porter une seule barre de défilement
+   pour toute la page (issue #65). On neutralise ce plafond ici uniquement,
+   avec un sélecteur plus spécifique que "pre.brut" pour ne rien changer
+   ailleurs. */
+pre.brut.contexte-conflit {
+  max-height: none;
+  overflow-y: visible;
+}
 
 .conflit-bloc {
   border: 1px solid #ddd;
@@ -398,6 +409,13 @@ header h1 { margin-bottom: 0.2rem; }
   grid-template-columns: 1fr 72px 1fr;
   gap: 0.6rem;
   align-items: start;
+}
+.conflit-vue__corps {
+  /* Marge de respiration en bas de la grille : sans elle, le dernier bloc
+     du fichier n'a pas assez de contenu en dessous pour que le navigateur
+     puisse le centrer verticalement (scrollIntoView block:"center" se
+     contente alors de coller en bas de la page, cf. issue #65). */
+  padding-bottom: 50vh;
 }
 .conflit-vue__entetes {
   grid-template-columns: 1fr minmax(96px, auto) 1fr;
