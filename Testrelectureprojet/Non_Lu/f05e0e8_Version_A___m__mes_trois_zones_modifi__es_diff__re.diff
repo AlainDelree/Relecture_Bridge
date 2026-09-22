@@ -1,0 +1,69 @@
+f05e0e8
+
+commit f05e0e8
+Author: Athanatos123 <79310036+AlainDelree@users.noreply.github.com>
+Date:   Tue Sep 22 19:34:52 2026 +0200
+
+    Version A : mêmes trois zones modifiées différemment
+
+diff --git a/fichier_test_defilement.txt b/fichier_test_defilement.txt
+index 508c8f9..da4fc65 100644
+--- a/fichier_test_defilement.txt
++++ b/fichier_test_defilement.txt
+@@ -7,12 +7,12 @@ ligne 6 — contenu original
+ ligne 7 — contenu original
+ ligne 8 — contenu original
+ ligne 9 — contenu original
+-ligne 10 — contenu original
+-ligne 11 — contenu original
+-ligne 12 — contenu original
+-ligne 13 — contenu original
+-ligne 14 — contenu original
+-ligne 15 — contenu original
++ligne 10 — contenu version A
++ligne 11 — contenu version A
++ligne 12 — contenu version A
++ligne 13 — contenu version A
++ligne 14 — contenu version A
++ligne 15 — contenu version A
+ ligne 16 — contenu original
+ ligne 17 — contenu original
+ ligne 18 — contenu original
+@@ -67,12 +67,12 @@ ligne 66 — contenu original
+ ligne 67 — contenu original
+ ligne 68 — contenu original
+ ligne 69 — contenu original
+-ligne 70 — contenu original
+-ligne 71 — contenu original
+-ligne 72 — contenu original
+-ligne 73 — contenu original
+-ligne 74 — contenu original
+-ligne 75 — contenu original
++ligne 70 — contenu version A
++ligne 71 — contenu version A
++ligne 72 — contenu version A
++ligne 73 — contenu version A
++ligne 74 — contenu version A
++ligne 75 — contenu version A
+ ligne 76 — contenu original
+ ligne 77 — contenu original
+ ligne 78 — contenu original
+@@ -137,12 +137,12 @@ ligne 136 — contenu original
+ ligne 137 — contenu original
+ ligne 138 — contenu original
+ ligne 139 — contenu original
+-ligne 140 — contenu original
+-ligne 141 — contenu original
+-ligne 142 — contenu original
+-ligne 143 — contenu original
+-ligne 144 — contenu original
+-ligne 145 — contenu original
++ligne 140 — contenu version A
++ligne 141 — contenu version A
++ligne 142 — contenu version A
++ligne 143 — contenu version A
++ligne 144 — contenu version A
++ligne 145 — contenu version A
+ ligne 146 — contenu original
+ ligne 147 — contenu original
+ ligne 148 — contenu original

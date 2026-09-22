@@ -1,0 +1,1101 @@
+7c3db48
+
+commit 7c3db48
+Author: Athanatos123 <79310036+AlainDelree@users.noreply.github.com>
+Date:   Tue Sep 22 16:12:55 2026 +0200
+
+    avant-587-flux-suppression-projet-ccl-suite
+
+diff --git a/BRIDGE_AGENT_DOC.md b/BRIDGE_AGENT_DOC.md
+index 3d7fc6c..2cbd913 100644
+--- a/BRIDGE_AGENT_DOC.md
++++ b/BRIDGE_AGENT_DOC.md
+@@ -1091,6 +1091,13 @@ python3 new_issue.py --set-password
+ # sans redémarrer new_issue.py). Le script CLI reste utilisable en parallèle.
+ python3 nouveau_projet.py
+ 
++# Supprimer un projet bridge, côté CCL/local uniquement (interactif, terminal ;
++# issue #587). Équivalent web : bouton « 🗑 Supprimer ce projet… » (zone
++# dangereuse de l'onglet Configuration). --dry-run liste ce qui serait
++# supprimé sans rien toucher. Dépôt GitHub distant et côté CCW jamais touchés.
++python3 supprimer_projet.py <nom>
++python3 supprimer_projet.py <nom> --dry-run
++
+ # Lancer un watcher manuellement
+ python3 watcher.py --config configs/bridge_agent.conf
+ python3 watcher.py --config configs/bridge_agent.conf --dry-run
+@@ -1218,6 +1225,81 @@ configs/<nom>.conf`), et committer/pousser les changements du dépôt
+ Bridge_Agent lui-même (`configs/`, doc) — bien distinct du dépôt du projet
+ créé, dont le push initial est géré par l'étape 5 ci-dessus.
+ 
++### Suppression de projet, côté CCL/local (issue #587)
++
++Diagnostic #580 (fonctionnel) : la création écrit 12 traces persistantes
++réparties CCL/GitHub/CCW (étapes ci-dessus) sans qu'aucun flux ne sache les
++démonter — décommissionner un projet exigeait jusqu'ici une chirurgie
++manuelle sur au moins 8 cibles, avec un risque réel d'oubli. Sur le modèle
++déjà utilisé pour la création (chantier scindé en plusieurs issues
++coordonnées CCL/CCW), cette issue couvre volontairement **uniquement le
++côté CCL/local** — symétrique de `nouveau_projet.py` ci-dessus, mais dans
++l'autre sens. Le côté CCW et la suppression du dépôt GitHub font l'objet
++d'issues séparées.
++
++`supprimer_projet.py` (script CLI) / `app/supprimer_projet.py` (routes web,
++qui réutilisent le script SANS le dupliquer — même relation que
++`nouveau_projet.py`/`app/nouveau_projet.py`) démontent, dans cet ordre :
++
++1. **Répertoire de travail** du projet (contenu, `CONTEXTE.md`/specs) **et**
++   dépôt git local en une seule opération de disque (`.git` vit dans ce même
++   répertoire — voir l'étape 5 de la création ci-dessus) : `shutil.rmtree()`
++   du `REP_TRAVAIL` lu dans le `.conf`. Idempotent : un répertoire déjà
++   absent n'est pas une erreur.
++2. **`configs/<nom>.conf`**.
++3. **`BRIDGE_AGENT_DOC.md`** (§2 Projets actifs, §7 Périmètre, date en bas) —
++   régénéré immédiatement via `regenerer_tableaux_projets.regenerer()` (même
++   mécanisme que l'étape 6 de la création), **pas** en attendant un lancement
++   manuel comme c'était le cas jusqu'ici. Mis à jour **localement** — comme
++   pour la création, jamais poussé automatiquement.
++
++**Ordre volontairement inverse de la création** : le répertoire de travail
++est retiré **en premier**, tant que `configs/<nom>.conf` existe encore pour
++attester du projet. Si cette étape échoue (droits, disque), le `.conf` est
++conservé et les étapes suivantes ne sont **pas** tentées — pas de
++continuation aveugle après un échec. L'inverse (`.conf` supprimé en premier)
++risquerait un répertoire orphelin sur disque sans plus aucune trace de son
++existence en cas d'échec sur l'étape suivante. Pour la même raison, la
++régénération de la doc — qui relit `configs/*.conf` — vient en dernier,
++une fois le `.conf` réellement retiré du disque (sans quoi le projet
++réapparaîtrait dans §2/§7).
++
++**Explicitement hors scope** (décision actée dans le diagnostic #580) :
++suppression du dépôt GitHub et de ses labels — geste destructeur
++volontairement laissé manuel — et tout le côté CCW (clone Windows,
++`configs\<nom>-ccw.conf`, service NSSM, tokens `AppEnvironmentExtra`/
++`TOPIC_NTFY`, entrée `$Projets`, ligne `REINSTALLATION_CCW.md` §7), qui fera
++l'objet d'une issue CCW dédiée.
++
++**Mode à blanc (dry-run)** : `previsualiser_suppression(nom)` /
++`supprimer_projet(nom, dry_run=True)` décrivent les 3 cibles (dépôt GitHub —
++conservé, chemin du répertoire de travail avec son nombre d'éléments et la
++présence ou non d'un dépôt git local, aperçu tronqué du contenu) **sans
++toucher au disque ni à `BRIDGE_AGENT_DOC.md`**. Côté web, `GET
++/supprimer-projet/verifier/<nom>` alimente automatiquement l'aperçu affiché
++dans le modal, avant même que la checklist de confirmation ne soit
++proposée.
++
++**Route web `POST /supprimer-projet`** (protégée par `login_requis`, comme
++le reste de l'application) : appelée depuis le bouton « 🗑 Supprimer ce
++projet… » (zone dangereuse de l'onglet Configuration). Double garde-fou
++avant toute action destructive, cohérent avec la sensibilité du geste :
++
++1. **Côté interface** — 3 cases à cocher (une par cible démontée) **et** le
++   nom du projet retapé à l'identique dans un champ de confirmation ; le
++   bouton « Supprimer définitivement » reste désactivé tant que ces 4
++   conditions ne sont pas toutes réunies.
++2. **Côté serveur** — le champ `confirmation` du corps JSON doit reproduire
++   exactement le nom du projet (`nom`), indépendamment des cases cochées
++   côté navigateur : la checklist d'interface peut être contournée par un
++   appel direct à la route, cette vérification-là ne peut pas l'être. Sans
++   correspondance → 400, aucune suppression tentée.
++
++**Reste à faire manuellement dans tous les cas** : dépôt GitHub + labels
++(hors scope, cf. issue #587), et committer/pousser les changements du dépôt
++Bridge_Agent lui-même (`configs/`, doc) — le script/la route ne poussent
++jamais, comme pour la création.
++
+ ### Couleur d'accent des projets (issues #120, #121, #534, #535, #539, #540)
+ 
+ Trois niveaux de priorité déterminent la couleur affichée d'un projet
+diff --git a/CHANGELOG-587.md b/CHANGELOG-587.md
+new file mode 100644
+index 0000000..83b6755
+--- /dev/null
++++ b/CHANGELOG-587.md
+@@ -0,0 +1,66 @@
++## 22 septembre 2026 — issue #587
++
++Flux de suppression de projet — côté CCL/local, symétrique à la création
++(diagnostic #580). Décommissionner un projet exigeait jusqu'ici une
++chirurgie manuelle sur au moins 8 cibles, avec un risque réel d'oubli ; cette
++issue couvre volontairement les 4 cibles côté CCL/local, le dépôt GitHub et
++le côté CCW faisant l'objet d'issues séparées.
++
++- `supprimer_projet.py` (nouveau) : orchestrateur `supprimer_projet(nom,
++  dry_run)` symétrique à `nouveau_projet.creer_projet()`, qui démonte dans un
++  ordre sûr — répertoire de travail (contenu + dépôt git local, une seule
++  opération de disque puisque `.git` y vit) puis `configs/<nom>.conf` puis
++  régénération immédiate de §2/§7 de `BRIDGE_AGENT_DOC.md`
++  (`regenerer_tableaux_projets.regenerer()`) — en s'arrêtant dès qu'une étape
++  échoue plutôt que de continuer aveuglément. Ordre volontairement inverse de
++  la création : le `.conf` n'est retiré qu'une fois le répertoire de travail
++  effectivement supprimé, pour ne jamais laisser un répertoire orphelin sans
++  trace de son existence en cas d'échec. Mode à blanc
++  (`previsualiser_suppression`/`--dry-run`) : aucune écriture disque ni sur
++  la doc. CLI interactif avec confirmation par saisie du nom (`--oui` pour
++  l'usage scripté).
++- `app/supprimer_projet.py` (nouveau) : réutilise ce script sans le
++  dupliquer. `GET /supprimer-projet/verifier/<nom_projet>` (dry-run, 404 si
++  absent) et `POST /supprimer-projet` (suppression réelle), toutes deux
++  protégées par `login_requis`. La route POST revérifie indépendamment côté
++  serveur que le champ `confirmation` reproduit exactement le nom du
++  projet — la checklist côté interface, elle, peut être contournée par un
++  appel direct.
++- `app/__init__.py` : enregistrement des deux routes.
++- `templates/index.html` : zone dangereuse dans l'onglet Configuration
++  (bouton « 🗑 Supprimer ce projet… ») et modal de confirmation — aperçu
++  chargé automatiquement, 3 cases à cocher (une par cible) + nom du projet
++  retapé à l'identique, double garde-fou avant que le bouton de suppression
++  définitive ne s'active.
++- `static/js/app.js` : `ouvrirSupprimerProjet`/`fermerSupprimerProjet`,
++  `spChargerApercu` (peuple l'aperçu depuis la route GET), `spMajBoutonEtat`
++  (active le bouton seulement si les 3 cases + le nom retapé sont corrects),
++  `soumettreSupprimerProjet` (appelle la route POST, affiche le compte-rendu
++  par étape), `retirerProjetDuSelecteur` (symétrique de
++  `ajouterProjetAuSelecteur`, retire l'option du sélecteur global au succès).
++- `regenerer_tableaux_projets.py` : docstring mise à jour — elle admettait
++  explicitement l'absence de flux de suppression automatisé (citée dans le
++  diagnostic #580) ; documente désormais que `supprimer_projet.py` déclenche
++  lui aussi la régénération, au même titre que `nouveau_projet.py`.
++- `BRIDGE_AGENT_DOC.md` : nouvelle sous-section « Suppression de projet,
++  côté CCL/local (issue #587) », symétrique de celle décrivant déjà la
++  création (juste avant), plus la commande CLI dans §13.
++- `tests/test_supprimer_projet_587.py` (nouveau) : aperçu (projet absent,
++  projet présent — aucune écriture), dry-run (ne touche à rien), succès réel
++  (ordre des étapes, `.conf` + répertoire supprimés, doc régénérée une seule
++  fois), arrêt propre si la suppression du répertoire échoue (`.conf`
++  conservé, doc jamais régénérée), nom vide, et les deux routes Flask
++  (dry-run 404, confirmation incorrecte → 400, succès → 200).
++
++Explicitement hors scope (décision actée dans le diagnostic #580) :
++suppression du dépôt GitHub et de ses labels (geste manuel volontaire), et
++tout le côté CCW (clone Windows, `configs\<nom>-ccw.conf`, service NSSM,
++tokens, entrée `$Projets`, ligne `REINSTALLATION_CCW.md` §7).
++
++Vérifié : `py_compile` sur tous les fichiers touchés, `create_app()` démarre
++sans erreur et expose bien les deux nouvelles routes, les 9 scénarios de
++`tests/test_supprimer_projet_587.py` passent, ainsi que l'intégralité des 16
++autres suites de tests existantes (aucune régression). Non vérifié dans ce
++worktree (pas d'accès réseau/GitHub authentifié) : test bout en bout réel
++sur un projet jetable — demandé en vérification de l'issue, à faire par
++Alain avant de considérer le flux entièrement validé.
+diff --git a/app/__init__.py b/app/__init__.py
+index c4eaa64..1d1bb28 100644
+--- a/app/__init__.py
++++ b/app/__init__.py
+@@ -62,6 +62,7 @@ def _enregistrer_routes(app: Flask) -> None:
+     from app.auth import login_requis, login, login_post, logout
+     from app.projets import get_config, post_config, tester_bip
+     from app.nouveau_projet import verifier_nouveau_projet, creer_nouveau_projet
++    from app.supprimer_projet import verifier_supprimer_projet, executer_supprimer_projet
+     from app.projet_ccw import (etat_cle_publique, rafraichir_cle_publique,
+                                 bootstrap_projet_ccw)
+     from app.watchers import (watchers, lancer_watcher,
+@@ -111,6 +112,10 @@ def _enregistrer_routes(app: Flask) -> None:
+     app.add_url_rule("/tester-bip/<nom_projet>", "tester_bip", login_requis(tester_bip), methods=["POST"])
+     app.add_url_rule("/nouveau-projet/verifier", "verifier_nouveau_projet", login_requis(verifier_nouveau_projet), methods=["GET"])
+     app.add_url_rule("/nouveau-projet", "creer_nouveau_projet", login_requis(creer_nouveau_projet), methods=["POST"])
++    # ─── Suppression de projet, côté CCL/local (issue #587) — symétrique à
++    # /nouveau-projet ci-dessus ; hors scope volontaire : dépôt GitHub + CCW.
++    app.add_url_rule("/supprimer-projet/verifier/<nom_projet>", "verifier_supprimer_projet", login_requis(verifier_supprimer_projet), methods=["GET"])
++    app.add_url_rule("/supprimer-projet", "executer_supprimer_projet", login_requis(executer_supprimer_projet), methods=["POST"])
+     # ─── Case « Projet CCW » (issue #559, 3/3) : chiffrement + 2 issues croisées ─
+     app.add_url_rule("/projet-ccw/cle-publique/etat", "etat_cle_publique", login_requis(etat_cle_publique), methods=["GET"])
+     app.add_url_rule("/projet-ccw/rafraichir-cle", "rafraichir_cle_publique", login_requis(rafraichir_cle_publique), methods=["POST"])
+diff --git a/app/supprimer_projet.py b/app/supprimer_projet.py
+new file mode 100644
+index 0000000..3f6074e
+--- /dev/null
++++ b/app/supprimer_projet.py
+@@ -0,0 +1,52 @@
++"""Routes Flask de suppression de projet (issue #587).
++
++Symétrique à app/nouveau_projet.py : réutilise SANS DUPLICATION la logique de
++supprimer_projet.py (dry-run + orchestrateur). Deux points d'entrée :
++  GET  /supprimer-projet/verifier/<nom_projet> — mode à blanc : liste ce qui
++       serait supprimé, sans rien toucher (consultable avant confirmation
++       côté interface, checklist de l'issue #587).
++  POST /supprimer-projet                       — exécute la suppression
++       réelle, après revérification côté serveur de la confirmation.
++"""
++
++import sys
++from pathlib import Path
++
++from flask import jsonify, request
++
++# Racine du projet (dossier parent du package app/) : supprimer_projet.py y
++# vit, à côté de nouveau_projet.py et watcher.py.
++DOSSIER_SCRIPT = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(DOSSIER_SCRIPT))
++
++import supprimer_projet as sp_cli  # noqa: E402
++
++
++def verifier_supprimer_projet(nom_projet):
++    """GET /supprimer-projet/verifier/<nom_projet> — dry-run, aucune écriture
++    disque ni sur BRIDGE_AGENT_DOC.md. Alimente l'aperçu affiché côté modal
++    avant que la checklist de confirmation ne soit proposée."""
++    apercu = sp_cli.previsualiser_suppression(nom_projet)
++    if not apercu["existe"]:
++        return jsonify(existe=False, nom=nom_projet), 404
++    return jsonify(**apercu)
++
++
++def executer_supprimer_projet():
++    """POST /supprimer-projet — exécute réellement la suppression.
++
++    Corps JSON attendu : {"nom": "...", "confirmation": "<nom>"}. Le champ
++    `confirmation` doit reproduire EXACTEMENT le nom du projet — second
++    garde-fou, indépendant des cases cochées côté navigateur (la checklist
++    d'interface demandée par l'issue #587 peut être contournée par un appel
++    direct à cette route ; cette vérification serveur, elle, ne peut pas
++    l'être)."""
++    data = request.json or {}
++    nom = (data.get("nom") or "").strip().lower()
++    confirmation = (data.get("confirmation") or "").strip().lower()
++    if not nom or confirmation != nom:
++        return jsonify(succes=False, nom=nom, etapes=[],
++                       erreur="Confirmation manquante ou ne correspondant pas "
++                              "au nom du projet."), 400
++    resultat = sp_cli.supprimer_projet(nom, dry_run=False)
++    return jsonify(resultat), (200 if resultat.get("succes") else 400)
+diff --git a/regenerer_tableaux_projets.py b/regenerer_tableaux_projets.py
+index de86e0d..29ed561 100644
+--- a/regenerer_tableaux_projets.py
++++ b/regenerer_tableaux_projets.py
+@@ -22,12 +22,14 @@ n'est pas reconstituable depuis le disque).
+ 
+ Deux usages :
+   - Automatique : appelé par `nouveau_projet.py` (Flask et CLI) à la fin de
+-    la création d'un projet, une fois son `.conf` déjà écrit sur disque —
+-    un seul mécanisme écrit dans ces tableaux, plutôt que deux copies
+-    parallèles de la même logique d'insertion.
++    la création d'un projet, une fois son `.conf` déjà écrit sur disque, et
++    par `supprimer_projet.py` (Flask et CLI, issue #587) à la fin de la
++    suppression côté CCL/local d'un projet, une fois son `.conf` déjà
++    retiré du disque — un seul mécanisme écrit dans ces tableaux, plutôt que
++    des copies parallèles de la même logique d'insertion/retrait.
+   - À la demande : `python3 regenerer_tableaux_projets.py`, sans argument,
+-    pour resynchroniser la doc après un nettoyage manuel (suppression d'un
+-    projet, pas de flux de suppression automatisé aujourd'hui).
++    pour resynchroniser la doc après un nettoyage manuel (`.conf` ajouté ou
++    retiré à la main, hors des deux flux ci-dessus).
+ 
+ Le tableau §7 de `provisioning/windows/REINSTALLATION_CCW.md` (sous-ensemble
+ des projets avec un service CCW Windows dédié) n'est PAS régénéré par ce
+diff --git a/static/js/app.js b/static/js/app.js
+index a20e43f..0c6e50b 100644
+--- a/static/js/app.js
++++ b/static/js/app.js
+@@ -6136,3 +6136,149 @@ function ajouterProjetAuSelecteur(nom, depot) {
+   if (statut) statut.textContent = select.options.length + ' projet(s) disponible(s)';
+   onProjetChange();
+ }
++
++// Symétrique de ajouterProjetAuSelecteur ci-dessus (issue #587) : retire
++// l'option du <select> après une suppression réussie et sélectionne le
++// premier projet restant (s'il y en a un) pour laisser l'interface utilisable.
++function retirerProjetDuSelecteur(nom) {
++  const select = document.getElementById('projet');
++  const opt = [...select.options].find(o => o.value === nom);
++  if (opt) opt.remove();
++  const statut = document.querySelector('.entete .statut');
++  if (statut) statut.textContent = select.options.length + ' projet(s) disponible(s)';
++  if (select.options.length) {
++    select.value = select.options[0].value;
++    onProjetChange();
++  }
++}
++
++// ─── Suppression de projet (issue #587) ────────────────────────────────────
++// Modal symétrique à « Nouveau projet » ci-dessus, côté CCL/local uniquement
++// (dépôt GitHub distant + côté CCW jamais touchés ici). L'aperçu (dry-run,
++// GET /supprimer-projet/verifier/<nom>) se charge automatiquement à
++// l'ouverture ; le bouton de suppression réelle reste désactivé tant que les
++// 3 cases de la checklist ne sont pas cochées ET que le nom n'a pas été
++// retapé à l'identique — double garde-fou côté interface, la route serveur
++// revérifie indépendamment la confirmation (app/supprimer_projet.py).
++let spNomCourant = '';
++
++function ouvrirSupprimerProjet() {
++  const nom = document.getElementById('projet').value;
++  if (!nom) return;
++  spNomCourant = nom;
++  document.getElementById('sp-nom-titre').textContent = nom;
++  document.getElementById('sp-nom-confirmation-attendu').textContent = nom;
++  document.getElementById('sp-conf-nom').textContent = 'configs/' + nom + '.conf';
++  document.getElementById('sp-chargement').textContent = 'Chargement de l\'aperçu…';
++  document.getElementById('sp-chargement').style.display = 'block';
++  document.getElementById('sp-contenu').style.display = 'none';
++  document.getElementById('sp-compte-rendu').style.display = 'none';
++  document.getElementById('sp-message').style.display = 'none';
++  document.getElementById('sp-nom-confirmation').value = '';
++  document.querySelectorAll('.sp-case').forEach(c => c.checked = false);
++  const btn = document.getElementById('sp-supprimer');
++  btn.style.display = '';
++  btn.disabled = true;
++  btn.textContent = 'Supprimer définitivement';
++  document.getElementById('sp-fermer').textContent = 'Fermer';
++  document.getElementById('modal-supprimer-projet').classList.add('actif');
++  spChargerApercu(nom);
++}
++
++function fermerSupprimerProjet() {
++  document.getElementById('modal-supprimer-projet').classList.remove('actif');
++}
++
++async function spChargerApercu(nom) {
++  const chargement = document.getElementById('sp-chargement');
++  const contenu = document.getElementById('sp-contenu');
++  let r;
++  try {
++    r = await (await fetch('/supprimer-projet/verifier/' + encodeURIComponent(nom))).json();
++  } catch (e) {
++    chargement.textContent = 'Erreur réseau : ' + e.message;
++    return;
++  }
++  if (!r.existe) {
++    chargement.textContent = '❌ configs/' + nom + '.conf introuvable — rien à supprimer.';
++    return;
++  }
++  chargement.style.display = 'none';
++  contenu.style.display = 'block';
++  document.getElementById('sp-depot').textContent = r.depot || '(inconnu)';
++
++  let html = '<div>Répertoire de travail : <b>' + escapeHtml(r.rep_travail || '') + '</b>'
++    + (r.rep_existe
++        ? ' (' + r.nb_fichiers + ' élément(s)' + (r.git_local ? ', dépôt git local inclus' : '') + ')'
++        : ' — déjà absent')
++    + '</div>';
++  if (r.apercu_fichiers && r.apercu_fichiers.length) {
++    html += '<div style="margin-top:6px;font-size:12px;color:#666">'
++      + r.apercu_fichiers.map(escapeHtml).join('<br>') + '</div>';
++  }
++  document.getElementById('sp-apercu').innerHTML = html;
++  spMajBoutonEtat();
++}
++
++// Rappelée à chaque case cochée/décochée et à chaque frappe dans le champ de
++// confirmation (voir onchange/oninput dans templates/index.html) : le bouton
++// de suppression réelle ne s'active QUE si les 3 cases sont cochées ET que le
++// nom retapé correspond exactement au projet ouvert.
++function spMajBoutonEtat() {
++  const casesOk = [...document.querySelectorAll('.sp-case')].every(c => c.checked);
++  const nomOk = document.getElementById('sp-nom-confirmation').value.trim().toLowerCase()
++              === spNomCourant.toLowerCase();
++  document.getElementById('sp-supprimer').disabled = !(casesOk && nomOk);
++}
++
++function spMsg(texte, type) {
++  const el = document.getElementById('sp-message');
++  el.textContent = texte;
++  el.className = 'message ' + type;
++  el.style.display = 'block';
++}
++
++async function soumettreSupprimerProjet() {
++  const confirmation = document.getElementById('sp-nom-confirmation').value.trim().toLowerCase();
++  const cr = document.getElementById('sp-compte-rendu');
++  document.getElementById('sp-message').style.display = 'none';
++  cr.style.display = 'none';
++  const btn = document.getElementById('sp-supprimer');
++  const avant = btn.textContent;
++  btn.disabled = true;
++  btn.textContent = 'Suppression…';
++
++  let res;
++  try {
++    const rep = await fetch('/supprimer-projet', {
++      method: 'POST',
++      headers: {'Content-Type': 'application/json'},
++      body: JSON.stringify({nom: spNomCourant, confirmation}),
++    });
++    res = await rep.json();
++  } catch (e) {
++    btn.disabled = false;
++    btn.textContent = avant;
++    spMsg('Erreur réseau : ' + e.message, 'erreur');
++    return;
++  }
++
++  if (res.etapes && res.etapes.length) {
++    cr.innerHTML = res.etapes.map(e =>
++      (e.ok ? '✓ ' : '❌ ') + '<b>' + escapeHtml(e.etape) + '</b> — ' + escapeHtml(e.detail || '')
++    ).join('<br>');
++    cr.style.display = 'block';
++  }
++
++  if (res.succes) {
++    btn.style.display = 'none';
++    spMsg('✅ Projet « ' + res.nom + ' » supprimé côté CCL/local. Reste à faire à la main : '
++        + 'dépôt GitHub + labels (hors scope, cf. issue #587), puis vérifier et pousser '
++        + 'toi-même les commits locaux (configs/, doc).', 'succes');
++    retirerProjetDuSelecteur(res.nom);
++  } else {
++    btn.disabled = false;
++    btn.textContent = avant;
++    spMsg('❌ ' + (res.erreur || 'Échec.'), 'erreur');
++  }
++}
+diff --git a/supprimer_projet.py b/supprimer_projet.py
+new file mode 100644
+index 0000000..e51e3f9
+--- /dev/null
++++ b/supprimer_projet.py
+@@ -0,0 +1,271 @@
++#!/usr/bin/env python3
++"""supprimer_projet.py — Suppression / désinstallation CCL d'un projet
++Bridge_Agent (issue #587).
++
++Diagnostic #580 : la création d'un projet (`nouveau_projet.py`, issue #98/#99)
++écrit 12 traces persistantes réparties CCL/GitHub/CCW, sans qu'aucun flux ne
++sache les démonter — décommissionner un projet exigeait jusqu'ici une
++chirurgie manuelle sur au moins 8 cibles. Cette issue-ci couvre
++volontairement UNIQUEMENT le côté CCL/local, symétrique à `nouveau_projet.py` :
++
++    1. configs/<nom>.conf
++    2. Répertoire de travail du projet (contenu + CONTEXTE.md/specs)
++    3. Dépôt git local (le répertoire lui-même — jamais le dépôt GitHub distant)
++    4. Tableaux §2/§7 de BRIDGE_AGENT_DOC.md (regenerer_tableaux_projets.py)
++
++Explicitement HORS scope (décision actée dans le diagnostic #580, cf. issue
++#587) : suppression du dépôt GitHub et de ses labels (geste manuel
++volontaire), et tout le côté CCW (clone Windows, configs\\<nom>-ccw.conf,
++service NSSM, tokens, entrée $Projets, REINSTALLATION_CCW.md §7) — suivra
++dans une issue CCW dédiée.
++
++Usage :
++    python3 supprimer_projet.py <nom>              # aperçu puis confirmation interactive
++    python3 supprimer_projet.py <nom> --dry-run    # liste ce qui serait supprimé, ne touche à rien
++"""
++
++import argparse
++import shutil
++import sys
++from pathlib import Path
++
++import regenerer_tableaux_projets
++from nouveau_projet import DOSSIER_CONFIGS
++from watcher import lire_conf
++
++
++def conf_chemin(nom: str) -> Path:
++    """Chemin de configs/<nom>.conf (n'implique pas qu'il existe)."""
++    return DOSSIER_CONFIGS / f"{nom}.conf"
++
++
++def infos_projet(nom: str) -> dict | None:
++    """Lit configs/<nom>.conf avec le même lecteur tolérant que
++    regenerer_tableaux_projets.py (`lire_conf` — zéro validation, contrairement
++    à `charger_config` de watcher.py) : un .conf déjà partiellement corrompu ne
++    doit pas empêcher sa propre suppression. Renvoie None si le fichier
++    n'existe pas (nom introuvable — rien à supprimer)."""
++    chemin = conf_chemin(nom)
++    if not chemin.exists():
++        return None
++    brut = lire_conf(chemin)
++    return {"nom": nom, "depot": brut.get("DEPOT", ""),
++            "rep_travail": brut.get("REP_TRAVAIL", ""), "conf": chemin}
++
++
++def _rep_travail_path(infos: dict) -> Path | None:
++    rep = infos.get("rep_travail") or ""
++    return Path(rep).expanduser() if rep else None
++
++
++def _lister_repertoire(rep_path: Path, limite: int = 20) -> list[str]:
++    """Chemins relatifs triés du contenu de rep_path (purement informatif,
++    pour l'aperçu à blanc et le compte-rendu — jamais utilisé pour décider
++    quoi que ce soit)."""
++    if not rep_path.exists():
++        return []
++    return sorted(str(p.relative_to(rep_path)) for p in rep_path.rglob("*"))[:limite]
++
++
++def previsualiser_suppression(nom: str) -> dict:
++    """Mode à blanc (dry-run) : décrit ce qui SERAIT supprimé sans toucher au
++    disque ni à BRIDGE_AGENT_DOC.md. Renvoie {existe, nom, depot, conf,
++    rep_travail, rep_existe, git_local, nb_fichiers, apercu_fichiers}."""
++    infos = infos_projet(nom)
++    if infos is None:
++        return {"existe": False, "nom": nom}
++
++    rep_path = _rep_travail_path(infos)
++    rep_existe = bool(rep_path and rep_path.exists())
++    git_local = bool(rep_existe and (rep_path / ".git").exists())
++    apercu = _lister_repertoire(rep_path) if rep_existe else []
++    nb_total = sum(1 for _ in rep_path.rglob("*")) if rep_existe else 0
++
++    return {"existe": True, "nom": nom, "depot": infos["depot"],
++            "conf": str(infos["conf"]),
++            "rep_travail": str(rep_path) if rep_path else "",
++            "rep_existe": rep_existe, "git_local": git_local,
++            "nb_fichiers": nb_total, "apercu_fichiers": apercu}
++
++
++def _supprimer_repertoire(rep_path: Path | None) -> dict:
++    """Supprime le répertoire de travail EN ENTIER — contenu, CONTEXTE.md/
++    specs, ET dépôt git local puisque `.git` vit toujours DANS ce répertoire
++    (voir `initialiser_git()` de nouveau_projet.py) : cibles 2 et 3 de
++    l'issue #587, démontées par la même opération de disque. Idempotent : un
++    répertoire déjà absent n'est pas une erreur (nettoyage manuel partiel
++    déjà fait)."""
++    if rep_path is None or not rep_path.exists():
++        chemin = str(rep_path) if rep_path else "(REP_TRAVAIL non défini)"
++        return {"ok": True, "existait": False,
++                "detail": f"{chemin} — déjà absent, rien à faire."}
++    try:
++        shutil.rmtree(rep_path)
++    except OSError as exc:
++        return {"ok": False, "existait": True,
++                "detail": f"échec de la suppression de {rep_path} : {exc}"}
++    return {"ok": True, "existait": True,
++            "detail": f"{rep_path} supprimé (contenu + dépôt git local)."}
++
++
++def _supprimer_conf(chemin: Path) -> dict:
++    if not chemin.exists():
++        return {"ok": True, "detail": f"{chemin.name} déjà absent."}
++    try:
++        chemin.unlink()
++    except OSError as exc:
++        return {"ok": False, "detail": f"échec de la suppression de {chemin.name} : {exc}"}
++    return {"ok": True, "detail": f"{chemin.name} supprimé."}
++
++
++def mettre_a_jour_doc() -> dict:
++    """Même mécanisme que nouveau_projet.mettre_a_jour_doc() (issue #571) :
++    à cet instant le .conf du projet est déjà retiré du disque, la
++    régénération le fait donc disparaître de §2/§7. Renvoie {existe, ok,
++    modifie, erreur}."""
++    resultat = regenerer_tableaux_projets.regenerer()
++    ok = resultat["existe"] and resultat["erreur"] is None
++    return {"existe": resultat["existe"], "ok": ok,
++            "modifie": resultat["modifie"], "erreur": resultat["erreur"]}
++
++
++def supprimer_projet(nom: str, dry_run: bool = False) -> dict:
++    """Orchestrateur symétrique à nouveau_projet.creer_projet() : démonte les
++    4 cibles CCL/locales de l'issue #587 dans un ordre sûr, en s'arrêtant dès
++    qu'une étape échoue plutôt que de continuer aveuglément.
++
++    Ordre choisi — inverse de la création, volontairement : le répertoire de
++    travail (contenu + dépôt git local) est retiré EN PREMIER, tant que
++    configs/<nom>.conf existe encore pour attester du projet. Si cette étape
++    échoue (droits, disque), le .conf est conservé : le projet reste visible/
++    enregistré plutôt que de laisser un configs/<nom>.conf sans aucune donnée
++    derrière lui — l'inverse (supprimer le .conf d'abord) risquerait un
++    dossier orphelin sur disque sans plus aucune trace de son existence. La
++    régénération de BRIDGE_AGENT_DOC.md (qui relit configs/*.conf) vient donc
++    en dernier, une fois le .conf effectivement retiré.
++
++    Renvoie {succes, nom, dry_run, depot, etapes:[{etape, ok, detail}], erreur}."""
++    nom = (nom or "").strip().lower()
++    if not nom:
++        return {"succes": False, "nom": nom, "dry_run": dry_run, "etapes": [],
++                "erreur": "Un nom de projet est requis."}
++
++    infos = infos_projet(nom)
++    if infos is None:
++        return {"succes": False, "nom": nom, "dry_run": dry_run, "etapes": [],
++                "erreur": f"configs/{nom}.conf introuvable — rien à supprimer."}
++
++    if dry_run:
++        apercu = previsualiser_suppression(nom)
++        etapes = [
++            {"etape": "Répertoire de travail (contenu + dépôt git local)",
++             "ok": True,
++             "detail": (f"{apercu['nb_fichiers']} élément(s) sous "
++                        f"{apercu['rep_travail']} seraient supprimés"
++                        + (" (dépôt git local inclus)" if apercu["git_local"] else "")
++                        + "." if apercu["rep_existe"]
++                        else f"{apercu['rep_travail'] or '(REP_TRAVAIL non défini)'} — déjà absent.")},
++            {"etape": "Fichier .conf", "ok": True,
++             "detail": f"{apercu['conf']} serait supprimé."},
++            {"etape": "Documentation", "ok": True,
++             "detail": "§2/§7 de BRIDGE_AGENT_DOC.md seraient régénérés depuis "
++                       "configs/*.conf, sans ce projet."},
++        ]
++        return {"succes": True, "nom": nom, "dry_run": True,
++                "depot": infos["depot"], "etapes": etapes, "erreur": None}
++
++    etapes = []
++
++    # 1. Répertoire de travail (contenu + dépôt git local) — voir l'ordre
++    #    choisi dans la docstring ci-dessus.
++    rep_path = _rep_travail_path(infos)
++    res_rep = _supprimer_repertoire(rep_path)
++    etapes.append({"etape": "Répertoire de travail (contenu + dépôt git local)",
++                   "ok": res_rep["ok"], "detail": res_rep["detail"]})
++    if not res_rep["ok"]:
++        return {"succes": False, "nom": nom, "dry_run": False,
++                "depot": infos["depot"], "etapes": etapes,
++                "erreur": "Échec à l'étape « Répertoire de travail » — arrêt : "
++                          "configs/*.conf et BRIDGE_AGENT_DOC.md non touchés."}
++
++    # 2. configs/<nom>.conf.
++    res_conf = _supprimer_conf(infos["conf"])
++    etapes.append({"etape": "Fichier .conf", "ok": res_conf["ok"],
++                   "detail": res_conf["detail"]})
++    if not res_conf["ok"]:
++        return {"succes": False, "nom": nom, "dry_run": False,
++                "depot": infos["depot"], "etapes": etapes,
++                "erreur": "Échec à l'étape « Fichier .conf » — arrêt : "
++                          "BRIDGE_AGENT_DOC.md non régénéré."}
++
++    # 3. Documentation (§2/§7) — en dernier, une fois le .conf réellement
++    #    retiré du disque (sans quoi le projet réapparaîtrait dans §2/§7).
++    doc = mettre_a_jour_doc()
++    if not doc["existe"]:
++        etapes.append({"etape": "Documentation", "ok": False,
++                       "detail": "BRIDGE_AGENT_DOC.md introuvable — non mis à jour."})
++    elif doc["erreur"]:
++        etapes.append({"etape": "Documentation", "ok": False, "detail": doc["erreur"]})
++    else:
++        etapes.append({"etape": "Documentation", "ok": True,
++                       "detail": "§2/§7/date régénérés (projet retiré)."
++                                 if doc["modifie"] else "déjà à jour."})
++
++    return {"succes": True, "nom": nom, "dry_run": False,
++            "depot": infos["depot"], "etapes": etapes, "erreur": None}
++
++
++# ─── Programme principal (CLI interactif, même esprit que nouveau_projet.py) ──
++
++def main() -> int:
++    parser = argparse.ArgumentParser(
++        description="Supprime un projet Bridge_Agent côté CCL/local (issue #587).")
++    parser.add_argument("nom", help="Nom du projet (configs/<nom>.conf)")
++    parser.add_argument("--dry-run", action="store_true",
++                        help="Liste ce qui serait supprimé, sans rien toucher.")
++    parser.add_argument("--oui", action="store_true",
++                        help="Ne pas demander confirmation (usage scripté).")
++    args = parser.parse_args()
++    nom = args.nom.strip().lower()
++
++    apercu = previsualiser_suppression(nom)
++    if not apercu["existe"]:
++        print(f"❌ configs/{nom}.conf introuvable — rien à supprimer.")
++        return 1
++
++    print(f"\033[1m═══ Suppression du projet « {nom} » ═══\033[0m")
++    print(f"   Dépôt GitHub (conservé, non touché) : {apercu['depot']}")
++    print(f"   Répertoire de travail : {apercu['rep_travail']}"
++          + (f" ({apercu['nb_fichiers']} élément(s))" if apercu["rep_existe"] else " (déjà absent)"))
++    print(f"   Dépôt git local       : {'présent, sera supprimé' if apercu['git_local'] else 'absent'}")
++    print(f"   Fichier configs/{nom}.conf : sera supprimé")
++    print("   BRIDGE_AGENT_DOC.md (§2/§7) : sera régénéré")
++
++    if args.dry_run:
++        print("\n(dry-run — rien n'a été modifié)")
++        return 0
++
++    if not args.oui:
++        rep = input(f"\n   Taper « {nom} » pour confirmer la suppression définitive : ").strip()
++        if rep != nom:
++            print("   Abandon : confirmation non fournie.")
++            return 1
++
++    resultat = supprimer_projet(nom, dry_run=False)
++    print()
++    for etape in resultat["etapes"]:
++        marque = "✓" if etape["ok"] else "❌"
++        print(f"   {marque} {etape['etape']} — {etape['detail']}")
++
++    if resultat["succes"]:
++        print(f"\n✅ Projet « {nom} » supprimé côté CCL/local.")
++        print("   Reste à faire à la main : dépôt GitHub + labels (hors scope, "
++              "cf. issue #587), commit puis push des changements locaux "
++              "(configs/, doc).")
++        return 0
++    print(f"\n❌ {resultat['erreur']}")
++    return 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/templates/index.html b/templates/index.html
+index e0a7f03..fa37a2c 100644
+--- a/templates/index.html
++++ b/templates/index.html
+@@ -470,6 +470,20 @@
+       <button onclick="sauvegarderConfig(false)">Enregistrer</button>
+       <button class="primaire" onclick="sauvegarderConfig(true)">Enregistrer et relancer</button>
+     </div>
++
++    <!-- ─── Zone dangereuse : suppression de projet (issue #587), côté
++         CCL/local uniquement — le dépôt GitHub et le côté CCW sont
++         explicitement hors scope et restent intacts. ───────────────────── -->
++    <div class="titre-section" style="margin-top:26px;color:#a32d2d">Zone dangereuse</div>
++    <div style="border:1px solid #f5c6cb;border-radius:6px;padding:12px 14px">
++      <div style="font-size:12.5px;color:#666;margin-bottom:10px">
++        Supprime <code>configs/&lt;nom&gt;.conf</code>, le répertoire de
++        travail (contenu + dépôt git local) et retire le projet des
++        tableaux §2/§7 de BRIDGE_AGENT_DOC.md. Le dépôt GitHub distant et
++        le côté CCW ne sont jamais touchés — à démonter à la main.
++      </div>
++      <button class="danger" onclick="ouvrirSupprimerProjet()">🗑 Supprimer ce projet…</button>
++    </div>
+   </div>
+ 
+   <!-- ─── Onglet 4 : journal watcher ───────────────────────────────────── -->
+@@ -739,6 +753,56 @@
+   </div>
+ </div>
+ 
++<!-- ─── Modal « Supprimer projet » (issue #587) — symétrique au modal
++     « Nouveau projet » ci-dessus, côté CCL/local uniquement. La checklist
++     ci-dessous doit être ENTIÈREMENT cochée (chaque case = une des cibles
++     démontées) avant que le champ de confirmation ne soit même activé, et le
++     nom du projet doit y être retapé à l'identique — double garde-fou côté
++     interface, le serveur revérifie indépendamment la confirmation. ────────── -->
++<div id="modal-supprimer-projet" class="modal-overlay">
++  <div class="modal-carte" style="max-width:520px">
++    <div class="modal-titre">🗑 Supprimer le projet « <span id="sp-nom-titre"></span> »</div>
++
++    <div id="sp-chargement" style="font-size:13px;color:#666;margin-bottom:12px">Chargement de l'aperçu…</div>
++    <div id="sp-contenu" style="display:none">
++      <div style="font-size:12.5px;color:#666;margin-bottom:14px">
++        Dépôt GitHub <b id="sp-depot"></b> — <u>conservé, non touché</u>
++        (geste manuel volontaire, hors scope). Le côté CCW (clone Windows,
++        service NSSM, tokens) n'est pas non plus touché ici.
++      </div>
++
++      <div class="modal-liste" id="sp-apercu" style="margin-bottom:14px"></div>
++
++      <div style="font-size:13px;color:#333;margin-bottom:8px">Cocher chaque cible avant de pouvoir confirmer :</div>
++      <label style="display:block;font-size:13px;color:#333;margin-bottom:6px">
++        <input type="checkbox" class="sp-case" onchange="spMajBoutonEtat()">
++        Répertoire de travail (contenu, CONTEXTE.md/specs, dépôt git local)
++      </label>
++      <label style="display:block;font-size:13px;color:#333;margin-bottom:6px">
++        <input type="checkbox" class="sp-case" onchange="spMajBoutonEtat()">
++        Fichier <code id="sp-conf-nom"></code>
++      </label>
++      <label style="display:block;font-size:13px;color:#333;margin-bottom:14px">
++        <input type="checkbox" class="sp-case" onchange="spMajBoutonEtat()">
++        Retrait des tableaux §2/§7 de BRIDGE_AGENT_DOC.md (régénération immédiate)
++      </label>
++
++      <div class="champ" style="margin-bottom:14px">
++        <label>Taper « <span id="sp-nom-confirmation-attendu"></span> » pour confirmer la suppression définitive</label>
++        <input type="text" id="sp-nom-confirmation" oninput="spMajBoutonEtat()" autocomplete="off">
++      </div>
++    </div>
++
++    <div id="sp-compte-rendu" class="modal-liste" style="display:none"></div>
++    <div id="sp-message" class="message" style="display:none"></div>
++
++    <div class="modal-boutons">
++      <button id="sp-fermer" onclick="fermerSupprimerProjet()">Fermer</button>
++      <button class="danger-plein" id="sp-supprimer" onclick="soumettreSupprimerProjet()" disabled>Supprimer définitivement</button>
++    </div>
++  </div>
++</div>
++
+ <!-- ─── Modal « Résultats de recherche par titre » (issue #321) ──────────────
+      Fenêtre séparée et AUTONOME : sa propre liste (réplique exacte des lignes
+      de l'onglet Résultats, mêmes badges ✅/Diff/All) et sa PROPRE zone de
+diff --git a/tests/test_supprimer_projet_587.py b/tests/test_supprimer_projet_587.py
+new file mode 100644
+index 0000000..a66ff27
+--- /dev/null
++++ b/tests/test_supprimer_projet_587.py
+@@ -0,0 +1,297 @@
++#!/usr/bin/env python3
++"""Test de `supprimer_projet.py` / `app/supprimer_projet.py` — issue #587
++(flux de suppression de projet, côté CCL/local, symétrique à la création).
++
++Aucun test ici ne touche au vrai `configs/` ni au vrai `BRIDGE_AGENT_DOC.md` :
++`supprimer_projet.DOSSIER_CONFIGS` est monkeypatché vers un répertoire jetable
++pour chaque scénario, et `regenerer_tableaux_projets.regenerer` (l'étape
++Documentation) est remplacé par un faux compteur d'appels plutôt que d'écrire
++réellement dans le dépôt — cohérent avec l'absence de test existant sur
++`nouveau_projet.creer_projet()`/`mettre_a_jour_doc()`, pour la même raison.
++
++Couvre :
++- `previsualiser_suppression` : projet introuvable, projet présent (avec
++  dépôt git local) — aperçu correct, AUCUNE écriture disque ;
++- `supprimer_projet(dry_run=True)` : décrit les 3 cibles, ne touche à rien
++  (fichier .conf et répertoire de travail intacts après l'appel) ;
++- `supprimer_projet(dry_run=False)` : chemin de succès — répertoire de
++  travail (contenu + `.git`) et `.conf` supprimés, régénération de la doc
++  déclenchée, dans cet ordre ;
++- Arrêt propre si la suppression du répertoire échoue : `.conf` conservé,
++  régénération de la doc jamais appelée ;
++- Nom de projet vide → erreur, aucun appel ;
++- Routes Flask (`app/supprimer_projet.py`) : dry-run 404 si absent, refus si
++  la confirmation ne correspond pas au nom, succès sinon.
++
++Exécution :  python3 tests/test_supprimer_projet_587.py
++Sortie      :  code 0 si tous les scénarios passent, 1 sinon.
++"""
++
++import sys
++import tempfile
++from pathlib import Path
++
++RACINE = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(RACINE))
++
++import flask  # noqa: E402
++
++import supprimer_projet as sp  # noqa: E402
++from app import supprimer_projet as route_sp  # noqa: E402
++
++APP_FLASK = flask.Flask(__name__)
++
++
++def _ecrire_conf(dossier_configs: Path, nom: str, rep: Path) -> None:
++    dossier_configs.mkdir(parents=True, exist_ok=True)
++    (dossier_configs / f"{nom}.conf").write_text(
++        f"NOM = {nom}\nDEPOT = AlainDelree/{nom}\nREP_TRAVAIL = {rep}\n",
++        encoding="utf-8")
++
++
++class _CompteurRegen:
++    """Remplace regenerer_tableaux_projets.regenerer : compte les appels sans
++    jamais toucher au vrai BRIDGE_AGENT_DOC.md."""
++
++    def __init__(self):
++        self.appels = 0
++
++    def __call__(self, *a, **k):
++        self.appels += 1
++        return {"existe": True, "erreur": None, "modifie": True}
++
++
++def test_previsualiser_projet_introuvable():
++    with tempfile.TemporaryDirectory() as tmp:
++        ancien = sp.DOSSIER_CONFIGS
++        sp.DOSSIER_CONFIGS = Path(tmp) / "configs"
++        try:
++            apercu = sp.previsualiser_suppression("fantome")
++        finally:
++            sp.DOSSIER_CONFIGS = ancien
++        assert apercu == {"existe": False, "nom": "fantome"}
++    return {"existe": apercu["existe"]}
++
++
++def test_previsualiser_projet_present():
++    with tempfile.TemporaryDirectory() as tmp:
++        tmp = Path(tmp)
++        configs = tmp / "configs"
++        rep = tmp / "travail" / "monprojet"
++        rep.mkdir(parents=True)
++        (rep / ".git").mkdir()
++        (rep / "CONTEXTE.md").write_text("contexte", encoding="utf-8")
++        _ecrire_conf(configs, "monprojet", rep)
++
++        ancien = sp.DOSSIER_CONFIGS
++        sp.DOSSIER_CONFIGS = configs
++        try:
++            apercu = sp.previsualiser_suppression("monprojet")
++        finally:
++            sp.DOSSIER_CONFIGS = ancien
++
++        assert apercu["existe"] is True
++        assert apercu["depot"] == "AlainDelree/monprojet"
++        assert apercu["rep_existe"] is True
++        assert apercu["git_local"] is True
++        assert apercu["nb_fichiers"] >= 2, apercu
++        # Aucune écriture : le .conf et le répertoire doivent être intacts.
++        assert (configs / "monprojet.conf").exists()
++        assert (rep / ".git").exists()
++    return {"git_local": apercu["git_local"], "nb_fichiers": apercu["nb_fichiers"]}
++
++
++def test_dry_run_ne_touche_a_rien():
++    with tempfile.TemporaryDirectory() as tmp:
++        tmp = Path(tmp)
++        configs = tmp / "configs"
++        rep = tmp / "travail" / "monprojet"
++        rep.mkdir(parents=True)
++        (rep / ".git").mkdir()
++        _ecrire_conf(configs, "monprojet", rep)
++
++        compteur = _CompteurRegen()
++        ancien_configs = sp.DOSSIER_CONFIGS
++        ancien_regen = sp.regenerer_tableaux_projets.regenerer
++        sp.DOSSIER_CONFIGS = configs
++        sp.regenerer_tableaux_projets.regenerer = compteur
++        try:
++            res = sp.supprimer_projet("monprojet", dry_run=True)
++        finally:
++            sp.DOSSIER_CONFIGS = ancien_configs
++            sp.regenerer_tableaux_projets.regenerer = ancien_regen
++
++        assert res["succes"] is True
++        assert res["dry_run"] is True
++        assert len(res["etapes"]) == 3
++        assert all(e["ok"] for e in res["etapes"])
++        assert (configs / "monprojet.conf").exists(), "dry-run ne doit pas supprimer le .conf"
++        assert (rep / ".git").exists(), "dry-run ne doit pas toucher au répertoire de travail"
++        assert compteur.appels == 0, "dry-run ne doit jamais régénérer la doc"
++    return {"nb_etapes": len(res["etapes"])}
++
++
++def test_suppression_reelle_succes():
++    with tempfile.TemporaryDirectory() as tmp:
++        tmp = Path(tmp)
++        configs = tmp / "configs"
++        rep = tmp / "travail" / "monprojet"
++        rep.mkdir(parents=True)
++        (rep / ".git").mkdir()
++        (rep / "CONTEXTE.md").write_text("contexte", encoding="utf-8")
++        _ecrire_conf(configs, "monprojet", rep)
++
++        compteur = _CompteurRegen()
++        ancien_configs = sp.DOSSIER_CONFIGS
++        ancien_regen = sp.regenerer_tableaux_projets.regenerer
++        sp.DOSSIER_CONFIGS = configs
++        sp.regenerer_tableaux_projets.regenerer = compteur
++        try:
++            res = sp.supprimer_projet("monprojet", dry_run=False)
++        finally:
++            sp.DOSSIER_CONFIGS = ancien_configs
++            sp.regenerer_tableaux_projets.regenerer = ancien_regen
++
++        assert res["succes"] is True, res
++        assert not rep.exists(), "répertoire de travail (+ dépôt git local) non supprimé"
++        assert not (configs / "monprojet.conf").exists(), ".conf non supprimé"
++        assert compteur.appels == 1, "la doc doit être régénérée exactement une fois"
++        noms_etapes = [e["etape"] for e in res["etapes"]]
++        assert noms_etapes == [
++            "Répertoire de travail (contenu + dépôt git local)",
++            "Fichier .conf",
++            "Documentation",
++        ], noms_etapes
++        assert all(e["ok"] for e in res["etapes"]), res["etapes"]
++    return {"succes": res["succes"], "appels_regen": compteur.appels}
++
++
++def test_echec_repertoire_arrete_tout():
++    """Si la suppression du répertoire échoue, le .conf est conservé et la doc
++    n'est jamais régénérée — pas de continuation aveugle."""
++    with tempfile.TemporaryDirectory() as tmp:
++        tmp = Path(tmp)
++        configs = tmp / "configs"
++        rep = tmp / "travail" / "monprojet"
++        rep.mkdir(parents=True)
++        _ecrire_conf(configs, "monprojet", rep)
++
++        def rmtree_qui_echoue(*a, **k):
++            raise OSError("permission refusée (simulée)")
++
++        compteur = _CompteurRegen()
++        ancien_configs = sp.DOSSIER_CONFIGS
++        ancien_regen = sp.regenerer_tableaux_projets.regenerer
++        ancien_rmtree = sp.shutil.rmtree
++        sp.DOSSIER_CONFIGS = configs
++        sp.regenerer_tableaux_projets.regenerer = compteur
++        sp.shutil.rmtree = rmtree_qui_echoue
++        try:
++            res = sp.supprimer_projet("monprojet", dry_run=False)
++        finally:
++            sp.DOSSIER_CONFIGS = ancien_configs
++            sp.regenerer_tableaux_projets.regenerer = ancien_regen
++            sp.shutil.rmtree = ancien_rmtree
++
++        assert res["succes"] is False
++        assert (configs / "monprojet.conf").exists(), \
++            ".conf ne doit pas être supprimé si le répertoire a échoué"
++        assert compteur.appels == 0, "la doc ne doit pas être régénérée après un échec"
++        assert res["etapes"][0]["ok"] is False
++        assert len(res["etapes"]) == 1, "arrêt immédiat, pas d'étapes suivantes"
++    return {"succes": res["succes"]}
++
++
++def test_nom_vide():
++    res = sp.supprimer_projet("   ", dry_run=False)
++    assert res["succes"] is False
++    assert res["etapes"] == []
++    return {"erreur": res["erreur"]}
++
++
++def test_route_verifier_projet_absent():
++    with tempfile.TemporaryDirectory() as tmp:
++        ancien = sp.DOSSIER_CONFIGS
++        sp.DOSSIER_CONFIGS = Path(tmp) / "configs"
++        try:
++            with APP_FLASK.test_request_context("/supprimer-projet/verifier/fantome"):
++                rep = route_sp.verifier_supprimer_projet("fantome")
++        finally:
++            sp.DOSSIER_CONFIGS = ancien
++        assert rep[1] == 404
++        assert rep[0].get_json()["existe"] is False
++    return {"status": rep[1]}
++
++
++def test_route_executer_confirmation_incorrecte():
++    with APP_FLASK.test_request_context(
++            "/supprimer-projet", method="POST",
++            json={"nom": "monprojet", "confirmation": "autrechose"}):
++        rep = route_sp.executer_supprimer_projet()
++    assert rep[1] == 400
++    assert rep[0].get_json()["succes"] is False
++    return {"status": rep[1]}
++
++
++def test_route_executer_succes():
++    with tempfile.TemporaryDirectory() as tmp:
++        tmp = Path(tmp)
++        configs = tmp / "configs"
++        rep_travail = tmp / "travail" / "monprojet"
++        rep_travail.mkdir(parents=True)
++        _ecrire_conf(configs, "monprojet", rep_travail)
++
++        compteur = _CompteurRegen()
++        ancien_configs = sp.DOSSIER_CONFIGS
++        ancien_regen = sp.regenerer_tableaux_projets.regenerer
++        sp.DOSSIER_CONFIGS = configs
++        sp.regenerer_tableaux_projets.regenerer = compteur
++        try:
++            with APP_FLASK.test_request_context(
++                    "/supprimer-projet", method="POST",
++                    json={"nom": "MonProjet", "confirmation": "monprojet"}):
++                rep = route_sp.executer_supprimer_projet()
++        finally:
++            sp.DOSSIER_CONFIGS = ancien_configs
++            sp.regenerer_tableaux_projets.regenerer = ancien_regen
++
++        assert rep[1] == 200, rep[0].get_json()
++        corps = rep[0].get_json()
++        assert corps["succes"] is True
++        assert not (configs / "monprojet.conf").exists()
++    return {"status": rep[1]}
++
++
++def main() -> int:
++    tests = [
++        ("previsualiser_suppression — projet introuvable", test_previsualiser_projet_introuvable),
++        ("previsualiser_suppression — projet présent, aucune écriture", test_previsualiser_projet_present),
++        ("supprimer_projet(dry_run=True) — ne touche à rien", test_dry_run_ne_touche_a_rien),
++        ("supprimer_projet(dry_run=False) — succès, ordre des étapes", test_suppression_reelle_succes),
++        ("échec suppression répertoire — arrêt propre, .conf conservé", test_echec_repertoire_arrete_tout),
++        ("nom vide — erreur, aucune étape", test_nom_vide),
++        ("route GET verifier — 404 si projet absent", test_route_verifier_projet_absent),
++        ("route POST — confirmation ne correspondant pas au nom → 400", test_route_executer_confirmation_incorrecte),
++        ("route POST — succès (nom normalisé, confirmation correcte)", test_route_executer_succes),
++    ]
++    echecs = 0
++    for nom, fn in tests:
++        try:
++            rap = fn()
++            print(f"  ✓ {nom}  ({rap})")
++        except AssertionError as e:
++            echecs += 1
++            print(f"  ✗ {nom}\n      {e}")
++        except Exception as e:  # noqa: BLE001
++            echecs += 1
++            print(f"  ✗ {nom} — erreur inattendue : {type(e).__name__}: {e}")
++
++    if echecs:
++        print(f"\n❌ {echecs} scénario(s) en échec.")
++        return 1
++    print("\n✅ Tous les scénarios passent.")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
