@@ -429,7 +429,19 @@ def finaliser_merge_route(nom_projet):
         )
         return redirect(url_for("projet_route", nom_projet=nom_projet))
 
-    resultat = finaliser_commit_merge(projet["repertoire"])
+    try:
+        resultat = finaliser_commit_merge(projet["repertoire"])
+    except subprocess.TimeoutExpired:
+        flash(
+            f"⚠️ La finalisation du merge de « {nom_projet} » a dépassé le délai, mais a pu se terminer "
+            "entre-temps — vérifiez manuellement si besoin.",
+            "erreur",
+        )
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+    except Exception as exc:
+        flash(f"❌ Erreur inattendue lors de la finalisation du merge de « {nom_projet} » : {exc}", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
     if resultat["ok"]:
         flash(f"✅ Merge finalisé pour « {nom_projet} » — {resultat['commande']}", "succes")
     else:
