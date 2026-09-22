@@ -844,11 +844,41 @@ def fusionner_changelog_worktree(repertoire):
     resultat = subprocess.run(
         commande, capture_output=True, text=True, timeout=TIMEOUT_GIT,
     )
-    return {
-        "ok": resultat.returncode == 0,
-        "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
-        "commande": " ".join(commande),
-    }
+    if resultat.returncode != 0:
+        return {
+            "ok": False,
+            "erreur": (resultat.stderr or resultat.stdout).strip(),
+            "commande": " ".join(commande),
+        }
+
+    # Le script fusionner_changelog.py modifie CHANGELOG.md et supprime les
+    # CHANGELOG-<N>.md sur disque mais ne commite rien lui-même — sans ce
+    # commit immédiat, ce résultat reste une modification non indexée du
+    # dépôt. `fusionner_worktree` (l'appelant) bascule ensuite potentiellement
+    # sur une autre branche (`doit_basculer`) : un `git checkout` avec un
+    # `CHANGELOG.md` modifié en local est refusé par git dès que la branche
+    # de destination diffère sur ce fichier, ce qui bloque le retour de
+    # branche silencieusement (voir `fusionner_worktree`) — et si le dépôt
+    # reste malgré tout praticable et que ces changements non commités sont
+    # ensuite écrasés (checkout, reset, etc. fait par ailleurs), la fusion se
+    # trouve annulée sans qu'aucun message ne l'ait jamais signalé comme un
+    # échec (cause du bug #63 : CHANGELOG-585.md/586.md restés non fusionnés
+    # malgré un script qui, lui, réussissait). Committer ici rend la fusion
+    # durable dès son exécution, indépendamment de ce que fait l'appelant
+    # ensuite.
+    commit = _lancer_git(
+        repertoire, "commit", "-a", "-m",
+        "chore: fusionne CHANGELOG-<N>.md dans CHANGELOG.md (auto)",
+    )
+    if commit.returncode != 0:
+        return {
+            "ok": False,
+            "erreur": "fusion effectuée mais commit impossible : "
+                      + (commit.stderr or commit.stdout).strip(),
+            "commande": " ".join(commande),
+        }
+
+    return {"ok": True, "erreur": None, "commande": " ".join(commande)}
 
 
 def fusionner_worktree(repertoire, branche_cible, branche_source):
@@ -865,9 +895,11 @@ def fusionner_worktree(repertoire, branche_cible, branche_source):
     un éventuel `CHANGELOG-<N>.md` introduit par la branche source (voir
     `fusionner_changelog_worktree`, issue #51) — toujours avant la bascule
     de retour, pendant que `branche_cible` est encore extraite dans
-    `repertoire`. Retourne {ok, erreur, commande, changelog} pour affichage
-    transparent (`changelog` vaut None si aucun CHANGELOG-<N>.md n'était à
-    fusionner)."""
+    `repertoire`. Retourne {ok, erreur, commande, changelog,
+    erreur_retour_branche} pour affichage transparent (`changelog` vaut None
+    si aucun CHANGELOG-<N>.md n'était à fusionner ; `erreur_retour_branche`
+    n'est renseigné que si la bascule de retour vers la branche d'origine a
+    échoué après une fusion par ailleurs réussie)."""
     branche_courante = get_branche_courante(repertoire)
     doit_basculer = branche_courante is not None and branche_courante != branche_cible
 
@@ -890,14 +922,28 @@ def fusionner_worktree(repertoire, branche_cible, branche_source):
     if resultat.returncode == 0:
         resultat_changelog = fusionner_changelog_worktree(repertoire)
 
+    erreur_retour_branche = None
     if doit_basculer and resultat.returncode == 0:
-        _lancer_git(repertoire, "checkout", branche_courante)
+        retour = _lancer_git(repertoire, "checkout", branche_courante)
+        if retour.returncode != 0:
+            # Ne doit plus arriver depuis que fusionner_changelog_worktree
+            # commite son résultat (le dépôt est donc propre au moment de ce
+            # checkout), mais gardé signalé plutôt que silencieux en cas
+            # d'autre cause (conflit sans lien avec le changelog, etc.) —
+            # avant ce correctif, ce retour n'était jamais vérifié, ce qui a
+            # laissé passer le bug #63 sans aucun message d'erreur.
+            erreur_retour_branche = (
+                f"la fusion a réussi mais le retour sur « {branche_courante} » "
+                f"a échoué : {(retour.stderr or retour.stdout).strip()} — "
+                f"le dépôt est resté sur « {branche_cible} »"
+            )
 
     return {
         "ok": resultat.returncode == 0,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
         "commande": " ".join(commande),
         "changelog": resultat_changelog,
+        "erreur_retour_branche": erreur_retour_branche,
     }
 
 
