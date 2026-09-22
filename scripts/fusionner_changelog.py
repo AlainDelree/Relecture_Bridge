@@ -18,9 +18,11 @@ trouvé : message et sortie propre (code 0), `CHANGELOG.md` inchangé —
 propriété qui rend une seconde exécution sans nouveaux fichiers idempotente,
 puisque les fichiers sources du premier passage ont déjà été supprimés.
 
-Ce script n'est pas encore appelé automatiquement par watcher.py (le système
-de worktrees qui produit des CHANGELOG-<N>.md n'existe pas encore) —
-lancement manuel uniquement pour l'instant.
+Ce script n'est pas appelé par watcher.py (qui ne connaît rien au système de
+worktrees) mais par `fusionner_changelog_worktree` dans relecture_web/git_info.py
+(issue #51), automatiquement juste après chaque fusion de branche réussie
+depuis l'interface relecture_web — un lancement manuel reste possible (voir
+Usage ci-dessous) pour rattraper un cas resté non fusionné.
 
 Usage :
     python3 scripts/fusionner_changelog.py                # dépôt courant (.)

@@ -871,6 +871,9 @@ def merger_branches_route(nom_projet):
                         f"({changelog['commande']}) : {changelog['erreur']} — à fusionner manuellement.",
                         "erreur",
                     )
+            erreur_retour_branche = resultat.get("erreur_retour_branche")
+            if erreur_retour_branche:
+                flash(f"⚠️ {erreur_retour_branche}", "erreur")
         else:
             flash(f"❌ Échec de la fusion de « {nom} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
     return redirect(url_for("projet_route", nom_projet=nom_projet))
