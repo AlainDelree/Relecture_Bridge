@@ -1267,7 +1267,7 @@ def finaliser_commit_merge(repertoire):
     Retourne {ok, erreur, commande} pour affichage transparent."""
     commande = ["git", "-C", repertoire, "commit", "--no-edit"]
     resultat = subprocess.run(
-        commande, capture_output=True, text=True, timeout=TIMEOUT_GIT,
+        commande, capture_output=True, text=True, timeout=TIMEOUT_GIT_LONG,
     )
     return {
         "ok": resultat.returncode == 0,
