@@ -6,6 +6,65 @@ plus récente en premier.
 Convention d'ajout : voir §10 de `BRIDGE_AGENT_DOC.md`.
 ## 2026-09-21 — issue #60 (relecture_web)
 
+## 2026-09-22 — issue #62 (relecture_web)
+
+- Journalisation persistante des tentatives de fusion automatique du
+  CHANGELOG (déclenchée après un merge, issue #51) : jusqu'ici, le
+  résultat (succès/échec) n'était visible que via un message flash
+  éphémère, affiché une seule fois juste après l'action — vécu
+  concrètement quand Alain a mergé deux branches sur `bridge_agent`
+  depuis `relecture_web` sans repérer le détail du message, sans moyen
+  après coup de confirmer si la fusion automatique avait réellement
+  réussi.
+  - `git_info.py` : nouveau fichier de log `relecture_web/changelog_fusion.log`
+    (non commité, voir `.gitignore`), une ligne par tentative réellement
+    lancée (script trouvé ou non) — date/heure ISO, projet, commande
+    exécutée, résultat (`SUCCES`/`ECHEC`), message d'erreur le cas
+    échéant. Écrite par la nouvelle fonction `_journaliser_fusion_changelog`,
+    appelée depuis `fusionner_changelog_worktree` (qui accepte maintenant
+    un paramètre optionnel `nom_projet`). Une erreur d'écriture du journal
+    reste silencieuse pour l'utilisateur — elle ne doit jamais faire
+    échouer la fusion elle-même.
+  - `fusionner_worktree` propage `nom_projet` jusqu'à
+    `fusionner_changelog_worktree` ; `app.py` passe `projet["nom"]` lors de
+    l'appel dans `merger_branches_route`.
+  - `RELECTURE_WEB_DOC.md` (section 9, ligne **Merger** du tableau des
+    actions) mise à jour en conséquence.
+
+## 2026-09-21 — issue #61 (relecture_web)
+
+- Ajout du bouton **« Finaliser le merge »**, pour clore le dernier geste
+  manuel encore nécessaire après une résolution de conflits entièrement
+  faite depuis `relecture_web` (issues #55/#56/#59) : la section « Fusion
+  en conflit » de la page projet accepte automatiquement chaque fichier
+  résolu (`git add`), mais le commit du merge lui-même restait à taper en
+  terminal — cassant le flux visé par tout ce chantier.
+  - `git_info.py` : deux nouvelles fonctions, `get_merge_en_cours`
+    (`git rev-parse --verify --quiet MERGE_HEAD`, distingue un vrai merge en
+    cours d'un simple conflit `UU` isolé — cherry-pick/revert en conflit ne
+    créent jamais `MERGE_HEAD`) et `finaliser_commit_merge`
+    (`git commit --no-edit`, l'équivalent non-interactif de `git commit`
+    sans `-m` : accepte tel quel le message déjà préparé par git dans
+    `.git/MERGE_MSG`, sans ouvrir d'éditeur inutilisable depuis une page
+    web).
+  - `app.py` : `projet_route` calcule désormais `merge_en_cours` et
+    `peut_finaliser_merge` (= merge en cours ET plus aucun fichier en
+    conflit) pour chaque projet. Nouvelle route
+    `POST /projet/<nom_projet>/finaliser-merge` — revalide l'état git
+    actuel (pas la seule page déjà affichée) avant d'appeler
+    `finaliser_commit_merge`, pour ne jamais tenter un commit partiel même
+    sur un formulaire soumis depuis une page obsolète.
+  - `templates/projet.html` : la section « Fusion en conflit » reste
+    affichée tant qu'un merge est en cours, mais bascule d'une liste de
+    fichiers à résoudre vers un unique bouton « ✅ Finaliser le merge » une
+    fois tous les fichiers résolus — jamais les deux à la fois, et le
+    bouton n'apparaît pas tant qu'il reste un seul fichier en conflit.
+    Même pattern de confirmation que les autres actions du système
+    (`confirm()` JS avec commande équivalente affichée,
+    `git -C <repertoire> commit --no-edit`).
+  - `RELECTURE_WEB_DOC.md` (section 9, tableau des actions, et section 10)
+    mises à jour en conséquence.
+
 - Correction du chevauchement visuel dans l'en-tête de la page **Conflit**
   (`conflit.html`) constaté après le passage à la vue à deux panneaux
   (issue #59) : le libellé « Résultat final — éditable » du panneau droit

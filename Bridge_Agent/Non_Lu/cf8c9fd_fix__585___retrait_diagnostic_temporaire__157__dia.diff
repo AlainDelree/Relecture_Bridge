@@ -1,0 +1,188 @@
+cf8c9fd
+
+commit cf8c9fd
+Author: Athanatos123 <79310036+AlainDelree@users.noreply.github.com>
+Date:   Tue Sep 22 14:52:40 2026 +0200
+
+    fix #585 : retrait diagnostic temporaire #157 (diag_heartbeat.py + route non authentifiée)
+
+diff --git a/app/__init__.py b/app/__init__.py
+index 836803b..c4eaa64 100644
+--- a/app/__init__.py
++++ b/app/__init__.py
+@@ -82,7 +82,6 @@ def _enregistrer_routes(app: Flask) -> None:
+     from app.fin_issue import notifier_fin_issue, notifier_debut_issue, stream_fin_issue
+     from app.issues_inbox import (etat_inbox, demarrer_watcher_inbox_route,
+                                   arreter_watcher_inbox_route)
+-    from app.diag_heartbeat import visibilite as diag_visibilite   # DIAGNOSTIC TEMPORAIRE — issue #157, à retirer
+     from app.son import get_son_actif, post_son_actif, tester_son
+     from app.vues import index
+ 
+@@ -148,7 +147,6 @@ def _enregistrer_routes(app: Flask) -> None:
+     # ─── Pilotage du watcher spool depuis #pl-zone-extras (issue #485) ────────
+     app.add_url_rule("/issues-inbox/demarrer-watcher", "demarrer_watcher_inbox_route", login_requis(demarrer_watcher_inbox_route), methods=["POST"])
+     app.add_url_rule("/issues-inbox/arreter-watcher", "arreter_watcher_inbox_route", login_requis(arreter_watcher_inbox_route), methods=["POST"])
+-    app.add_url_rule("/diag-visibilite", "diag_visibilite", diag_visibilite, methods=["POST"])   # DIAGNOSTIC TEMPORAIRE — issue #157, à retirer
+     # ─── Interrupteur global plat/cloche du bip (issue #527), distinct de la
+     # tonalité par projet (issue #526, /tester-bip/<nom_projet> ci-dessus) ────
+     app.add_url_rule("/son-actif", "get_son_actif", login_requis(get_son_actif), methods=["GET"])
+diff --git a/app/cycle_vie.py b/app/cycle_vie.py
+index fe0f1f6..d8d1cde 100644
+--- a/app/cycle_vie.py
++++ b/app/cycle_vie.py
+@@ -29,7 +29,6 @@ from threading import Lock, Thread
+ 
+ from flask import Response, current_app, jsonify
+ 
+-from app import diag_heartbeat   # DIAGNOSTIC TEMPORAIRE — issue #157, à retirer
+ from app import etat
+ from app.tunnel import arreter_tunnel
+ 
+@@ -70,7 +69,6 @@ def heartbeat():
+     l'horodatage surveillé par surveiller_heartbeat()."""
+     etat.set("LAST_HEARTBEAT", time.time())
+     etat.set("HEARTBEAT_RECU", True)
+-    diag_heartbeat.log_heartbeat()   # DIAGNOSTIC TEMPORAIRE — issue #157, à retirer
+     return jsonify(ok=True)
+ 
+ 
+@@ -88,7 +86,6 @@ def events():
+         # keepalive réussi rafraîchit LAST_SSE_ACTIVITE ; l'échec d'un yield
+         # (onglet fermé) déclenche le finally qui décrémente le compteur.
+         n = _sse_connecte(config)
+-        diag_heartbeat.log_sse("connexion", n)   # DIAGNOSTIC TEMPORAIRE — issue #157, à retirer
+         try:
+             dernier_ping = time.time()
+             while True:
+@@ -102,7 +99,6 @@ def events():
+                     config["LAST_SSE_ACTIVITE"] = time.time()   # preuve de vie (issue #157)
+         finally:
+             n = _sse_deconnecte(config)
+-            diag_heartbeat.log_sse("déconnexion", n)   # DIAGNOSTIC TEMPORAIRE — issue #157, à retirer
+ 
+     return Response(
+         generer(),
+@@ -164,7 +160,5 @@ def surveiller_heartbeat(app_instance):
+         heartbeat_vivant = heartbeat_recu and delta_hb <= DELAI_HEARTBEAT_MAX
+ 
+         if not sse_vivant and not heartbeat_vivant:
+-            diag_heartbeat.log_arret(delta_hb, delta_sse, connexions,   # DIAGNOSTIC TEMPORAIRE — issue #157
+-                                     DELAI_HEARTBEAT_MAX, DELAI_SSE_MAX)  # à retirer
+             os.kill(os.getpid(), signal.SIGTERM)
+             return
+diff --git a/app/diag_heartbeat.py b/app/diag_heartbeat.py
+deleted file mode 100644
+index b883a24..0000000
+--- a/app/diag_heartbeat.py
++++ /dev/null
+@@ -1,88 +0,0 @@
+-# DIAGNOSTIC TEMPORAIRE — issue #157, à retirer
+-"""DIAGNOSTIC TEMPORAIRE — issue #157, à retirer.
+-
+-Journalisation temporaire, regroupée dans CE SEUL fichier, pour vérifier
+-objectivement que le correctif du heartbeat/SSE empêche bien les coupures
+-intempestives quand l'onglet Bridge_Agent passe en arrière-plan.
+-
+-Tout écrit dans logs/heartbeat_diag.log :
+-  - chaque heartbeat reçu, avec le delta depuis le précédent ;
+-  - chaque connexion / déconnexion SSE (/events), avec le nombre de
+-    connexions actives restantes ;
+-  - chaque changement de visibilité de l'onglet signalé par le navigateur
+-    (POST /diag-visibilite) — pour corréler « onglet passé en arrière-plan »
+-    avec « serveur coupé » ;
+-  - le delta exact au moment où surveiller_heartbeat() déclenche un arrêt.
+-
+-POUR RETIRER PROPREMENT (une fois le correctif validé) :
+-  1. Supprimer ce fichier (app/diag_heartbeat.py).
+-  2. app/cycle_vie.py : retirer les lignes marquées « DIAGNOSTIC TEMPORAIRE
+-     — issue #157 » (l'import « from app import diag_heartbeat » + les
+-     appels diag_heartbeat.log_*()).
+-  3. app/__init__.py : retirer l'enregistrement de la route /diag-visibilite
+-     (ligne marquée du même commentaire) et son import.
+-  4. static/js/app.js : retirer le bloc marqué « DIAGNOSTIC TEMPORAIRE —
+-     issue #157 » dans demarrerCycleVie() (le console.log + le fetch vers
+-     /diag-visibilite). Garder l'appel envoyerHeartbeat() du visibilitychange
+-     et le relèvement du seuil : ils font partie du correctif, pas du diag.
+-  5. Supprimer logs/heartbeat_diag.log.
+-"""
+-
+-import threading
+-import time
+-from pathlib import Path
+-
+-from flask import jsonify, request
+-
+-RACINE = Path(__file__).resolve().parent.parent
+-FICHIER = RACINE / "logs" / "heartbeat_diag.log"
+-
+-_lock = threading.Lock()
+-_dernier_hb = {"t": None}   # horodatage du heartbeat précédent (pour le delta)
+-
+-
+-def _ecrire(ligne: str) -> None:
+-    horo = time.strftime("%Y-%m-%d %H:%M:%S")
+-    with _lock:
+-        try:
+-            with open(FICHIER, "a", encoding="utf-8") as f:
+-                f.write(f"[{horo}] {ligne}\n")
+-        except OSError:
+-            pass   # le diagnostic ne doit jamais casser le service
+-
+-
+-def log_heartbeat() -> None:
+-    """Trace un heartbeat POST /heartbeat reçu et son delta avec le précédent."""
+-    now = time.time()
+-    with _lock:
+-        prec = _dernier_hb["t"]
+-        _dernier_hb["t"] = now
+-    delta = f"{now - prec:.1f}s" if prec is not None else "premier"
+-    _ecrire(f"HEARTBEAT reçu (delta depuis précédent : {delta})")
+-
+-
+-def log_sse(evenement: str, connexions: int) -> None:
+-    """Trace une (dé)connexion SSE /events et le nb de connexions restantes."""
+-    _ecrire(f"SSE {evenement} (connexions actives : {connexions})")
+-
+-
+-def log_arret(delta_hb: float, delta_sse: float, connexions: int,
+-              seuil_hb: float, seuil_sse: float) -> None:
+-    """Trace le déclenchement d'un arrêt par surveiller_heartbeat(), avec les
+-    deltas exacts et de combien les seuils ont été dépassés."""
+-    _ecrire(
+-        "ARRÊT déclenché par surveiller_heartbeat — "
+-        f"delta_heartbeat={delta_hb:.1f}s (seuil {seuil_hb:.0f}s), "
+-        f"delta_SSE={delta_sse:.1f}s (seuil {seuil_sse:.0f}s), "
+-        f"connexions_SSE={connexions}"
+-    )
+-
+-
+-def visibilite():
+-    """Route POST /diag-visibilite : le navigateur signale un changement de
+-    visibilité de l'onglet (document.hidden true/false), avec son horodatage."""
+-    data = request.get_json(silent=True) or {}
+-    etat = data.get("etat", "?")
+-    horo_client = data.get("horodatage", "?")
+-    _ecrire(f"VISIBILITÉ onglet={etat} (horodatage client={horo_client})")
+-    return jsonify(ok=True)
+diff --git a/static/js/app.js b/static/js/app.js
+index 7b7eac0..a20e43f 100644
+--- a/static/js/app.js
++++ b/static/js/app.js
+@@ -5453,17 +5453,6 @@ function demarrerCycleVie() {
+   // sur la connexion SSE /events (non throttlée), ceci n'est qu'un renfort.
+   document.addEventListener('visibilitychange', function() {
+     if (!document.hidden) envoyerHeartbeat();
+-    // DIAGNOSTIC TEMPORAIRE — issue #157, à retirer : trace chaque passage
+-    // avant-plan / arrière-plan (console + POST serveur) pour corréler après
+-    // coup « onglet caché » avec « serveur coupé ». Retirer ce bloc (garder le
+-    // envoyerHeartbeat() ci-dessus, qui fait partie du correctif).
+-    var etat = document.hidden ? 'caché (arrière-plan)' : 'visible (premier plan)';
+-    console.log('[DIAG #157] visibilitychange → ' + etat + ' @ ' + new Date().toISOString());
+-    fetch('/diag-visibilite', {
+-      method: 'POST',
+-      headers: {'Content-Type': 'application/json'},
+-      body: JSON.stringify({etat: etat, horodatage: new Date().toISOString()})
+-    }).catch(function() {});
+   });
+ 
+   // Canal serveur → onglet.
