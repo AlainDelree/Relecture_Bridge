@@ -981,6 +981,41 @@ def fusionner_worktree(repertoire, branche_cible, branche_source, nom_projet=Non
     }
 
 
+def verifier_merge_apres_timeout(repertoire, branche_cible, branche_source):
+    """Après un `TimeoutExpired` sur `fusionner_worktree` (issue #66) —
+    détermine l'état réel de la fusion en relisant le dépôt plutôt que de
+    renvoyer Alain vers une vérification manuelle en ligne de commande.
+    Trois issues distinctes : fusion aboutie (`branche_source` est devenue
+    un ancêtre de `branche_cible`), fusion arrêtée sur des conflits
+    (`MERGE_HEAD` toujours présent — pas un échec à proprement parler, la
+    page de résolution de conflits prend normalement le relais), ou fusion
+    non aboutie (ni l'un ni l'autre, le merge n'a probablement même pas pu
+    démarrer). Retourne {etat, erreur} où `etat` vaut "reussie",
+    "conflits_en_attente", "non_aboutie" ou "indetermine" (uniquement si la
+    vérification elle-même échoue, auquel cas `erreur` est renseignée)."""
+    if get_merge_en_cours(repertoire):
+        return {"etat": "conflits_en_attente", "erreur": None}
+
+    resultat = _lancer_git(repertoire, "merge-base", "--is-ancestor", branche_source, branche_cible)
+    if resultat.returncode == 0:
+        return {"etat": "reussie", "erreur": None}
+    if resultat.returncode == 1:
+        return {"etat": "non_aboutie", "erreur": None}
+    return {"etat": "indetermine", "erreur": (resultat.stderr or resultat.stdout).strip()}
+
+
+def verifier_finalisation_merge_apres_timeout(repertoire):
+    """Après un `TimeoutExpired` sur `finaliser_commit_merge` (issue #66) —
+    dans ce flux, le seul moyen connu de faire disparaître `MERGE_HEAD` est
+    le commit visé par `finaliser_commit_merge` lui-même (personne d'autre
+    n'a lancé de `merge --abort` en parallèle) : sa disparition signale donc
+    de façon fiable que le commit a bien été créé avant que le timeout
+    Python ne tue le process (probablement resté bloqué dans un hook
+    post-commit). Retourne {ok} : True si le merge est bien finalisé
+    (`MERGE_HEAD` disparu), False s'il est toujours en attente."""
+    return {"ok": not get_merge_en_cours(repertoire)}
+
+
 def supprimer_worktree(repertoire, chemin_worktree):
     """Supprime un worktree via `git worktree remove`, jamais forcé (donc git
     refuse de lui-même si le worktree a des modifications non commitées).
@@ -1080,6 +1115,48 @@ def pousser_branche(repertoire, branche):
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
         "commande": " ".join(commande),
     }
+
+
+def verifier_push_apres_timeout(repertoire, branche):
+    """Après un `TimeoutExpired` sur `pousser_branche` (issue #66) — le
+    process git a pu être tué localement par le timeout Python juste après
+    que le remote a accepté le push mais avant que la confirmation réseau
+    ne revienne, laissant croire à un échec alors que le push a abouti.
+    Compare le commit local de `branche` au commit que le remote expose
+    réellement via `git ls-remote` (pas le suivi local `refs/remotes/...`,
+    qui ne serait mis à jour que par un `fetch` et pourrait donc rester
+    périmé). Retourne {ok, hash_local, hash_distant, erreur} : `ok` vaut
+    True si les deux hash coïncident (push confirmé abouti), False s'ils
+    diffèrent ou si la branche est absente côté remote (push non abouti),
+    None si l'état n'a pas pu être déterminé (erreur réseau/git lors de la
+    vérification elle-même — dans ce cas seulement, `erreur` est renseignée)."""
+    local = _lancer_git(repertoire, "rev-parse", f"refs/heads/{branche}")
+    if local.returncode != 0:
+        return {"ok": None, "hash_local": None, "hash_distant": None, "erreur": "branche locale introuvable"}
+    hash_local = local.stdout.strip()
+
+    remote = get_remote_defaut(repertoire)
+    try:
+        resultat = subprocess.run(
+            ["git", "-C", repertoire, "ls-remote", remote, f"refs/heads/{branche}"],
+            capture_output=True, text=True, timeout=TIMEOUT_RESEAU,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "ok": None, "hash_local": hash_local, "hash_distant": None,
+            "erreur": "la vérification réseau elle-même a dépassé son délai",
+        }
+    if resultat.returncode != 0:
+        return {
+            "ok": None, "hash_local": hash_local, "hash_distant": None,
+            "erreur": (resultat.stderr or resultat.stdout).strip(),
+        }
+
+    ligne = resultat.stdout.strip()
+    if not ligne:
+        return {"ok": False, "hash_local": hash_local, "hash_distant": None, "erreur": None}
+    hash_distant = ligne.split()[0]
+    return {"ok": hash_distant == hash_local, "hash_local": hash_local, "hash_distant": hash_distant, "erreur": None}
 
 
 def get_commits_en_attente(chemin_worktree):

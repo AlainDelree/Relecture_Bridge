@@ -50,6 +50,9 @@ from git_info import (
     supprimer_branche,
     supprimer_branche_recuperation,
     supprimer_worktree,
+    verifier_finalisation_merge_apres_timeout,
+    verifier_merge_apres_timeout,
+    verifier_push_apres_timeout,
 )
 from resumes_info import (
     collect_resumes_projet,
@@ -432,11 +435,19 @@ def finaliser_merge_route(nom_projet):
     try:
         resultat = finaliser_commit_merge(projet["repertoire"])
     except subprocess.TimeoutExpired:
-        flash(
-            f"⚠️ La finalisation du merge de « {nom_projet} » a dépassé le délai, mais a pu se terminer "
-            "entre-temps — vérifiez manuellement si besoin.",
-            "erreur",
-        )
+        verification = verifier_finalisation_merge_apres_timeout(projet["repertoire"])
+        if verification["ok"]:
+            flash(
+                f"✅ La finalisation du merge de « {nom_projet} » a dépassé le délai affiché, mais la "
+                "vérification automatique confirme qu'elle a bien abouti (plus de fusion en attente).",
+                "succes",
+            )
+        else:
+            flash(
+                f"❌ La finalisation du merge de « {nom_projet} » a dépassé le délai et la vérification "
+                "automatique confirme qu'elle n'a PAS abouti (fusion toujours en attente) — à relancer.",
+                "erreur",
+            )
         return redirect(url_for("projet_route", nom_projet=nom_projet))
     except Exception as exc:
         flash(f"❌ Erreur inattendue lors de la finalisation du merge de « {nom_projet} » : {exc}", "erreur")
@@ -790,11 +801,26 @@ def pousser_branches_route(nom_projet):
         try:
             resultat = pousser_branche(projet["repertoire"], nom)
         except subprocess.TimeoutExpired:
-            flash(
-                f"⚠️ Le push de « {nom} » a dépassé le délai, mais a pu se terminer "
-                "entre-temps — vérifiez manuellement si besoin.",
-                "erreur",
-            )
+            verification = verifier_push_apres_timeout(projet["repertoire"], nom)
+            if verification["ok"] is True:
+                flash(
+                    f"✅ Le push de « {nom} » a dépassé le délai affiché, mais la vérification "
+                    "automatique confirme qu'il a bien abouti (commit distant identique au local).",
+                    "succes",
+                )
+            elif verification["ok"] is False:
+                flash(
+                    f"❌ Le push de « {nom} » a dépassé le délai et la vérification automatique "
+                    "confirme qu'il n'a PAS abouti (commit distant différent ou absent) — à relancer.",
+                    "erreur",
+                )
+            else:
+                flash(
+                    f"⚠️ Le push de « {nom} » a dépassé le délai, et la vérification automatique n'a "
+                    f"pas pu déterminer l'état réel ({verification['erreur'] or 'raison inconnue'}) — "
+                    "vérifiez manuellement si besoin.",
+                    "erreur",
+                )
             continue
         except Exception as exc:
             flash(f"❌ Erreur inattendue lors du push de « {nom} » : {exc}", "erreur")
@@ -862,11 +888,32 @@ def merger_branches_route(nom_projet):
         try:
             resultat = fusionner_worktree(projet["repertoire"], branche_cible, nom, projet["nom"])
         except subprocess.TimeoutExpired:
-            flash(
-                f"⚠️ La fusion de « {nom} » a dépassé le délai, mais a pu se terminer "
-                "entre-temps — vérifiez manuellement si besoin.",
-                "erreur",
-            )
+            verification = verifier_merge_apres_timeout(projet["repertoire"], branche_cible, nom)
+            if verification["etat"] == "reussie":
+                flash(
+                    f"✅ La fusion de « {nom} » a dépassé le délai affiché, mais la vérification "
+                    f"automatique confirme qu'elle a bien abouti dans « {branche_cible} ».",
+                    "succes",
+                )
+            elif verification["etat"] == "conflits_en_attente":
+                flash(
+                    f"⚠️ La fusion de « {nom} » a dépassé le délai — le dépôt est en état de fusion "
+                    "avec des conflits à résoudre (voir la page de résolution de conflits).",
+                    "erreur",
+                )
+            elif verification["etat"] == "non_aboutie":
+                flash(
+                    f"❌ La fusion de « {nom} » a dépassé le délai et la vérification automatique "
+                    "confirme qu'elle n'a PAS abouti — à relancer.",
+                    "erreur",
+                )
+            else:
+                flash(
+                    f"⚠️ La fusion de « {nom} » a dépassé le délai, et la vérification automatique n'a "
+                    f"pas pu déterminer l'état réel ({verification['erreur'] or 'raison inconnue'}) — "
+                    "vérifiez manuellement si besoin.",
+                    "erreur",
+                )
             continue
         except Exception as exc:
             flash(f"❌ Erreur inattendue lors de la fusion de « {nom} » : {exc}", "erreur")
