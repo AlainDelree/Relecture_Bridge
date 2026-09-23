@@ -161,6 +161,16 @@ Sur la page « branches d'un projet » :
 - **`à jour (<amont>)`** — le worktree est synchronisé avec son amont.
 - **`🔒 sécurisé (recuperation-<hash>)`** — un commit orphelin a déjà
   une branche de sécurisation (section 6).
+- **`⚠️ worktree orphelin — repli signalé`** — le chemin de ce worktree
+  secondaire apparaît dans une ligne « déjà pris » du journal
+  `logs/watcher-<projet>.log` que bridge_agent écrit (issue #589) quand
+  une tâche `mode_write` n'a pas pu obtenir son propre worktree et est
+  retombée sur `REP_TRAVAIL` : ce worktree correspond probablement à la
+  tentative précédente restée plantée sur le disque, potentiellement
+  avec du travail non committé dedans (issue #67). Lecture seule d'un
+  fichier hors périmètre `relecture_bridge`, comme le reste de l'état
+  git des autres projets (section 1) ; absent ou illisible → badge
+  simplement absent, aucune erreur.
 - **`⚠ point d'attention`** — sur une carte de commit repliée, le résumé
   fonctionnel généré automatiquement contient du texte non vide dans sa
   section « Points d'attention ».
