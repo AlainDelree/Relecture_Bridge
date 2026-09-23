@@ -144,6 +144,39 @@ def get_worktrees(repertoire):
     return worktrees
 
 
+def _lignes_deja_pris_watcher(nom_projet, repertoire_bridge_agent):
+    """Lignes contenant « déjà pris » de `logs/watcher-<nom_projet>.log`, le
+    journal que bridge_agent écrit (issue #589) quand une tâche `mode_write`
+    ne peut pas obtenir son propre worktree (chemin ou branche déjà pris) et
+    retombe sur REP_TRAVAIL — utilisées pour repérer un worktree orphelin
+    laissé par cette tentative précédente (issue #67).
+
+    Lecture seule d'un fichier hors périmètre relecture_bridge, comme
+    `get_worktrees` le fait déjà via `git -C <repertoire>` pour l'état git
+    des autres projets. `repertoire_bridge_agent` est le répertoire de
+    travail du projet "bridge_agent" lui-même (là où vit `logs/`, partagé
+    entre tous les projets) ; absent ou fichier introuvable/illisible ->
+    liste vide, best-effort, ne doit jamais faire échouer l'affichage des
+    worktrees."""
+    if not repertoire_bridge_agent:
+        return []
+    chemin_log = os.path.join(repertoire_bridge_agent, "logs", f"watcher-{nom_projet}.log")
+    try:
+        with open(chemin_log, encoding="utf-8", errors="replace") as fichier:
+            return [ligne for ligne in fichier if "déjà pris" in ligne]
+    except OSError:
+        return []
+
+
+def worktree_orphelin_signale(chemin_worktree, lignes_deja_pris):
+    """True si `chemin_worktree` apparaît dans une des `lignes_deja_pris`
+    (voir `_lignes_deja_pris_watcher`) — ce worktree correspond à une
+    tentative pour laquelle bridge_agent a signalé un repli sur REP_TRAVAIL,
+    donc potentiellement resté planté sur le disque avec du travail non
+    committé (issue #67)."""
+    return any(chemin_worktree in ligne for ligne in lignes_deja_pris)
+
+
 def get_branche_courante(repertoire):
     """Branche extraite (HEAD) dans `repertoire` — le répertoire du projet
     est toujours le worktree principal du dépôt (le premier de `git worktree
@@ -1456,6 +1489,9 @@ def collect_etat_projets():
     leurs commits en attente de push."""
     projets = fetch_projets()
     branches_cibles = charger_branches_cibles()
+    repertoire_bridge_agent = next(
+        (p["repertoire"] for p in projets if p["nom"] == "bridge_agent"), None
+    )
     resultat = []
     for projet in projets:
         entree = dict(projet, worktrees=[])
@@ -1483,11 +1519,16 @@ def collect_etat_projets():
             projet["nom"], branche_principale, branches_cibles
         )
         chemin_principal = os.path.realpath(repertoire)
+        lignes_deja_pris = _lignes_deja_pris_watcher(projet["nom"], repertoire_bridge_agent)
         for worktree in get_worktrees(repertoire):
             worktree.update(get_commits_en_attente(worktree["path"]))
             worktree["branche_principale"] = branche_principale
             worktree["est_worktree_principal"] = (
                 os.path.realpath(worktree["path"]) == chemin_principal
+            )
+            worktree["orphelin_signale"] = (
+                not worktree["est_worktree_principal"]
+                and worktree_orphelin_signale(worktree["path"], lignes_deja_pris)
             )
 
             peut_agir = (

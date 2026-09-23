@@ -174,6 +174,9 @@
         <span class="badge badge--doublon" title="Tous les commits propres de cette branche sont déjà intégrés dans « {{ projet.branche_cible_comparaison }} » sous un autre hash — fusion inutile.">♻️ doublons uniquement — rien à merger</span>
         {% endif %}
         {% if w and not w.est_worktree_principal %}
+          {% if w.orphelin_signale %}
+          <span class="badge badge--attention" title="Bridge_Agent a journalisé un repli sur REP_TRAVAIL pour ce chemin (worktree déjà pris) — probablement resté planté sur le disque avec du travail non committé ; voir logs/watcher-{{ projet.nom }}.log.">⚠️ worktree orphelin — repli signalé</span>
+          {% endif %}
           {% if w.commits %}<span class="badge badge--attente">{{ w.commits|length }} commit(s) en attente (push)</span>
           {% elif w.erreur %}<span class="badge badge--info">{{ w.erreur }}</span>
           {% else %}<span class="badge badge--ok">à jour ({{ w.amont }})</span>{% endif %}
