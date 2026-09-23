@@ -5,6 +5,23 @@
 <header>
   <p class="fil-ariane"><a href="{{ url_for('index') }}">Projets</a> / {{ projet.nom }}</p>
   <h1>{{ projet.nom }} <span class="depot">{{ projet.depot }}</span></h1>
+  {% if projet.statut == "ok" %}
+  <form method="post" action="{{ url_for('nettoyer_projet_route', nom_projet=projet.nom) }}" id="form-nettoyer-ce-projet">
+    <button type="submit" class="bouton bouton--nettoyer">
+      🧹 Nettoyer ce projet
+    </button>
+  </form>
+  <script>
+  (function () {
+    var formNettoyer = document.getElementById("form-nettoyer-ce-projet");
+    formNettoyer.addEventListener("submit", function (evenement) {
+      if (!confirm("Nettoyer « {{ projet.nom }} » ?")) {
+        evenement.preventDefault();
+      }
+    });
+  })();
+  </script>
+  {% endif %}
 </header>
 
 {% if erreur %}

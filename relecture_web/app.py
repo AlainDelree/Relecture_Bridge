@@ -779,6 +779,32 @@ def nettoyer_tous_les_projets_route():
     return redirect(url_for("index"))
 
 
+@app.route("/projet/<nom_projet>/nettoyer", methods=["POST"])
+def nettoyer_projet_route(nom_projet):
+    """Nettoie les résumés déjà pushés du seul projet affiché (issue #68) —
+    même critère de sécurité que `nettoyer_tous_les_projets_route` (issue
+    #17, `lister_fichiers_resumes_pushes`/`get_commit_est_pushe`), mais sans
+    repasser par la liste des projets pour ne nettoyer que celui qu'on vient
+    de traiter depuis la page « branches d'un projet »."""
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+
+    try:
+        fichiers = lister_fichiers_resumes_pushes(projet["dossier_relecture"], projet["repertoire"])
+        nb_supprimes, nb_echecs = _supprimer_fichiers(fichiers)
+    except Exception as exc:
+        flash(f"❌ Échec du nettoyage de « {nom_projet} » ({exc}).", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    if nb_echecs:
+        flash(f"⚠️ {nb_supprimes} résumé(s) supprimé(s), {nb_echecs} échec(s) sur « {nom_projet} ».", "erreur")
+    else:
+        flash(f"✅ {nb_supprimes} résumé(s) déjà pushé(s) supprimé(s) sur « {nom_projet} ».", "succes")
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+
 @app.route("/projet/<nom_projet>/pousser", methods=["POST"])
 def pousser_branches_route(nom_projet):
     """Pousse chaque branche sélectionnée (case à cocher, niveau 2) jusqu'à
