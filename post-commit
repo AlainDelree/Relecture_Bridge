@@ -23,7 +23,26 @@ DOSSIER_RELECTURE="$HOME/Relecture_Bridge"
 WORKTREE_PRINCIPAL=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')
 NOM_PROJET=$(basename "$WORKTREE_PRINCIPAL")
 HASH_COURT=$(git rev-parse --short HEAD)
-MESSAGE=$(git log -1 --pretty=%s | tr -c '[:alnum:]-_' '_' | cut -c1-50)
+
+# Translittération des lettres accentuées (é -> e, à -> a, ç -> c, œ -> oe...)
+# avant construction du nom de fichier : sans elle, chaque lettre accentuée
+# d'un message en français devenait un « _ » via le tr ci-dessous, rendant le
+# nom quasi illisible (issue #75). `iconv` n'est pas garanti présent sur
+# toutes les machines cibles : à défaut, on retombe silencieusement sur le
+# message brut (comportement d'avant l'issue #75 pour ce cas précis).
+MESSAGE_BRUT=$(git log -1 --pretty=%s)
+MESSAGE_TRANSLITTERE=""
+if command -v iconv >/dev/null 2>&1; then
+    MESSAGE_TRANSLITTERE=$(printf '%s' "$MESSAGE_BRUT" | iconv -f utf-8 -t ascii//translit 2>/dev/null)
+fi
+# `-s` (squeeze) après le `-c` (complément) : les caractères encore hors
+# [:alnum:]-_ après translittération (espaces, ponctuation) sont remplacés
+# par « _ », et les runs de plusieurs « _ » consécutifs ainsi produits sont
+# ramenés à un seul (ex. « : » suivi d'un espace ne fait plus qu'un souligné).
+# Le `sed` final retire un éventuel souligné de fin de nom, y compris celui
+# que la troncature `cut -c1-50` peut faire apparaître en coupant juste après
+# un souligné.
+MESSAGE=$(printf '%s' "${MESSAGE_TRANSLITTERE:-$MESSAGE_BRUT}" | tr -cs '[:alnum:]-_' '_' | cut -c1-50 | sed 's/_*$//')
 
 # Commit vide (aucun fichier modifié) — typiquement un commit de backup
 # de CCL sans changement réel. Rien d'intéressant à relire, on ignore.
