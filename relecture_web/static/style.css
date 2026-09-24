@@ -49,6 +49,26 @@ body {
   font-weight: 600;
 }
 
+/* Pastille de couleur d'accent du projet (issue #73), pour ne pas confondre
+   deux projets aux noms proches (bridge_agent / relecture_bridge...) —
+   couleur fournie en ligne par le template (`p.couleur`, tableau externe),
+   absente si aucune couleur n'est configurée pour ce projet. */
+.pastille-couleur {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  margin-right: 0.35rem;
+  vertical-align: middle;
+}
+
+.chip-projet {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  border-radius: 5px;
+  font-weight: 700;
+}
+
 .contenu-principal {
   flex: 1;
   min-width: 0;
@@ -337,6 +357,20 @@ header h1 { margin-bottom: 0.2rem; }
 .lien-fichier-conflit:hover { background: #fdecea; }
 .chemin-fichier { font-size: 0.85rem; color: #333; }
 
+/* Groupe « Finaliser le merge » + « Retraiter ce fichier » (issue #73) :
+   affichés côte à côte quand tous les fichiers sont résolus, pour ne plus
+   avoir à défiler jusqu'à une section séparée pour retraiter un fichier
+   juste avant de finaliser. */
+.ligne-finaliser-merge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+}
+.ligne-finaliser-merge form { margin: 0; }
+.ligne-finaliser-merge__separateur { font-size: 0.8rem; color: #888; }
+
 .liste-fichiers-resolus { list-style: none; padding: 0; margin: 0.6rem 0 0 0; }
 .ligne-fichier-resolu {
   display: flex;
@@ -389,7 +423,17 @@ pre.brut.contexte-conflit {
 }
 .conflit-bloc__texte--ours { background: #e8f0fe; }
 .conflit-bloc__texte--theirs { background: #fff4e5; }
+.conflit-bloc--resultat {
+  /* Étiré à la hauteur du panneau gauche par .conflit-vue__corps (issue
+     #73) : display:flex fait remplir cette hauteur au formulaire, plutôt
+     que de laisser un vide sous un <textarea> resté à sa taille naturelle. */
+  display: flex;
+  flex-direction: column;
+}
 .conflit-bloc__formulaire {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
   padding: 0.6rem;
   border-top: 1px solid #ddd;
   background: #fafafa;
@@ -412,6 +456,8 @@ pre.brut.contexte-conflit {
   background: #fff;
   resize: vertical;
   margin-bottom: 0.5rem;
+  flex: 1;
+  min-height: 150px;
 }
 .bouton--traiter { background: #eafaf1; color: #1e7b34; border-color: #b7ddc3; }
 .bouton--traiter:hover { background: #d9f3e4; }
@@ -432,7 +478,17 @@ pre.brut.contexte-conflit {
      puisse le centrer verticalement (scrollIntoView block:"center" se
      contente alors de coller en bas de la page, cf. issue #65). */
   padding-bottom: 50vh;
+  /* Colonnes gauche/droite de même hauteur ligne par ligne (issue #73) :
+     la hauteur de chaque ligne de la grille est déjà dictée par son
+     contenu le plus haut (typiquement le panneau gauche en lecture seule,
+     sur un gros bloc) — stretch fait juste en sorte que la zone de
+     résultat (droite) occupe au moins cette même hauteur, au lieu de
+     rester à la taille naturelle de son <textarea>. La colonne du milieu
+     (flèches/nav) reste ancrée en haut (voir .conflit-cellule--milieu),
+     pour ne pas s'étirer verticalement de façon incongrue. */
+  align-items: stretch;
 }
+.conflit-vue__corps > .conflit-cellule--milieu { align-self: start; }
 .conflit-vue__entetes {
   grid-template-columns: 1fr minmax(96px, auto) 1fr;
   position: sticky;
@@ -581,52 +637,73 @@ pre.brut {
   to { transform: rotate(360deg); }
 }
 
-.modal-forte {
+.modal-confirmation {
   position: fixed;
   inset: 0;
-  background: rgba(40, 10, 10, 0.55);
+  background: rgba(20, 20, 20, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1100;
 }
 
-.modal-forte__panneau {
+.modal-confirmation__panneau {
   background: #fff;
-  border: 2px solid #c0392b;
+  border: 2px solid #c3d6f7;
   border-radius: 8px;
-  padding: 1.4rem 1.6rem;
+  padding: 1.2rem 1.4rem;
   max-width: 480px;
   width: 90%;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
 }
+.modal-confirmation--forte .modal-confirmation__panneau { border-color: #c0392b; }
 
-.modal-forte__titre {
-  margin: 0 0 0.6rem 0;
-  font-size: 1rem;
+/* Bandeau à la couleur du projet (issue #73) — plaqué en haut du panneau,
+   couleur/texte fournis en ligne par ouvrirConfirmation() puisqu'ils
+   viennent d'un tableau externe (BRIDGE_AGENT_DOC.md), pas d'une classe
+   CSS connue à l'avance. */
+.modal-confirmation__bandeau-projet {
+  margin: -1.2rem -1.4rem 0.8rem -1.4rem;
+  padding: 0.4rem 1.4rem;
+  border-radius: 6px 6px 0 0;
+  font-size: 0.8rem;
   font-weight: 700;
-  color: #a33;
 }
 
-.modal-forte__message {
+.modal-confirmation__avertissement {
+  background: #fff4e5;
+  border-left: 3px solid #d98c00;
+  color: #a35a00;
+  font-weight: 600;
+  padding: 0.5rem 0.7rem;
+  border-radius: 0 4px 4px 0;
   margin: 0 0 0.8rem 0;
-  font-size: 0.9rem;
-  color: #333;
+  font-size: 0.85rem;
   white-space: pre-wrap;
 }
 
-.modal-forte__commande {
-  background: #fdecea;
-  border: 1px solid #f5c2c0;
+.modal-confirmation__titre {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #333;
+  white-space: pre-wrap;
+}
+.modal-confirmation--forte .modal-confirmation__titre { color: #a33; }
+
+.modal-confirmation__commande {
+  background: #f4f4f4;
+  border: 1px solid #e0e0e0;
   border-radius: 4px;
-  padding: 0.5rem 0.7rem;
-  font-size: 0.78rem;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.72rem;
+  color: #666;
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0 0 1rem 0;
 }
 
-.modal-forte__boutons {
+.modal-confirmation__boutons {
   display: flex;
   justify-content: flex-end;
   gap: 0.6rem;
@@ -636,3 +713,5 @@ pre.brut {
 .bouton--annuler:hover { background: #e2e7ee; }
 .bouton--danger { background: #c0392b; color: #fff; border-color: #a33; font-weight: 600; }
 .bouton--danger:hover { background: #a3352a; }
+.bouton--confirmer-legere { background: #eef1f5; color: #1a4fb4; border-color: #c3d6f7; font-weight: 600; }
+.bouton--confirmer-legere:hover { background: #e2e7ee; }

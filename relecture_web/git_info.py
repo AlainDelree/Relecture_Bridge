@@ -21,6 +21,12 @@ DOC_URL = "https://raw.githubusercontent.com/AlainDelree/Bridge_Agent/master/BRI
 DEBUT_TABLEAU = "<!-- DEBUT:TABLEAU_PROJETS_ACTIFS"
 FIN_TABLEAU = "<!-- FIN:TABLEAU_PROJETS_ACTIFS"
 
+# Colonne "Couleur" optionnelle en dernière position du tableau (issue #73) :
+# repérée par sa forme (hexadécimal), pas par un nom de colonne précis, pour
+# rester tolérante à l'absence de la colonne (tableau à 4 champs, dernier
+# champ "Topic ntfy" par ex.) sans jamais lever d'erreur.
+MOTIF_COULEUR_HEX = re.compile(r"^#(?:[0-9A-Fa-f]{3}){1,2}$")
+
 TIMEOUT_RESEAU = 20
 TIMEOUT_GIT = 10
 # Opérations git potentiellement longues (push vers le remote, merge sur un
@@ -37,6 +43,31 @@ CHEMIN_BRANCHES_CIBLES = os.path.join(os.path.dirname(os.path.abspath(__file__))
 
 class ErreurRecuperationProjets(Exception):
     """La liste des projets n'a pas pu être récupérée depuis BRIDGE_AGENT_DOC.md."""
+
+
+def normaliser_couleur_hex(valeur):
+    """Normalise `valeur` en couleur hexadécimale à 6 chiffres (`#rrggbb`),
+    ou None si `valeur` n'a pas la forme d'une couleur hexadécimale valide
+    (colonne absente, vide, ou tout autre contenu — issue #73). Accepte la
+    forme courte à 3 chiffres (`#abc` -> `#aabbcc`)."""
+    if not valeur or not MOTIF_COULEUR_HEX.match(valeur):
+        return None
+    chiffres = valeur[1:]
+    if len(chiffres) == 3:
+        chiffres = "".join(c * 2 for c in chiffres)
+    return "#" + chiffres.lower()
+
+
+def couleur_texte_lisible(couleur_hex):
+    """Noir ou blanc, selon lequel reste lisible sur `couleur_hex` (issue
+    #73) — formule de luminance perçue classique (YIQ), un fond saturé
+    (ex. jaune) appelant du texte noir, un fond sombre appelant du texte
+    blanc. `couleur_hex` doit déjà être normalisée (voir
+    `normaliser_couleur_hex`)."""
+    chiffres = couleur_hex.lstrip("#")
+    r, g, b = (int(chiffres[i:i + 2], 16) for i in (0, 2, 4))
+    luminance_percue = (r * 299 + g * 587 + b * 114) / 1000
+    return "#000000" if luminance_percue > 125 else "#ffffff"
 
 
 def _telecharger_doc_projets(forcer_ipv4):
@@ -101,10 +132,19 @@ def fetch_projets():
         nom, depot, repertoire = champs[0].strip("`"), champs[1], champs[2]
         if nom in ("", "Nom") or repertoire in ("", "Répertoire de travail CCL"):
             continue
+        # Colonne "Couleur" (issue #73) : dernier champ de la ligne, quand il
+        # y en a un au-delà de nom/dépôt/répertoire. Lecture tolérante par la
+        # forme du contenu (voir `normaliser_couleur_hex`), pas par position
+        # de colonne fixe ni par en-tête — un tableau à 4 colonnes existant
+        # (ex. "Topic ntfy" en dernière position) ne matche simplement pas le
+        # motif hexadécimal et retombe sans erreur sur couleur=None.
+        couleur = normaliser_couleur_hex(champs[-1]) if len(champs) > 3 else None
         projets.append({
             "nom": nom,
             "depot": depot,
             "repertoire": os.path.expanduser(repertoire),
+            "couleur": couleur,
+            "couleur_texte": couleur_texte_lisible(couleur) if couleur else None,
         })
 
     if not projets:

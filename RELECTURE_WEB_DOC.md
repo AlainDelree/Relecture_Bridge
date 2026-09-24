@@ -53,6 +53,23 @@ directement depuis le tableau public de `BRIDGE_AGENT_DOC.md`
 si un projet est ajouté ou retiré de ce tableau, `relecture_web` le
 reflète automatiquement au prochain chargement.
 
+Une colonne **Couleur** optionnelle, en dernière position de ce même
+tableau (hexadécimal, ex. `#1a4fb4`), est lue au passage lors de ce même
+chargement — aucun appel réseau supplémentaire (issue #73). Lecture
+tolérante par la **forme** du dernier champ de chaque ligne
+(`normaliser_couleur_hex`, `git_info.py`), pas par nom de colonne ni
+position fixe : un tableau à 4 colonnes sans cette colonne (dernier champ
+`(conf local)` par ex.) ne matche simplement pas le motif hexadécimal et
+retombe sans erreur sur « pas de couleur » pour ce projet — jamais
+d'exception, même colonne absente, vide ou invalide. Une couleur valide
+sert à distinguer visuellement les projets aux noms proches
+(`bridge_agent`/`relecture_bridge`, `alchess`/`chesscoach`...), voir
+section 2 pour où elle apparaît. Le texte affiché dessus reste toujours
+lisible quelle que soit la couleur : `couleur_texte_lisible` calcule noir
+ou blanc selon une formule de luminance perçue classique (YIQ), pour un
+fond saturé (jaune, par ex. celui de `bridge_agent`) comme pour un fond
+sombre.
+
 ## 2. Navigation à trois niveaux
 
 L'interface est organisée en trois niveaux, chacun avec sa page :
@@ -89,7 +106,17 @@ badge) : la liste réutilise la même donnée déjà chargée par la route en
 cours (mémoïsée le temps d'une requête), pour ne pas répéter l'appel
 réseau vers `BRIDGE_AGENT_DOC.md` sur chaque page — le coût déjà corrigé
 une fois côté page d'accueil (section suivante, issue #17/#19) ne devait
-pas être réintroduit ailleurs (issue #44).
+pas être réintroduit ailleurs (issue #44). Quand un projet a une couleur
+configurée (voir section précédente), une petite pastille de cette
+couleur apparaît devant son nom dans cette liste (issue #73).
+
+La même couleur, quand elle est configurée, apparaît aussi en évidence à
+deux autres endroits pour ne jamais confondre deux projets aux noms
+proches : dans l'en-tête de la page « branches d'un projet » et de la
+page Conflit (chip coloré à côté du nom du projet), et dans les fenêtres
+de confirmation d'action (bandeau en tête de la fenêtre, voir section 9)
+— toujours avec un texte noir ou blanc choisi pour rester lisible sur
+cette couleur, jamais codé en dur (issue #73).
 
 ## 3. Le diagnostic automatique des commits orphelins (cas A à F)
 
@@ -358,27 +385,40 @@ action ci-dessous :
 
 - **Aucune confirmation** — action locale, sans danger ou facilement
   réversible : application directe au clic.
-- **Confirmation légère** — fenêtre `confirm()` native du navigateur,
-  affichant la commande git équivalente exacte qui sera exécutée.
-- **Confirmation forte** — fenêtre propre à `relecture_web`
-  (`#modal-confirmation-forte`, `base.html`), visuellement distincte
-  (couleur d'alerte rouge), réservée aux actions difficiles à défaire.
-  Le bouton de validation décrit l'action réelle avec sa portée (ex.
-  « Pousser 2 branches vers GitHub », « Supprimer test_conflit_a ») au
-  lieu d'un OK générique, et le focus par défaut est sur Annuler pour
-  qu'un Entrée réflexe ne valide rien. La commande git équivalente reste
-  affichée dans cette fenêtre.
+- **Confirmation légère** — fenêtre propre à `relecture_web`
+  (`#modal-confirmation`, `base.html`), variante visuelle neutre (pas de
+  couleur d'alerte). Depuis l'issue #73, ce n'est plus le `confirm()`
+  natif du navigateur : le passage par la fenêtre maison permet de
+  raccourcir et colorer les confirmations de façon uniforme (voir
+  ci-dessous).
+- **Confirmation forte** — même fenêtre `#modal-confirmation`, variante
+  visuelle distincte (couleur d'alerte rouge, classe
+  `modal-confirmation--forte`), réservée aux actions difficiles à
+  défaire. Le bouton de validation décrit l'action réelle avec sa portée
+  (ex. « Pousser 2 branches vers GitHub », « Supprimer test_conflit_a »)
+  au lieu d'un OK générique.
 
-Dans tous les cas, jamais d'exécution silencieuse : la commande git
-équivalente qui sera exécutée est toujours affichée avant soumission
-(dans la fenêtre de confirmation quand il y en a une, ou visible sur la
-page elle-même sinon).
+Dans les deux variantes de fenêtre (issue #73, `ouvrirConfirmation`,
+`base.html`) : une seule ligne principale au format « Action + objet +
+projet » (ex. « Merger worktree-issue-72 dans main — relecture_bridge »)
+plutôt qu'un long texte explicatif ; un avertissement éventuel (ex.
+bloc(s) au résultat vide pour « Traiter tous les blocs ») affiché en
+premier et mis en évidence, jamais noyé en fin de message ; la commande
+git équivalente en petit texte discret sous la ligne principale ; un
+bandeau à la couleur du projet en tête de fenêtre quand elle est
+configurée (section 2, issue #73) ; et dans tous les cas le focus par
+défaut sur Annuler, pour qu'un Entrée réflexe ne valide rien.
+
+Dans tous les cas (y compris l'absence de toute confirmation), jamais
+d'exécution silencieuse : la commande git équivalente qui sera exécutée
+est toujours affichée avant soumission (dans la fenêtre de confirmation
+quand il y en a une, ou visible sur la page elle-même sinon).
 
 | Action | Portée | Commande équivalente | Garde-fou |
 |---|---|---|---|
 | **Revert** | Un commit précis, sur la page d'une branche. | `git revert --no-edit <hash>` | **Aucune confirmation** (issue #71). Crée un nouveau commit d'annulation, ne réécrit pas l'historique — réversible (revert du revert, ou reset tant qu'il n'est pas poussé). |
 | **Push** | Une ou plusieurs branches sélectionnées (cases à cocher, niveau « branches d'un projet »). | `git push <remote> <branche>` | **Confirmation forte** (issue #71) — le push quitte la machine. Cible toujours une branche entière jusqu'à son dernier commit, jamais une sélection de commits épars. Timeout de 120s (dépôt volumineux, connexion lente) ; en cas de dépassement, l'état réel est revérifié automatiquement (`git ls-remote` comparé au commit local) plutôt que de renvoyer Alain vers une vérification manuelle — le message flash final indique explicitement si le push a bien abouti, a échoué, ou si l'état n'a pu être déterminé (issue #66 ; issue #39). Après la confirmation, une fenêtre superposée « Push en cours... Ns » (compteur de secondes) reste affichée jusqu'au rechargement de la page avec le résultat — purement visuel côté navigateur, aucun changement serveur (issue #49). |
-| **Merger** | Une ou plusieurs branches sélectionnées. | `git merge <branche>` (avec bascule temporaire si la branche cible n'a pas de worktree dédié) | **Confirmation légère** (fenêtre native conservée, issue #71) — modifie la branche cible mais reste local et annulable tant que le merge n'est pas finalisé (section 10). Refusé si la branche est déjà la branche cible, ou si le diagnostic « doublons uniquement » (section 4) indique qu'elle n'apporterait aucun contenu nouveau. Un conflit laisse volontairement le dépôt en état de fusion non résolue (pas de rollback automatique), pour ne pas perdre l'information. Même timeout étendu (120s) que Push (issue #39) ; en cas de dépassement, l'état réel est revérifié automatiquement (branche source devenue ancêtre de la cible ? fusion arrêtée sur des conflits ? ni l'un ni l'autre ?) et le message flash final le reflète explicitement, plutôt qu'un renvoi systématique vers une vérification manuelle (issue #66). Projet à plusieurs cibles configurées (section 7, issue #52) : un sélecteur « Cible du merge » apparaît dans le panneau d'actions — aucune cible n'est devinée, refus par message flash si aucune n'est choisie explicitement. Même indicateur « Fusion en cours... Ns » que Push après confirmation (issue #49). Si le merge introduit un ou plusieurs `CHANGELOG-<N>.md` à la racine du dépôt, une intégration automatique dans `CHANGELOG.md` est tentée juste après (issue #51) ; succès ou échec est rapporté par message flash **et** journalisé dans `relecture_web/changelog_fusion.log` (date/heure, projet, commande, résultat, erreur éventuelle) — consultable après coup même si le flash est passé inaperçu (issue #62). |
+| **Merger** | Une ou plusieurs branches sélectionnées. | `git merge <branche>` (avec bascule temporaire si la branche cible n'a pas de worktree dédié) | **Confirmation légère** (issue #71 ; fenêtre maison depuis l'issue #73, plus `confirm()` natif) — modifie la branche cible mais reste local et annulable tant que le merge n'est pas finalisé (section 10). Refusé si la branche est déjà la branche cible, ou si le diagnostic « doublons uniquement » (section 4) indique qu'elle n'apporterait aucun contenu nouveau. Un conflit laisse volontairement le dépôt en état de fusion non résolue (pas de rollback automatique), pour ne pas perdre l'information. Même timeout étendu (120s) que Push (issue #39) ; en cas de dépassement, l'état réel est revérifié automatiquement (branche source devenue ancêtre de la cible ? fusion arrêtée sur des conflits ? ni l'un ni l'autre ?) et le message flash final le reflète explicitement, plutôt qu'un renvoi systématique vers une vérification manuelle (issue #66). Projet à plusieurs cibles configurées (section 7, issue #52) : un sélecteur « Cible du merge » apparaît dans le panneau d'actions — aucune cible n'est devinée, refus par message flash si aucune n'est choisie explicitement. Même indicateur « Fusion en cours... Ns » que Push après confirmation (issue #49). Si le merge introduit un ou plusieurs `CHANGELOG-<N>.md` à la racine du dépôt, une intégration automatique dans `CHANGELOG.md` est tentée juste après (issue #51) ; succès ou échec est rapporté par message flash **et** journalisé dans `relecture_web/changelog_fusion.log` (date/heure, projet, commande, résultat, erreur éventuelle) — consultable après coup même si le flash est passé inaperçu (issue #62). |
 | **Supprimer la/les branche(s) fusionnée(s)** | Une ou plusieurs branches sélectionnées confirmées fusionnées. | `git worktree remove <chemin>` **puis** `git branch -D <nom>` dans le même clic si la branche a encore un worktree actif (issue #54 — plus besoin de recliquer une seconde fois) ; sinon `git branch -D <nom>` directement (issue #43 — cas d'un worktree déjà retiré manuellement, ne laissant que la branche). | **Confirmation forte** (issue #71). Refusé si c'est la branche principale, ou si elle n'est pas confirmée fusionnée dans la branche cible. Le `worktree remove` n'est jamais `--force` : git refuse de lui-même s'il reste des modifications non commitées ; si cette étape échoue, la branche n'est pas touchée. Le `branch -D` (sans worktree) n'a pas cette protection, d'où l'exigence stricte de `mergee` en amont. Même bouton dans tous les cas — seule la commande affichée en confirmation diffère, et le message flash rapporte les deux étapes quand les deux ont eu lieu. |
 | **Sécuriser** (un commit ou tous) | Un commit orphelin, ou tous les commits orphelins d'un projet. | `git branch recuperation-<hash> <hash>` | **Aucune confirmation.** Voir section 6 — geste purement défensif, idempotent. |
 | **Supprimer la/les branche(s) de récupération** | Une ou plusieurs branches sélectionnées suivant la convention `recuperation-<hash>` (panneau d'actions de la page projet, ou suppression groupée depuis « Comparer la sélection »). | `git branch -D <nom>` | **Confirmation forte** (issue #71) — références difficiles à récupérer. Voir section 6 — refus structurel si le nom ne suit pas exactement la convention, indépendamment du badge affiché. Supprime aussi les fichiers `Non_Lu/` de toute la chaîne de commits protégée par la branche, pas seulement le hash nommé. |
@@ -388,9 +428,9 @@ page elle-même sinon).
 | **Nettoyer tous les projets** | Tous les projets accessibles. | suppression de fichiers `Non_Lu/` (pas de commande git) | **Aucune confirmation.** Ne supprime que les résumés dont le commit est déjà un ancêtre d'une branche **distante** (`git branch -r --contains`) — jamais un résumé dont le commit n'est pas encore réellement en sécurité sur GitHub. |
 | **Nettoyer ce projet** | Le seul projet affiché (page « branches d'un projet », issue #68). | suppression de fichiers `Non_Lu/` (pas de commande git) | **Aucune confirmation.** Même garde-fou et même fonction que « Nettoyer tous les projets » ci-dessus, appliquée à un seul projet — évite de repasser par la liste des projets après un push depuis cette page. |
 | **Finaliser le merge** | Le merge en cours du projet (page « branches d'un projet »). | `git commit --no-edit` | **Aucune confirmation** (issue #71). Voir section 10 — n'apparaît que si un merge est réellement en cours (`MERGE_HEAD` présent) ET qu'il ne reste plus aucun fichier en conflit ; revalidé côté serveur à partir de l'état git actuel, jamais de commit partiel. Même timeout étendu (120s) que Push et Merger (issue #64) — ce commit déclenche le hook `post-commit` du projet, qui peut dépasser le timeout court sur un fichier volumineux ; en cas de dépassement, l'état réel est revérifié automatiquement (`MERGE_HEAD` a-t-il disparu ?) et le message flash final indique explicitement si le merge a bien été finalisé, plutôt qu'un renvoi systématique vers une vérification manuelle (issue #66). |
-| **Retraiter le fichier en conflit** | Un fichier déjà résolu (`git add` fait) du merge en cours, page « branches d'un projet » (issue #72). | `git checkout --conflict=merge -- <chemin>` | **Confirmation légère** (issue #72) — efface la résolution déjà appliquée à ce fichier. Proposé pour chaque fichier déjà résolu du merge en cours, y compris à côté de « Finaliser le merge ». N'apparaît que si un merge est réellement en cours (`MERGE_HEAD` présent), revérifié côté serveur ; le chemin n'est accepté que s'il figure dans `git ls-files --resolve-undo`. Les marqueurs recréés portent les libellés génériques « ours »/« theirs » (voir section 10). Disparaît une fois le merge finalisé. |
+| **Retraiter le fichier en conflit** | Un fichier déjà résolu (`git add` fait) du merge en cours, page « branches d'un projet » (issue #72). | `git checkout --conflict=merge -- <chemin>` | **Aucune confirmation** (issue #72, retirée par l'issue #73 — action peu risquée : elle ne fait que refaire la résolution de ce fichier). Proposé pour chaque fichier déjà résolu du merge en cours : à côté du fichier concerné tant que d'autres fichiers restent en conflit, ou juste à côté de « Finaliser le merge » une fois tous les fichiers résolus (issue #73 — jusque-là dans une section séparée plus bas, visuellement loin de « Finaliser »). N'apparaît que si un merge est réellement en cours (`MERGE_HEAD` présent), revérifié côté serveur ; le chemin n'est accepté que s'il figure dans `git ls-files --resolve-undo`. Les marqueurs recréés portent les libellés génériques « ours »/« theirs » (voir section 10). Une fois l'action effectuée, amène directement sur la page Conflit du fichier remis en conflit (issue #73 — auparavant sur la page projet, obligeant à recliquer sur le fichier). Disparaît une fois le merge finalisé. |
 | **Traiter ce bloc** | Un bloc de conflit précis, sur la page Conflit (issue #56). | Aucune commande git — écriture directe du fichier ; `git add <chemin_relatif>` automatique seulement si ce bloc était le dernier du fichier. | **Aucune confirmation** (issue #71). Voir « réversibilité » ci-dessous et section 10. |
-| **Traiter tous les blocs** | Tous les blocs de conflit d'un fichier affiché sur la page Conflit (issue #69). | `git add <chemin_relatif>` une fois tous les blocs remplacés (pas de commande git de remplacement — écriture directe du fichier, comme « Traiter ce bloc »). | **Aucune confirmation par défaut ; confirmation légère (`confirm()` natif) uniquement si une anomalie est détectée** — au moins un bloc au résultat vide (issue #71). Voir section 10 — tout ou rien : `resoudre_tous_blocs_conflit` refuse tout le traitement (aucun bloc écrit) si le nombre de blocs actuellement présents ne correspond plus à ce qui a été affiché, ou si une empreinte (sha256) du contenu calculée à l'affichage ne correspond plus au contenu actuel. Réutilise `_trouver_blocs_conflit` (même numérotation que l'affichage et que « Traiter ce bloc ») ; applique les remplacements du dernier bloc vers le premier pour que les décalages d'index provoqués par un remplacement ne perturbent jamais les blocs restant à traiter. « Traiter ce bloc » reste disponible, inchangé, pour un traitement bloc par bloc. |
+| **Traiter tous les blocs** | Tous les blocs de conflit d'un fichier affiché sur la page Conflit (issue #69). | `git add <chemin_relatif>` une fois tous les blocs remplacés (pas de commande git de remplacement — écriture directe du fichier, comme « Traiter ce bloc »). | **Aucune confirmation par défaut ; confirmation légère (fenêtre maison depuis l'issue #73, plus `confirm()` natif) uniquement si une anomalie est détectée** — au moins un bloc au résultat vide (issue #71). L'avertissement listant ces blocs vides est affiché en premier dans la fenêtre, mis en évidence (issue #73). Voir section 10 — tout ou rien : `resoudre_tous_blocs_conflit` refuse tout le traitement (aucun bloc écrit) si le nombre de blocs actuellement présents ne correspond plus à ce qui a été affiché, ou si une empreinte (sha256) du contenu calculée à l'affichage ne correspond plus au contenu actuel. Réutilise `_trouver_blocs_conflit` (même numérotation que l'affichage et que « Traiter ce bloc ») ; applique les remplacements du dernier bloc vers le premier pour que les décalages d'index provoqués par un remplacement ne perturbent jamais les blocs restant à traiter. « Traiter ce bloc » reste disponible, inchangé, pour un traitement bloc par bloc. |
 
 **Réversibilité d'un fichier déjà résolu pendant un merge en cours (issue
 #72) :** tant que le merge n'est pas finalisé (`MERGE_HEAD` présent), la
@@ -418,15 +458,19 @@ commit le vrai point de non-retour du merge dans son ensemble.
 Deux compléments d'ergonomie purement côté navigateur (issue #69), sans
 route serveur ni commande git, donc absents du tableau ci-dessus :
 
-- **Rafraîchir** (page « branches d'un projet ») — un simple lien vers
-  l'URL courante de la page (pas un `location.reload()` ni un F5
-  clavier), pour revoir l'état git à jour après une action faite en
-  terminal sans jamais risquer de faire réapparaître l'avertissement
-  « resoumettre le formulaire » du navigateur : toutes les actions de ce
-  tableau redirigent déjà en GET après leur POST (motif
-  Post/Redirect/Get), donc un vrai F5 sur la page affichée ne poserait
-  normalement pas ce problème non plus — le bouton est une garantie
-  supplémentaire, pas un contournement d'un bug existant.
+- **Rafraîchir** (page « branches d'un projet », et depuis l'issue #73
+  aussi la page Conflit) — un simple lien vers l'URL courante de la page
+  (pas un `location.reload()` ni un F5 clavier), pour revoir l'état git à
+  jour après une action faite en terminal sans jamais risquer de faire
+  réapparaître l'avertissement « resoumettre le formulaire » du
+  navigateur : toutes les actions de ce tableau redirigent déjà en GET
+  après leur POST (motif Post/Redirect/Get), donc un vrai F5 sur la page
+  affichée ne poserait normalement pas ce problème non plus — le bouton
+  est une garantie supplémentaire, pas un contournement d'un bug
+  existant. Sur la page Conflit, utile en particulier après le refus « le
+  fichier a changé depuis l'affichage » (« Traiter ce bloc » / « Traiter
+  tous les blocs »), dont le message demande justement de recharger la
+  page.
 - **Copier** (icône 📋) — copie dans le presse-papiers le chemin d'un
   fichier en conflit tel que renvoyé par `git status` (relatif à la
   racine du dépôt), pour le coller dans un terminal ou un éditeur.
@@ -475,7 +519,11 @@ son contexte.
   entre les deux panneaux, une par bloc : bleue (copie « ours » dans le
   résultat), orange (copie « theirs »), verte (vide le résultat) — le
   texte reste modifiable à la main après un transfert, ce n'est jamais
-  une copie figée.
+  une copie figée. Chaque `<textarea>` prend au moins la hauteur du bloc
+  correspondant du panneau gauche (issue #73, `align-items: stretch` sur
+  la grille CSS partagée décrite ci-dessous) : sur un gros bloc de conflit
+  (ex. un tableau de documentation), la zone d'édition reste confortable
+  au lieu de rester minuscule au milieu d'un long panneau gauche.
 
 Les deux panneaux et leurs en-têtes partagent une seule grille CSS à
 trois colonnes (gauche / flèches / droite) construite ligne par ligne
@@ -601,18 +649,20 @@ automatique après timeout pour Push (comparaison `git ls-remote` /
 commit local) et Merger (branche source devenue ancêtre de la cible ?),
 voir section 9.
 
-**Retraiter le fichier en conflit (issue #72)** : dans la section « ⚠
-Fusion en conflit », chaque fichier déjà résolu (`git add` fait) pendant
-le merge en cours porte un bouton « 🔁 Retraiter ce fichier » — que
-d'autres fichiers soient encore en conflit ou que tous soient résolus
-(dans ce dernier cas, à côté de « ✅ Finaliser le merge »). La liste de
-ces fichiers résolus vient de `get_fichiers_resolus_merge`
-(`git ls-files --resolve-undo`, voir paragraphe « Réversibilité »
-section 9) ; le clic exécute `retraiter_fichier_conflit` (`git checkout
---conflict=merge -- <chemin>`), qui recrée les marqueurs de conflit
-d'origine pour ce fichier précis — il redevient `UU` et réapparaît dans
-la liste des fichiers en conflit, prêt à être rouvert depuis la page
-Conflit.
+**Retraiter le fichier en conflit (issues #72, #73)** : dans la section
+« ⚠ Fusion en conflit », chaque fichier déjà résolu (`git add` fait)
+pendant le merge en cours porte un bouton « 🔁 Retraiter ce fichier » —
+à côté du fichier concerné tant que d'autres fichiers restent en conflit,
+ou dans le même groupe que « ✅ Finaliser le merge » (`.ligne-finaliser-
+merge`) une fois tous les fichiers résolus (issue #73 — avant cette
+issue, cette seconde liste restait dans une section séparée plus bas,
+visuellement loin du bouton « Finaliser »). La liste de ces fichiers
+résolus vient de `get_fichiers_resolus_merge` (`git ls-files
+--resolve-undo`, voir paragraphe « Réversibilité » section 9) ; le clic
+exécute `retraiter_fichier_conflit` (`git checkout --conflict=merge --
+<chemin>`), qui recrée les marqueurs de conflit d'origine pour ce fichier
+précis — il redevient `UU` et réapparaît dans la liste des fichiers en
+conflit.
 
 Deux garde-fous, revérifiés côté serveur à partir de l'état git actuel
 avant toute exécution, sur le même principe que « Finaliser le merge » et
@@ -622,21 +672,25 @@ la page Conflit :
   `get_fichiers_resolus_merge` — jamais construit à l'aveugle à partir du
   seul paramètre d'URL.
 
-L'action efface la résolution déjà appliquée à ce fichier : on repart de
-zéro pour le fichier entier, pas seulement pour un bloc — d'où une
-confirmation JS légère avant soumission, qui le rappelle explicitement.
-Le message flash de succès signale que les marqueurs recréés portent les
-libellés génériques `ours`/`theirs` plutôt que `HEAD` et le nom de la
-branche entrante (différence propre au mécanisme resolve-undo, qui ne
-conserve pas ces noms) : la page Conflit reste lisible dans ce cas, les
-libellés de branche entrante introduits par l'issue #70
-(`nom_branche_bloc`, dérivé de l'en-tête `>>>>>>>`) affichent alors
-simplement « theirs ». Un conflit ajout/suppression (codes `AU`/`UD`/
-`DU`/`UA` de `get_fichiers_en_conflit`) échoue proprement, sans rien
-modifier : l'un des deux côtés n'a alors aucune version du fichier, donc
-git refuse la reconstruction plutôt que d'inventer un contenu. Le bouton
-disparaît naturellement une fois le merge finalisé (plus de
-`MERGE_HEAD`).
+**Aucune confirmation** (issue #73 — retirée par rapport à l'issue #72) :
+refaire la résolution d'un fichier précis reste une action peu risquée, la
+confirmation JS qui la précédait entretenait surtout la fatigue de
+confirmation sans protéger grand-chose. Une fois l'action effectuée avec
+succès, `relecture_web` amène directement sur la page Conflit de ce
+fichier (issue #73 — auparavant sur la page projet, obligeant à recliquer
+dessus pour l'ouvrir) ; le message flash de succès signale que les
+marqueurs recréés portent les libellés génériques `ours`/`theirs` plutôt
+que `HEAD` et le nom de la branche entrante (différence propre au
+mécanisme resolve-undo, qui ne conserve pas ces noms) : la page Conflit
+reste lisible dans ce cas, les libellés de branche entrante introduits
+par l'issue #70 (`nom_branche_bloc`, dérivé de l'en-tête `>>>>>>>`)
+affichent alors simplement « theirs ». Un conflit ajout/suppression
+(codes `AU`/`UD`/`DU`/`UA` de `get_fichiers_en_conflit`) échoue
+proprement, sans rien modifier : l'un des deux côtés n'a alors aucune
+version du fichier, donc git refuse la reconstruction plutôt que
+d'inventer un contenu — dans ce cas d'échec, la redirection reste celle
+vers la page projet (rien n'a changé à rouvrir). Le bouton disparaît
+naturellement une fois le merge finalisé (plus de `MERGE_HEAD`).
 
 ## 11. Comment interpréter une capture ou un export de `relecture_web`
 

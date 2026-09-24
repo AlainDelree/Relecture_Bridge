@@ -6,6 +6,67 @@ plus récente en premier.
 Convention d'ajout : voir §10 de `BRIDGE_AGENT_DOC.md`.
 ## 2026-09-21 — issue #60 (relecture_web)
 
+## 2026-09-24 — issue #73 (relecture_web)
+
+Retours d'un test réel complet des issues #69 à #72 sur un conflit
+artificiel (projet `ecole`) : plusieurs frictions d'usage regroupées en
+une seule issue (mêmes fichiers que #71/#72, dont un conflit de merge
+réel entre ces deux-là avait déjà montré l'intérêt de grouper).
+
+- **« Retraiter ce fichier » repositionné et allégé** : le bouton est
+  désormais affiché juste à côté de « ✅ Finaliser le merge » (même bloc
+  `.ligne-finaliser-merge`) quand tous les fichiers du merge en cours
+  sont résolus, au lieu d'une section séparée plus bas ; il reste à côté
+  du fichier concerné tant que d'autres fichiers sont encore en conflit.
+  Sa confirmation JS est supprimée (action peu risquée : elle ne fait que
+  refaire la résolution de ce fichier). Une fois l'action effectuée,
+  `relecture_web` amène directement sur la page Conflit du fichier remis
+  en conflit plutôt que sur la page projet (`app.py`,
+  `retraiter_fichier_conflit_route`).
+- **Page Conflit — zones de résultat agrandies** : chaque `<textarea>` du
+  panneau droit prend désormais au moins la hauteur du bloc correspondant
+  du panneau gauche (`align-items: stretch` sur la grille CSS partagée,
+  `style.css`) — sur un gros bloc de conflit (ex. un tableau de
+  documentation), l'édition n'est plus pénible dans une zone restée
+  minuscule.
+- **Page Conflit — bouton Rafraîchir** : même comportement que celui déjà
+  présent sur la page projet (simple lien GET vers l'URL courante, jamais
+  de resoumission de formulaire) — utile notamment après le refus « le
+  fichier a changé depuis l'affichage » de « Traiter tous les blocs »,
+  dont le message demande de recharger la page.
+- **Confirmations raccourcies et unifiées** (`ouvrirConfirmation`,
+  `base.html`, remplace `confirmationForte`) : une seule ligne principale
+  au format « Action + objet + projet » (ex. « Merger worktree-issue-72
+  dans main — relecture_bridge ») plutôt qu'un long texte explicatif ; un
+  avertissement éventuel (ex. bloc(s) au résultat vide pour « Traiter
+  tous les blocs ») affiché en premier et mis en évidence, jamais noyé en
+  fin de message ; la commande git équivalente conservée en petit texte
+  discret sous la ligne principale ; le bouton de validation continue de
+  porter le nom de l'action, jamais un OK générique ; focus par défaut
+  sur Annuler dans tous les cas. Les confirmations légères (Merger,
+  anomalie de « Traiter tous les blocs ») passent désormais par cette
+  même fenêtre `relecture_web` en variante neutre (non rouge) plutôt que
+  par le `confirm()` natif du navigateur, pour permettre ce format uniforme
+  et coloré ; les confirmations fortes (Push, suppressions) gardent leur
+  couleur d'alerte rouge (`modal-confirmation--forte`).
+- **Couleur d'accent du projet** (`git_info.py` : `normaliser_couleur_hex`,
+  `couleur_texte_lisible`) : lecture tolérante d'une colonne « Couleur »
+  optionnelle en dernière position du tableau des projets actifs de
+  `BRIDGE_AGENT_DOC.md` (hexadécimal), lors du même chargement réseau que
+  le reste de la liste — colonne absente, vide ou invalide -> pas de
+  couleur, jamais d'erreur (repli en douceur tant que l'issue bridge_agent
+  qui ajoute cette colonne n'est pas encore en place). Utilisée comme
+  bandeau dans les fenêtres de confirmation, comme chip dans l'en-tête de
+  la page projet et de la page Conflit, et comme pastille dans la barre
+  latérale — texte noir ou blanc choisi automatiquement pour rester
+  lisible sur la couleur configurée (formule de luminance perçue YIQ), afin
+  de ne pas confondre deux projets aux noms proches (`bridge_agent`/
+  `relecture_bridge`, `alchess`/`chesscoach`).
+- Doc : mise à jour de `RELECTURE_WEB_DOC.md`, sections 1 (nouvelle
+  colonne lue), 2 (en-têtes, barre latérale), 9 (format des confirmations,
+  « Retraiter » sans confirmation), 10 (repositionnement de « Retraiter »,
+  hauteur des zones de résultat, Rafraîchir sur la page Conflit).
+
 ## 2026-09-24 — issue #72 (relecture_web)
 
 - **Bouton « Retraiter le fichier en conflit »** : dans la section « ⚠

@@ -60,6 +60,10 @@
 </form>
 <script>
 (function () {
+  var NOM_PROJET = {{ projet.nom|tojson }};
+  var COULEUR_PROJET = {{ projet.couleur|tojson }};
+  var COULEUR_TEXTE_PROJET = {{ projet.couleur_texte|tojson }};
+
   var formulaire = document.getElementById("form-supprimer-selection-recuperation");
   var noms = [{% for r in a_supprimer %}"{{ r.nom_branche }}"{{ ", " if not loop.last }}{% endfor %}];
   var envoiForce = false;
@@ -74,12 +78,13 @@
     // Confirmation forte (issue #71) : supprime des branches de
     // récupération — références difficiles à récupérer, fichiers Non_Lu
     // associés supprimés avec elles.
-    confirmationForte({
-      message: "Supprime définitivement la branche de récupération (et le(s) résumé(s) Non_Lu associé(s)) de "
-        + noms.length + " branche(s) confirmée(s) doublon (diff vide) ({{ projet.nom }}) — "
-        + "références difficiles à récupérer.",
+    var libelleBouton = noms.length === 1 ? ("Supprimer " + noms[0]) : ("Supprimer " + noms.length + " branches");
+    ouvrirConfirmation({
+      variant: "forte",
+      message: libelleBouton + " — " + NOM_PROJET,
       commandes: noms,
-      libelleBouton: noms.length === 1 ? ("Supprimer " + noms[0]) : ("Supprimer " + noms.length + " branches"),
+      libelleBouton: libelleBouton,
+      nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
       onConfirmer: function () {
         envoiForce = true;
         formulaire.requestSubmit();

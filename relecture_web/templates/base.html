@@ -12,11 +12,12 @@
   <nav class="barre-laterale">
     <p class="barre-laterale__titre">Projets</p>
     <ul class="barre-laterale__liste">
-      {% for nom in projets_sidebar %}
+      {% for p in projets_sidebar %}
       <li>
-        <a href="{{ url_for('projet_route', nom_projet=nom) }}"
-           class="barre-laterale__lien{{ ' barre-laterale__lien--actif' if nom == nom_projet_actif else '' }}">
-          {{ nom }}
+        <a href="{{ url_for('projet_route', nom_projet=p.nom) }}"
+           class="barre-laterale__lien{{ ' barre-laterale__lien--actif' if p.nom == nom_projet_actif else '' }}">
+          {% if p.couleur %}<span class="pastille-couleur" style="background:{{ p.couleur }};"></span>{% endif %}
+          {{ p.nom }}
         </a>
       </li>
       {% endfor %}
@@ -27,35 +28,64 @@
   </div>
 </div>
 
-<div id="modal-confirmation-forte" class="modal-forte" hidden>
-  <div class="modal-forte__panneau" role="alertdialog" aria-modal="true" aria-labelledby="modal-forte-titre">
-    <p class="modal-forte__titre" id="modal-forte-titre">⚠ Confirmation requise</p>
-    <p class="modal-forte__message" id="modal-forte-message"></p>
-    <pre class="modal-forte__commande" id="modal-forte-commande"></pre>
-    <div class="modal-forte__boutons">
-      <button type="button" class="bouton bouton--annuler" id="modal-forte-annuler">Annuler</button>
-      <button type="button" class="bouton bouton--danger" id="modal-forte-confirmer"></button>
+<div id="modal-confirmation" class="modal-confirmation" hidden>
+  <div class="modal-confirmation__panneau" role="alertdialog" aria-modal="true" aria-labelledby="modal-confirmation-titre">
+    <p class="modal-confirmation__bandeau-projet" id="modal-confirmation-bandeau" hidden></p>
+    <p class="modal-confirmation__avertissement" id="modal-confirmation-avertissement" hidden></p>
+    <p class="modal-confirmation__titre" id="modal-confirmation-titre"></p>
+    <pre class="modal-confirmation__commande" id="modal-confirmation-commande"></pre>
+    <div class="modal-confirmation__boutons">
+      <button type="button" class="bouton bouton--annuler" id="modal-confirmation-annuler">Annuler</button>
+      <button type="button" class="bouton" id="modal-confirmation-confirmer"></button>
     </div>
   </div>
 </div>
 
 <script>
-// Fenêtre de confirmation forte (issue #71) : réservée aux actions difficiles
-// à défaire (push, suppression de branches). Contrairement à confirm(),
-// le focus par défaut est sur Annuler (pas de bouton OK générique) et le
-// bouton de validation décrit l'action réelle avec sa portée.
-function confirmationForte(options) {
-  var modal = document.getElementById("modal-confirmation-forte");
-  var texteMessage = document.getElementById("modal-forte-message");
-  var texteCommande = document.getElementById("modal-forte-commande");
-  var boutonAnnuler = document.getElementById("modal-forte-annuler");
-  var boutonConfirmer = document.getElementById("modal-forte-confirmer");
+// Fenêtre de confirmation propre à relecture_web (issue #71, raccourcie et
+// unifiée par l'issue #73) : deux variantes visuelles selon `options.variant`
+// ("forte" par défaut — couleur d'alerte rouge, actions difficiles à
+// défaire ; "legere" — variante neutre non rouge, remplace les confirm()
+// natifs pour pouvoir raccourcir et colorer les messages de façon uniforme).
+// Dans les deux cas : une seule ligne principale (options.message, au format
+// "Action + objet + projet"), un avertissement optionnel affiché en premier
+// et mis en évidence (options.avertissement, ex. bloc(s) vide(s)), la
+// commande git équivalente en petit texte discret sous la ligne principale,
+// un bandeau à la couleur du projet quand elle est configurée (issue #73),
+// le bouton de validation nommé d'après l'action réelle (jamais un OK
+// générique), et le focus par défaut sur Annuler.
+function ouvrirConfirmation(options) {
+  var modal = document.getElementById("modal-confirmation");
+  var bandeau = document.getElementById("modal-confirmation-bandeau");
+  var avertissement = document.getElementById("modal-confirmation-avertissement");
+  var titre = document.getElementById("modal-confirmation-titre");
+  var texteCommande = document.getElementById("modal-confirmation-commande");
+  var boutonAnnuler = document.getElementById("modal-confirmation-annuler");
+  var boutonConfirmer = document.getElementById("modal-confirmation-confirmer");
 
-  texteMessage.textContent = options.message || "";
+  var estForte = options.variant !== "legere";
+  modal.classList.toggle("modal-confirmation--forte", estForte);
+
+  if (options.nomProjet && options.couleurProjet) {
+    bandeau.textContent = options.nomProjet;
+    bandeau.style.background = options.couleurProjet;
+    bandeau.style.color = options.couleurTexteProjet || "#000000";
+    bandeau.hidden = false;
+  } else {
+    bandeau.hidden = true;
+  }
+
+  avertissement.textContent = options.avertissement || "";
+  avertissement.hidden = !options.avertissement;
+
+  titre.textContent = (estForte ? "⚠ " : "") + (options.message || "");
+
   var commandes = Array.isArray(options.commandes) ? options.commandes.join("\n") : (options.commandes || "");
   texteCommande.textContent = commandes;
   texteCommande.hidden = !commandes;
+
   boutonConfirmer.textContent = options.libelleBouton;
+  boutonConfirmer.className = "bouton " + (estForte ? "bouton--danger" : "bouton--confirmer-legere");
 
   function fermer() {
     modal.hidden = true;

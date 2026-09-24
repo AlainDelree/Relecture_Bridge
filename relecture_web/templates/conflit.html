@@ -10,10 +10,14 @@
     conflit
   </p>
   <h1>
+    {% if projet.couleur %}<span class="chip-projet" style="background:{{ projet.couleur }}; color:{{ projet.couleur_texte }};">{{ projet.nom }}</span>{% endif %}
     Conflit — <code class="chemin-fichier">{{ chemin_relatif }}</code>
     <button type="button" class="bouton-copier" data-copier="{{ chemin_relatif }}" title="Copier le chemin du fichier">📋</button>
     <span class="badge badge--attention">{{ code }}</span>
   </h1>
+  <a href="{{ url_for('conflit_fichier_route', nom_projet=projet.nom, chemin_relatif=chemin_relatif) }}" class="bouton bouton--rafraichir lien-bouton">
+    🔄 Rafraîchir
+  </a>
   {% set premier_bloc = (lecture.segments | selectattr("type", "equalto", "conflit") | list | first) %}
   {% set nom_branche_entrante = premier_bloc.entete_theirs[7:].strip() if premier_bloc and premier_bloc.entete_theirs[7:].strip() else "" %}
   <p class="sous-titre">
@@ -162,6 +166,10 @@
 
   if (indices.length > 0) activerBloc(0, false);
 
+  var NOM_PROJET = {{ projet.nom|tojson }};
+  var COULEUR_PROJET = {{ projet.couleur|tojson }};
+  var COULEUR_TEXTE_PROJET = {{ projet.couleur_texte|tojson }};
+
   var boutonTraiterTous = document.getElementById("bouton-traiter-tous");
   if (boutonTraiterTous) {
     boutonTraiterTous.addEventListener("click", function () {
@@ -174,33 +182,42 @@
         if (!texte.trim()) positionsVides.push(position + 1);
       });
 
-      // Aucune confirmation par défaut (issue #71) : « Traiter tous les
-      // blocs » applique directement, sauf anomalie détectée (bloc au
-      // résultat vide) — seul cas où la confirmation actuelle reste
-      // affichée, pour attirer l'attention sur une suppression de bloc
-      // potentiellement non voulue.
-      if (positionsVides.length > 0) {
-        var message = "Traiter tous les blocs (" + indices.length + ") de « {{ chemin_relatif }} » en une "
-          + "seule opération ?\n\nChaque bloc de conflit sera remplacé par le contenu de son résultat "
-          + "actuel. Une fois terminé, git add sera lancé automatiquement."
-          + "\n\n⚠️ Bloc(s) au résultat vide (= suppression du bloc) : " + positionsVides.join(", ") + ".";
-        if (!confirm(message)) return;
+      function soumettre() {
+        var formulaire = document.getElementById("form-traiter-tous");
+        function ajouterChampCache(nom, valeur) {
+          var champ = document.createElement("input");
+          champ.type = "hidden";
+          champ.name = nom;
+          champ.value = valeur;
+          formulaire.appendChild(champ);
+        }
+        ajouterChampCache("nb_blocs", indices.length);
+        ajouterChampCache("empreinte", "{{ lecture.empreinte }}");
+        indices.forEach(function (index, position) {
+          ajouterChampCache("texte_final_" + index, textes[position]);
+        });
+        formulaire.submit();
       }
 
-      var formulaire = document.getElementById("form-traiter-tous");
-      function ajouterChampCache(nom, valeur) {
-        var champ = document.createElement("input");
-        champ.type = "hidden";
-        champ.name = nom;
-        champ.value = valeur;
-        formulaire.appendChild(champ);
+      // Aucune confirmation par défaut (issue #71) : « Traiter tous les
+      // blocs » applique directement, sauf anomalie détectée (bloc au
+      // résultat vide) — seul cas où une confirmation légère (issue #73,
+      // fenêtre propre à relecture_web) reste affichée, l'avertissement mis
+      // en évidence en premier plutôt que noyé en fin de message.
+      if (positionsVides.length > 0) {
+        ouvrirConfirmation({
+          variant: "legere",
+          avertissement: "⚠ Bloc(s) au résultat vide (= suppression du bloc) : " + positionsVides.join(", ") + ".",
+          message: "Traiter les " + indices.length + " bloc(s) de « {{ chemin_relatif }} » — " + NOM_PROJET,
+          commandes: "git add {{ chemin_relatif }}",
+          libelleBouton: "Traiter tous les blocs",
+          nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
+          onConfirmer: soumettre,
+        });
+        return;
       }
-      ajouterChampCache("nb_blocs", indices.length);
-      ajouterChampCache("empreinte", "{{ lecture.empreinte }}");
-      indices.forEach(function (index, position) {
-        ajouterChampCache("texte_final_" + index, textes[position]);
-      });
-      formulaire.submit();
+
+      soumettre();
     });
   }
 })();

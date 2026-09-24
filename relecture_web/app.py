@@ -211,7 +211,10 @@ def injecter_barre_laterale():
     appel réseau supplémentaire par page."""
     projets, _erreur = _charger_projets()
     return {
-        "projets_sidebar": [projet["nom"] for projet in projets],
+        "projets_sidebar": [
+            {"nom": projet["nom"], "couleur": projet.get("couleur"), "couleur_texte": projet.get("couleur_texte")}
+            for projet in projets
+        ],
         "nom_projet_actif": (request.view_args or {}).get("nom_projet"),
     }
 
@@ -561,15 +564,18 @@ def retraiter_fichier_conflit_route(nom_projet, chemin_relatif):
     if resultat["ok"]:
         flash(
             f"🔁 « {chemin_relatif} » remis en conflit ({nom_projet}) — les marqueurs recréés portent les "
-            "libellés génériques « ours »/« theirs » (au lieu de HEAD et du nom de la branche entrante). "
-            "Prêt à être retraité depuis la page Conflit.",
+            "libellés génériques « ours »/« theirs » (au lieu de HEAD et du nom de la branche entrante).",
             "succes",
         )
-    else:
-        flash(
-            f"❌ Échec du retraitement de « {chemin_relatif} » ({resultat['commande']}) : {resultat['erreur']}",
-            "erreur",
-        )
+        # Amène directement sur la page Conflit du fichier remis en conflit
+        # (issue #73), plutôt que sur la page projet qui obligeait à recliquer
+        # dessus.
+        return redirect(url_for("conflit_fichier_route", nom_projet=nom_projet, chemin_relatif=chemin_relatif))
+
+    flash(
+        f"❌ Échec du retraitement de « {chemin_relatif} » ({resultat['commande']}) : {resultat['erreur']}",
+        "erreur",
+    )
     return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 
