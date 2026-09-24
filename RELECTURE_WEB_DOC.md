@@ -500,7 +500,10 @@ donc chaque texte final est garanti appliqué au bon bloc.
   blocs dont le `<textarea>` est vide — un résultat vide est légitime
   (suppression pure et simple du bloc) mais facile à soumettre par
   inadvertance, d'où l'avertissement explicite plutôt qu'un silence sur
-  ce cas particulier.
+  ce cas particulier. Cette liste affiche la position 1-based de chaque
+  bloc (celle de « Bloc X / N » dans l'en-tête), pas l'index 0-based
+  interne évoqué ci-dessus — seul l'affichage diffère, les index transmis
+  au serveur restent le 0-based habituel (issue #70).
 - Une fois tous les blocs traités, `git add <fichier>` est lancé
   automatiquement, exactement comme pour le dernier bloc traité
   individuellement — le commit et le push restent des gestes manuels.
