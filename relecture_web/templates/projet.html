@@ -69,6 +69,27 @@
     <button type="submit" class="bouton bouton--merger">✅ Finaliser le merge</button>
   </form>
   {% endif %}
+
+  {% if projet.fichiers_resolus_merge %}
+  <h3>Fichiers déjà résolus de ce merge</h3>
+  <p class="sous-titre">
+    Tant que le merge n'est pas finalisé, un fichier déjà résolu (<code>git add</code>
+    fait) peut être remis dans son état de conflit d'origine, même après ce
+    <code>git add</code> — seule la finalisation du merge (bouton
+    « Finaliser le merge ») rend ce retour en arrière impossible.
+  </p>
+  <ul class="liste-fichiers-resolus">
+    {% for chemin in projet.fichiers_resolus_merge %}
+    <li class="ligne-fichier-resolu">
+      <code class="chemin-fichier">{{ chemin }}</code>
+      <form method="post" action="{{ url_for('retraiter_fichier_conflit_route', nom_projet=projet.nom, chemin_relatif=chemin) }}"
+            onsubmit="return confirm('Retraiter « {{ chemin }} » ({{ projet.nom }}) ?\n\nEfface la résolution déjà appliquée à ce fichier : il redevient entièrement en conflit (marqueurs recréés avec les libellés génériques « ours »/« theirs »), prêt à être retraité depuis la page Conflit.\n\nCommande équivalente :\ngit -C {{ projet.repertoire }} checkout --conflict=merge -- {{ chemin }}');">
+        <button type="submit" class="bouton bouton--merger">🔁 Retraiter ce fichier</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
 </section>
 {% endif %}
 

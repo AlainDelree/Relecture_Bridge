@@ -1387,6 +1387,74 @@ def finaliser_commit_merge(repertoire):
     }
 
 
+def get_fichiers_resolus_merge(repertoire):
+    """Fichiers déjà résolus (`git add` fait) pendant le merge en cours,
+    mais pour lesquels git conserve encore de quoi annuler cette résolution
+    (issue #72) — précondition du bouton « Retraiter le fichier en
+    conflit ». Contrairement à ce que documentait initialement l'issue #71,
+    un `git add` de résolution n'est pas un point de non-retour individuel :
+    git garde ces informations dans son mécanisme « resolve-undo » jusqu'à
+    la finalisation du merge (`git commit`), à ce moment précis seulement il
+    n'y a plus moyen de revenir en arrière fichier par fichier.
+
+    `git ls-files --resolve-undo -z` liste une ligne par version encore
+    connue d'un chemin (base/ours/theirs selon le type de conflit, jusqu'à
+    trois lignes pour un même chemin) — `-z` (séparateur NUL) évite toute
+    ambiguïté sur un chemin contenant espaces ou caractères spéciaux, comme
+    ailleurs dans ce module. Un chemin actuellement en conflit (pas encore
+    résolu) n'y figure jamais : ces entrées disparaissent dès qu'il redevient
+    non fusionné, donc aucun recoupement possible avec
+    `get_fichiers_en_conflit`.
+
+    Retourne une liste de chemins uniques, dans l'ordre de première
+    apparition, ou une liste vide si la commande échoue (dépôt introuvable,
+    etc.)."""
+    resultat = _lancer_git(repertoire, "ls-files", "--resolve-undo", "-z")
+    if resultat.returncode != 0:
+        return []
+
+    chemins, deja_vus = [], set()
+    for entree in resultat.stdout.split("\0"):
+        if not entree:
+            continue
+        _, _, chemin = entree.partition("\t")
+        if chemin and chemin not in deja_vus:
+            deja_vus.add(chemin)
+            chemins.append(chemin)
+    return chemins
+
+
+def retraiter_fichier_conflit(repertoire, chemin_relatif):
+    """Remet `chemin_relatif` dans son état de conflit d'origine (issue #72)
+    via `git checkout --conflict=merge -- <chemin>` : reconstruit les
+    marqueurs `<<<<<<<`/`=======`/`>>>>>>>` à partir des versions encore
+    connues par git (voir `get_fichiers_resolus_merge`), effaçant la
+    résolution déjà appliquée sur ce fichier. Différence par rapport aux
+    marqueurs d'origine (vérifié sur git 2.43) : les libellés redeviennent
+    génériques (`ours`/`theirs`) au lieu de `HEAD` et du nom de la branche
+    entrante, que git ne conserve pas dans ce mécanisme — à charge de
+    l'appelant de le signaler clairement (message flash).
+
+    Échoue proprement, sans rien modifier, sur un conflit ajout/suppression
+    (codes `AU`/`UD`/`DU`/`UA` de `get_fichiers_en_conflit`) : l'un des deux
+    côtés n'a alors aucune version du fichier, donc rien à placer dans le
+    bloc correspondant — git refuse la reconstruction plutôt que d'inventer
+    un contenu.
+
+    Ne revérifie pas elle-même qu'un merge est en cours ni que
+    `chemin_relatif` figure dans `get_fichiers_resolus_merge` : à charge de
+    l'appelant, comme les autres fonctions de résolution de ce module.
+
+    Retourne {ok, erreur, commande}."""
+    commande = ["git", "-C", repertoire, "checkout", "--conflict=merge", "--", chemin_relatif]
+    resultat = _lancer_git(repertoire, "checkout", "--conflict=merge", "--", chemin_relatif)
+    return {
+        "ok": resultat.returncode == 0,
+        "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
+        "commande": " ".join(commande),
+    }
+
+
 def lire_conflits_fichier(repertoire, chemin_relatif):
     """Lit un fichier en conflit et le découpe en segments contexte/conflit
     (issue #55) — lecture seule stricte, aucune écriture. `chemin_relatif`

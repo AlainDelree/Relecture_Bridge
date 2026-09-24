@@ -35,6 +35,7 @@ from git_info import (
     get_date_commit,
     get_diagnostic_doublons_branche,
     get_fichiers_en_conflit,
+    get_fichiers_resolus_merge,
     get_issue_deja_referencee,
     get_merge_en_cours,
     get_rapport_cherry_brut,
@@ -46,6 +47,7 @@ from git_info import (
     pousser_branche,
     resoudre_bloc_conflit,
     resoudre_tous_blocs_conflit,
+    retraiter_fichier_conflit,
     revert_commit,
     securiser_commit_orphelin,
     supprimer_branche,
@@ -525,6 +527,52 @@ def finaliser_merge_route(nom_projet):
     return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 
+@app.route("/projet/<nom_projet>/conflit/<path:chemin_relatif>/retraiter", methods=["POST"])
+def retraiter_fichier_conflit_route(nom_projet, chemin_relatif):
+    """Remet un fichier déjà résolu pendant le merge en cours dans son état
+    de conflit d'origine (issue #72) — corrige la limite documentée à tort
+    par l'issue #71 : un `git add` de résolution n'est pas définitif tant
+    que le merge n'est pas finalisé (voir `get_fichiers_resolus_merge` et
+    `retraiter_fichier_conflit`).
+
+    Revérifie à partir de l'état git actuel, jamais du seul paramètre
+    d'URL : qu'un merge est bien en cours (même principe que
+    `finaliser_merge_route`), et que `chemin_relatif` figure bien dans la
+    liste actuelle des fichiers résolus renvoyée par git (même principe que
+    `conflit_fichier_route` pour les fichiers en conflit)."""
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+
+    if not get_merge_en_cours(projet["repertoire"]):
+        flash(f"❌ « {nom_projet} » n'est pas en état de fusion non finalisée — rien à retraiter.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    fichiers_resolus = get_fichiers_resolus_merge(projet["repertoire"])
+    if chemin_relatif not in fichiers_resolus:
+        flash(
+            f"❌ « {chemin_relatif} » n'est pas (ou plus) un fichier résolu de ce merge pour « {nom_projet} ».",
+            "erreur",
+        )
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    resultat = retraiter_fichier_conflit(projet["repertoire"], chemin_relatif)
+    if resultat["ok"]:
+        flash(
+            f"🔁 « {chemin_relatif} » remis en conflit ({nom_projet}) — les marqueurs recréés portent les "
+            "libellés génériques « ours »/« theirs » (au lieu de HEAD et du nom de la branche entrante). "
+            "Prêt à être retraité depuis la page Conflit.",
+            "succes",
+        )
+    else:
+        flash(
+            f"❌ Échec du retraitement de « {chemin_relatif} » ({resultat['commande']}) : {resultat['erreur']}",
+            "erreur",
+        )
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+
 @app.route("/projet/<nom_projet>/orphelin/<hash_commit>/securiser", methods=["POST"])
 def securiser_orphelin_route(nom_projet, hash_commit):
     """Sécurise un commit orphelin (issue #23) en créant une branche
@@ -635,6 +683,7 @@ def projet_route(nom_projet):
         projet["branches"] = []
         projet["diagnostics_orphelins"] = []
         projet["fichiers_conflit"] = []
+        projet["fichiers_resolus_merge"] = []
         projet["merge_en_cours"] = False
         projet["peut_finaliser_merge"] = False
         projet["commande_finaliser_merge"] = None
@@ -652,6 +701,14 @@ def projet_route(nom_projet):
     projet["peut_finaliser_merge"] = projet["merge_en_cours"] and not projet["fichiers_conflit"]
     projet["commande_finaliser_merge"] = (
         f"git -C {projet['repertoire']} commit --no-edit" if projet["peut_finaliser_merge"] else None
+    )
+
+    # Bouton « Retraiter le fichier en conflit » (issue #72) : proposé pour
+    # chaque fichier déjà résolu (git add fait) du merge en cours, que
+    # d'autres fichiers restent en conflit ou non — corrige la limite
+    # documentée à tort par l'issue #71 (voir get_fichiers_resolus_merge).
+    projet["fichiers_resolus_merge"] = (
+        get_fichiers_resolus_merge(projet["repertoire"]) if projet["merge_en_cours"] else []
     )
 
     remote = get_remote_defaut(projet["repertoire"])

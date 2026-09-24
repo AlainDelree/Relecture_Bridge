@@ -388,31 +388,32 @@ page elle-même sinon).
 | **Nettoyer tous les projets** | Tous les projets accessibles. | suppression de fichiers `Non_Lu/` (pas de commande git) | **Aucune confirmation.** Ne supprime que les résumés dont le commit est déjà un ancêtre d'une branche **distante** (`git branch -r --contains`) — jamais un résumé dont le commit n'est pas encore réellement en sécurité sur GitHub. |
 | **Nettoyer ce projet** | Le seul projet affiché (page « branches d'un projet », issue #68). | suppression de fichiers `Non_Lu/` (pas de commande git) | **Aucune confirmation.** Même garde-fou et même fonction que « Nettoyer tous les projets » ci-dessus, appliquée à un seul projet — évite de repasser par la liste des projets après un push depuis cette page. |
 | **Finaliser le merge** | Le merge en cours du projet (page « branches d'un projet »). | `git commit --no-edit` | **Aucune confirmation** (issue #71). Voir section 10 — n'apparaît que si un merge est réellement en cours (`MERGE_HEAD` présent) ET qu'il ne reste plus aucun fichier en conflit ; revalidé côté serveur à partir de l'état git actuel, jamais de commit partiel. Même timeout étendu (120s) que Push et Merger (issue #64) — ce commit déclenche le hook `post-commit` du projet, qui peut dépasser le timeout court sur un fichier volumineux ; en cas de dépassement, l'état réel est revérifié automatiquement (`MERGE_HEAD` a-t-il disparu ?) et le message flash final indique explicitement si le merge a bien été finalisé, plutôt qu'un renvoi systématique vers une vérification manuelle (issue #66). |
+| **Retraiter le fichier en conflit** | Un fichier déjà résolu (`git add` fait) du merge en cours, page « branches d'un projet » (issue #72). | `git checkout --conflict=merge -- <chemin>` | **Confirmation légère** (issue #72) — efface la résolution déjà appliquée à ce fichier. Proposé pour chaque fichier déjà résolu du merge en cours, y compris à côté de « Finaliser le merge ». N'apparaît que si un merge est réellement en cours (`MERGE_HEAD` présent), revérifié côté serveur ; le chemin n'est accepté que s'il figure dans `git ls-files --resolve-undo`. Les marqueurs recréés portent les libellés génériques « ours »/« theirs » (voir section 10). Disparaît une fois le merge finalisé. |
 | **Traiter ce bloc** | Un bloc de conflit précis, sur la page Conflit (issue #56). | Aucune commande git — écriture directe du fichier ; `git add <chemin_relatif>` automatique seulement si ce bloc était le dernier du fichier. | **Aucune confirmation** (issue #71). Voir « réversibilité » ci-dessous et section 10. |
 | **Traiter tous les blocs** | Tous les blocs de conflit d'un fichier affiché sur la page Conflit (issue #69). | `git add <chemin_relatif>` une fois tous les blocs remplacés (pas de commande git de remplacement — écriture directe du fichier, comme « Traiter ce bloc »). | **Aucune confirmation par défaut ; confirmation légère (`confirm()` natif) uniquement si une anomalie est détectée** — au moins un bloc au résultat vide (issue #71). Voir section 10 — tout ou rien : `resoudre_tous_blocs_conflit` refuse tout le traitement (aucun bloc écrit) si le nombre de blocs actuellement présents ne correspond plus à ce qui a été affiché, ou si une empreinte (sha256) du contenu calculée à l'affichage ne correspond plus au contenu actuel. Réutilise `_trouver_blocs_conflit` (même numérotation que l'affichage et que « Traiter ce bloc ») ; applique les remplacements du dernier bloc vers le premier pour que les décalages d'index provoqués par un remplacement ne perturbent jamais les blocs restant à traiter. « Traiter ce bloc » reste disponible, inchangé, pour un traitement bloc par bloc. |
 
-**Réversibilité de « Traiter ce bloc » / « Traiter tous les blocs »
-(vérifiée pour l'issue #71) :** ces deux actions écrivent directement le
-fichier sur disque, sans aucune fonction d'annulation dans
-`relecture_web` lui-même — il n'existe pas de bouton « remettre ce
-fichier en conflit ». Tant que le bloc traité n'était pas le dernier du
-fichier, `git add` n'a pas encore été lancé sur ce fichier : les trois
-versions en conflit (base, HEAD, branche entrante) restent présentes
-dans l'index git (stages 1/2/3), donc `git checkout --conflict=merge --
-<chemin>` (en terminal, hors `relecture_web`) régénère les marqueurs de
-conflit d'origine pour tout le fichier. Une fois le dernier bloc traité
-(`git add` automatique), cette possibilité disparaît pour ce fichier
-précis — mais tant que le merge n'est pas finalisé (`MERGE_HEAD`
-présent), `git merge --abort` (toujours en terminal) reste possible et
-restaure l'état d'avant-merge de **tout le dépôt**, pas seulement de ce
-fichier ; il faudrait alors relancer le merge et retraiter les autres
-fichiers déjà résolus entre-temps. Le geste est donc réversible en
-pratique tant que le merge n'est pas finalisé, mais uniquement via une
-commande manuelle en terminal (pas un bouton de `relecture_web`), et de
-façon plus ou moins large selon que `git add` a déjà eu lieu ou non pour
-ce fichier — d'où l'absence de confirmation retenue (l'action reste
-réversible), mais ce point mérite d'être gardé à l'esprit plutôt que
-supposé équivalent à un vrai « annuler » en un clic.
+**Réversibilité d'un fichier déjà résolu pendant un merge en cours (issue
+#72) :** tant que le merge n'est pas finalisé (`MERGE_HEAD` présent), la
+résolution déjà appliquée à un fichier — y compris après le `git add`
+automatique lancé par « Traiter ce bloc » / « Traiter tous les blocs » une
+fois son dernier bloc traité — reste réversible individuellement, pas
+seulement avant ce `git add`. Git conserve dans l'index de quoi annuler
+cette résolution via son mécanisme « resolve-undo » (`git ls-files
+--resolve-undo`, qui répertorie les fichiers résolus du merge en cours) ;
+`git checkout --conflict=merge -- <chemin>` (comportement vérifié en local
+sur git 2.43) s'appuie dessus pour recréer les marqueurs de conflit
+d'origine pour ce fichier précis, sans toucher aux autres fichiers déjà
+résolus. Le bouton « Retraiter le fichier en conflit » ci-dessus expose
+désormais ce geste directement depuis `relecture_web`, sans repasser par
+un terminal. Seule différence par rapport aux marqueurs d'origine : les
+libellés redeviennent génériques (`ours`/`theirs`) au lieu de `HEAD` et du
+nom de la branche entrante (issue #70) — la page Conflit reste lisible
+dans ce cas, voir section 10. La vraie limite reste la finalisation du
+merge (bouton « Finaliser le merge », qui exécute le `git commit`) : une
+fois ce commit fait, `MERGE_HEAD` disparaît et `relecture_web` ne propose
+plus ni ce bouton ni « Finaliser le merge » — `git merge --abort` cesse
+lui aussi de fonctionner à ce moment précis (vérifié), ce qui fait de ce
+commit le vrai point de non-retour du merge dans son ensemble.
 
 Deux compléments d'ergonomie purement côté navigateur (issue #69), sans
 route serveur ni commande git, donc absents du tableau ci-dessus :
@@ -599,6 +600,43 @@ confirmer à chaque fois (issue #66). Même principe de revérification
 automatique après timeout pour Push (comparaison `git ls-remote` /
 commit local) et Merger (branche source devenue ancêtre de la cible ?),
 voir section 9.
+
+**Retraiter le fichier en conflit (issue #72)** : dans la section « ⚠
+Fusion en conflit », chaque fichier déjà résolu (`git add` fait) pendant
+le merge en cours porte un bouton « 🔁 Retraiter ce fichier » — que
+d'autres fichiers soient encore en conflit ou que tous soient résolus
+(dans ce dernier cas, à côté de « ✅ Finaliser le merge »). La liste de
+ces fichiers résolus vient de `get_fichiers_resolus_merge`
+(`git ls-files --resolve-undo`, voir paragraphe « Réversibilité »
+section 9) ; le clic exécute `retraiter_fichier_conflit` (`git checkout
+--conflict=merge -- <chemin>`), qui recrée les marqueurs de conflit
+d'origine pour ce fichier précis — il redevient `UU` et réapparaît dans
+la liste des fichiers en conflit, prêt à être rouvert depuis la page
+Conflit.
+
+Deux garde-fous, revérifiés côté serveur à partir de l'état git actuel
+avant toute exécution, sur le même principe que « Finaliser le merge » et
+la page Conflit :
+- un merge est réellement en cours (`MERGE_HEAD` présent) ;
+- le chemin demandé figure dans la liste actuelle renvoyée par
+  `get_fichiers_resolus_merge` — jamais construit à l'aveugle à partir du
+  seul paramètre d'URL.
+
+L'action efface la résolution déjà appliquée à ce fichier : on repart de
+zéro pour le fichier entier, pas seulement pour un bloc — d'où une
+confirmation JS légère avant soumission, qui le rappelle explicitement.
+Le message flash de succès signale que les marqueurs recréés portent les
+libellés génériques `ours`/`theirs` plutôt que `HEAD` et le nom de la
+branche entrante (différence propre au mécanisme resolve-undo, qui ne
+conserve pas ces noms) : la page Conflit reste lisible dans ce cas, les
+libellés de branche entrante introduits par l'issue #70
+(`nom_branche_bloc`, dérivé de l'en-tête `>>>>>>>`) affichent alors
+simplement « theirs ». Un conflit ajout/suppression (codes `AU`/`UD`/
+`DU`/`UA` de `get_fichiers_en_conflit`) échoue proprement, sans rien
+modifier : l'un des deux côtés n'a alors aucune version du fichier, donc
+git refuse la reconstruction plutôt que d'inventer un contenu. Le bouton
+disparaît naturellement une fois le merge finalisé (plus de
+`MERGE_HEAD`).
 
 ## 11. Comment interpréter une capture ou un export de `relecture_web`
 
