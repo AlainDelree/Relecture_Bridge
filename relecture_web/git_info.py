@@ -10,6 +10,7 @@ et même tableau qu'installer.sh), pas codée en dur ici.
 """
 
 import datetime
+import hashlib
 import os
 import re
 import socket
@@ -1392,18 +1393,23 @@ def lire_conflits_fichier(repertoire, chemin_relatif):
     doit être un chemin déjà validé par l'appelant (présent dans le retour
     actuel de `get_fichiers_en_conflit`) : cette fonction ne revérifie pas
     elle-même que le fichier est en conflit, seulement qu'il est lisible.
-    Retourne {segments, nb_blocs, erreur} — `erreur` non None si le fichier
-    est illisible (supprimé entre-temps, permissions, etc.)."""
+    Retourne {segments, nb_blocs, empreinte, erreur} — `erreur` non None si
+    le fichier est illisible (supprimé entre-temps, permissions, etc.).
+    `empreinte` (sha256 du contenu brut, None si erreur) permet à
+    `resoudre_tous_blocs_conflit` (issue #69, bouton « Traiter tous les
+    blocs ») de vérifier que le fichier n'a pas changé depuis cet affichage
+    avant d'appliquer tous les blocs d'un coup."""
     chemin_absolu = os.path.join(repertoire, chemin_relatif)
     try:
         with open(chemin_absolu, encoding="utf-8", errors="replace") as fichier:
             contenu = fichier.read()
     except OSError as exc:
-        return {"segments": [], "nb_blocs": 0, "erreur": str(exc)}
+        return {"segments": [], "nb_blocs": 0, "empreinte": None, "erreur": str(exc)}
 
     segments = _extraire_blocs_conflit(contenu)
     nb_blocs = sum(1 for segment in segments if segment["type"] == "conflit")
-    return {"segments": segments, "nb_blocs": nb_blocs, "erreur": None}
+    empreinte = hashlib.sha256(contenu.encode("utf-8")).hexdigest()
+    return {"segments": segments, "nb_blocs": nb_blocs, "empreinte": empreinte, "erreur": None}
 
 
 def resoudre_bloc_conflit(repertoire, chemin_relatif, index_bloc, texte_final):
@@ -1482,6 +1488,77 @@ def resoudre_bloc_conflit(repertoire, chemin_relatif, index_bloc, texte_final):
         "ok": True, "erreur": None, "nb_blocs_restants": nb_blocs_restants,
         "fichier_resolu": fichier_resolu, "git_add": git_add,
     }
+
+
+def resoudre_tous_blocs_conflit(repertoire, chemin_relatif, textes_finaux, empreinte_attendue):
+    """Version « tout ou rien » de `resoudre_bloc_conflit` (bouton « Traiter
+    tous les blocs », issue #69) : remplace en une seule opération chaque
+    bloc de conflit de `chemin_relatif` par le texte de `textes_finaux`
+    (même ordre et même numérotation 0-based que `_trouver_blocs_conflit`,
+    donc que l'affichage — `textes_finaux[i]` doit correspondre au bloc
+    d'index `i`).
+
+    Même garde-fou que `resoudre_bloc_conflit`, mais vérifié sur l'ensemble
+    du fichier avant d'écrire quoi que ce soit : si le nombre de blocs
+    actuellement présents ne correspond pas à `len(textes_finaux)`, ou si
+    `empreinte_attendue` (sha256 du contenu tel que lu par
+    `lire_conflits_fichier` au moment de l'affichage) ne correspond plus au
+    contenu actuel du fichier, refuse tout le traitement — aucun bloc n'est
+    écrit, même partiellement.
+
+    Applique les remplacements du dernier bloc vers le premier : remplacer
+    un bloc décale les index de lignes de tous les blocs qui le suivent
+    dans le fichier (jamais ceux qui le précèdent), donc traiter dans
+    l'ordre inverse garantit que chaque remplacement utilise encore des
+    index valides pour les blocs restant à traiter.
+
+    Comme `resoudre_bloc_conflit`, `git add <chemin_relatif>` est lancé une
+    fois tous les blocs remplacés (systématique ici, puisque chaque bloc
+    détecté a nécessairement un texte correspondant en entrée) — le commit
+    et le push restent des gestes manuels d'Alain.
+
+    Retourne {ok, erreur, git_add}."""
+    chemin_absolu = os.path.join(repertoire, chemin_relatif)
+    try:
+        with open(chemin_absolu, encoding="utf-8") as fichier:
+            contenu = fichier.read()
+    except (OSError, UnicodeDecodeError) as exc:
+        return {"ok": False, "erreur": str(exc), "git_add": None}
+
+    empreinte_actuelle = hashlib.sha256(contenu.encode("utf-8")).hexdigest()
+    lignes = contenu.splitlines(keepends=True)
+    blocs = _trouver_blocs_conflit(lignes)
+
+    if len(blocs) != len(textes_finaux) or empreinte_actuelle != empreinte_attendue:
+        return {
+            "ok": False,
+            "erreur": (
+                "le fichier a changé depuis l'affichage (nombre ou contenu des blocs "
+                "différent de ce qui a été affiché) — recharge la page pour repartir "
+                "des blocs actuels."
+            ),
+            "git_add": None,
+        }
+
+    for index_bloc in range(len(blocs) - 1, -1, -1):
+        bloc = blocs[index_bloc]
+        texte_final = textes_finaux[index_bloc]
+        if texte_final and not texte_final.endswith("\n"):
+            texte_final += "\n"
+        lignes = lignes[:bloc["debut"]] + ([texte_final] if texte_final else []) + lignes[bloc["fin"]:]
+
+    try:
+        with open(chemin_absolu, "w", encoding="utf-8") as fichier:
+            fichier.write("".join(lignes))
+    except OSError as exc:
+        return {"ok": False, "erreur": str(exc), "git_add": None}
+
+    resultat = _lancer_git(repertoire, "add", "--", chemin_relatif)
+    git_add = {
+        "ok": resultat.returncode == 0,
+        "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
+    }
+    return {"ok": True, "erreur": None, "git_add": git_add}
 
 
 def collect_etat_projets():

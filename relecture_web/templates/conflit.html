@@ -9,7 +9,11 @@
     <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}">{{ projet.nom }}</a> /
     conflit
   </p>
-  <h1>Conflit — <code class="chemin-fichier">{{ chemin_relatif }}</code> <span class="badge badge--attention">{{ code }}</span></h1>
+  <h1>
+    Conflit — <code class="chemin-fichier">{{ chemin_relatif }}</code>
+    <button type="button" class="bouton-copier" data-copier="{{ chemin_relatif }}" title="Copier le chemin du fichier">📋</button>
+    <span class="badge badge--attention">{{ code }}</span>
+  </h1>
   <p class="sous-titre">
     {{ lecture.nb_blocs }} bloc(s) de conflit détecté(s) entre
     <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code>, <code>=======</code> et
@@ -19,9 +23,18 @@
     l'emplacement de chaque bloc, utilisez les flèches pour copier l'une des
     deux versions dans le résultat, ou composez-le librement — le texte reste
     modifiable à la main après un transfert. « Traiter ce bloc » applique ce
-    résultat au fichier réel. Une fois tous les blocs traités, le fichier est
-    automatiquement ajouté (<code>git add</code>) — le commit reste manuel.
+    résultat au fichier réel. « Traiter tous les blocs » applique en une
+    seule fois le résultat composé pour chaque bloc du fichier. Une fois tous
+    les blocs traités, le fichier est automatiquement ajouté
+    (<code>git add</code>) — le commit reste manuel.
   </p>
+  {% if lecture.nb_blocs > 0 %}
+  <form id="form-traiter-tous" method="post"
+        action="{{ url_for('traiter_tous_blocs_conflit_route', nom_projet=projet.nom, chemin_relatif=chemin_relatif) }}"></form>
+  <button type="button" id="bouton-traiter-tous" class="bouton bouton--traiter">
+    Traiter tous les blocs ({{ lecture.nb_blocs }})
+  </button>
+  {% endif %}
 </header>
 
 {% with messages = get_flashed_messages(with_categories=true) %}
@@ -145,6 +158,40 @@
   });
 
   if (indices.length > 0) activerBloc(0, false);
+
+  var boutonTraiterTous = document.getElementById("bouton-traiter-tous");
+  if (boutonTraiterTous) {
+    boutonTraiterTous.addEventListener("click", function () {
+      var textes = indices.map(function (index) {
+        var zone = document.getElementById("texte-final-" + index);
+        return zone ? zone.value : "";
+      });
+      var indicesVides = indices.filter(function (index, position) { return !textes[position].trim(); });
+
+      var message = "Traiter tous les blocs (" + indices.length + ") de « {{ chemin_relatif }} » en une "
+        + "seule opération ?\n\nChaque bloc de conflit sera remplacé par le contenu de son résultat "
+        + "actuel. Une fois terminé, git add sera lancé automatiquement.";
+      if (indicesVides.length > 0) {
+        message += "\n\n⚠️ Bloc(s) au résultat vide (= suppression du bloc) : " + indicesVides.join(", ") + ".";
+      }
+      if (!confirm(message)) return;
+
+      var formulaire = document.getElementById("form-traiter-tous");
+      function ajouterChampCache(nom, valeur) {
+        var champ = document.createElement("input");
+        champ.type = "hidden";
+        champ.name = nom;
+        champ.value = valeur;
+        formulaire.appendChild(champ);
+      }
+      ajouterChampCache("nb_blocs", indices.length);
+      ajouterChampCache("empreinte", "{{ lecture.empreinte }}");
+      indices.forEach(function (index, position) {
+        ajouterChampCache("texte_final_" + index, textes[position]);
+      });
+      formulaire.submit();
+    });
+  }
 })();
 
 function confirmerTraitementBloc(formulaire, indexBloc) {

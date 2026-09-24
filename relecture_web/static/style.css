@@ -184,6 +184,8 @@ header h1 { margin-bottom: 0.2rem; }
 .bouton--revert:hover { background: #fbe9cf; }
 .bouton--nettoyer { background: #eef1f5; color: #3a4550; border-color: #d7dde5; margin-top: 0.4rem; }
 .bouton--nettoyer:hover { background: #e2e7ee; }
+.bouton--rafraichir { background: #eef1f5; color: #3a4550; border-color: #d7dde5; margin-top: 0.4rem; }
+.bouton--rafraichir:hover { background: #e2e7ee; }
 .bouton--rapport { background: #f3ecfb; color: #6a3fa0; border-color: #ddc9f0; }
 .bouton--rapport:hover { background: #ecdff9; }
 .bouton--comparer { background: #e5f6fb; color: #0f6e8c; border-color: #bfe6f0; }

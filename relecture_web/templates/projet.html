@@ -5,6 +5,9 @@
 <header>
   <p class="fil-ariane"><a href="{{ url_for('index') }}">Projets</a> / {{ projet.nom }}</p>
   <h1>{{ projet.nom }} <span class="depot">{{ projet.depot }}</span></h1>
+  <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}" class="bouton bouton--rafraichir lien-bouton">
+    🔄 Rafraîchir
+  </a>
   {% if projet.statut == "ok" %}
   <form method="post" action="{{ url_for('nettoyer_projet_route', nom_projet=projet.nom) }}" id="form-nettoyer-ce-projet">
     <button type="submit" class="bouton bouton--nettoyer">
@@ -59,6 +62,7 @@
     <li class="ligne-fichier-conflit">
       <a href="{{ url_for('conflit_fichier_route', nom_projet=projet.nom, chemin_relatif=f.chemin) }}" class="lien-fichier-conflit">
         <code class="chemin-fichier">{{ f.chemin }}</code>
+        <button type="button" class="bouton-copier" data-copier="{{ f.chemin }}" title="Copier le chemin du fichier">📋</button>
         <span class="badge badge--attention">{{ f.code }}</span>
       </a>
     </li>

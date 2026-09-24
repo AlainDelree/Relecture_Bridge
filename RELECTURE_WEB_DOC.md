@@ -368,6 +368,28 @@ silencieuse.
 | **Nettoyer tous les projets** | Tous les projets accessibles. | suppression de fichiers `Non_Lu/` (pas de commande git) | Ne supprime que les résumés dont le commit est déjà un ancêtre d'une branche **distante** (`git branch -r --contains`) — jamais un résumé dont le commit n'est pas encore réellement en sécurité sur GitHub. |
 | **Nettoyer ce projet** | Le seul projet affiché (page « branches d'un projet », issue #68). | suppression de fichiers `Non_Lu/` (pas de commande git) | Même garde-fou et même fonction que « Nettoyer tous les projets » ci-dessus, appliquée à un seul projet — évite de repasser par la liste des projets après un push depuis cette page. |
 | **Finaliser le merge** | Le merge en cours du projet (page « branches d'un projet »). | `git commit --no-edit` | Voir section 10 — n'apparaît que si un merge est réellement en cours (`MERGE_HEAD` présent) ET qu'il ne reste plus aucun fichier en conflit ; revalidé côté serveur à partir de l'état git actuel, jamais de commit partiel. Même timeout étendu (120s) que Push et Merger (issue #64) — ce commit déclenche le hook `post-commit` du projet, qui peut dépasser le timeout court sur un fichier volumineux ; en cas de dépassement, l'état réel est revérifié automatiquement (`MERGE_HEAD` a-t-il disparu ?) et le message flash final indique explicitement si le merge a bien été finalisé, plutôt qu'un renvoi systématique vers une vérification manuelle (issue #66). |
+| **Traiter tous les blocs** | Tous les blocs de conflit d'un fichier affiché sur la page Conflit (issue #69). | `git add <chemin_relatif>` une fois tous les blocs remplacés (pas de commande git de remplacement — écriture directe du fichier, comme « Traiter ce bloc »). | Voir section 10 — tout ou rien : `resoudre_tous_blocs_conflit` refuse tout le traitement (aucun bloc écrit) si le nombre de blocs actuellement présents ne correspond plus à ce qui a été affiché, ou si une empreinte (sha256) du contenu calculée à l'affichage ne correspond plus au contenu actuel. Réutilise `_trouver_blocs_conflit` (même numérotation que l'affichage et que « Traiter ce bloc ») ; applique les remplacements du dernier bloc vers le premier pour que les décalages d'index provoqués par un remplacement ne perturbent jamais les blocs restant à traiter. Confirmation JS avant soumission, qui signale explicitement les blocs dont le résultat est vide (suppression du bloc). « Traiter ce bloc » reste disponible, inchangé, pour un traitement bloc par bloc. |
+
+Deux compléments d'ergonomie purement côté navigateur (issue #69), sans
+route serveur ni commande git, donc absents du tableau ci-dessus :
+
+- **Rafraîchir** (page « branches d'un projet ») — un simple lien vers
+  l'URL courante de la page (pas un `location.reload()` ni un F5
+  clavier), pour revoir l'état git à jour après une action faite en
+  terminal sans jamais risquer de faire réapparaître l'avertissement
+  « resoumettre le formulaire » du navigateur : toutes les actions de ce
+  tableau redirigent déjà en GET après leur POST (motif
+  Post/Redirect/Get), donc un vrai F5 sur la page affichée ne poserait
+  normalement pas ce problème non plus — le bouton est une garantie
+  supplémentaire, pas un contournement d'un bug existant.
+- **Copier** (icône 📋) — copie dans le presse-papiers le chemin d'un
+  fichier en conflit tel que renvoyé par `git status` (relatif à la
+  racine du dépôt), pour le coller dans un terminal ou un éditeur.
+  Présent à côté de chaque fichier listé dans la section « ⚠ Fusion en
+  conflit » (page projet) et dans l'en-tête de la page Conflit — même
+  bouton générique `.bouton-copier` (`base.html`) déjà utilisé ailleurs
+  pour copier un hash ou un nom de branche, avec le même retour visuel
+  bref (icône remplacée par ✓ quelques instants).
 
 ## 10. Détecter, afficher et résoudre les conflits de fusion (issues #55, #56, #59)
 
@@ -450,6 +472,41 @@ lancé automatiquement pour marquer sa résolution, avec un message flash
 clair — **le push reste un geste manuel**, volontairement non
 automatisé. Tant qu'il reste des blocs, la page se recharge sur le
 même fichier (le bloc suivant apparaît naturellement en premier).
+
+**Traiter tous les blocs (issue #69)** : pour éviter de recliquer
+« Traiter ce bloc » un par un (ce qui recharge la page à chaque fois),
+un bouton « Traiter tous les blocs » applique en une seule opération
+chaque `<textarea>` du panneau droit à son bloc correspondant, sans
+quitter la page. Il réutilise directement `_trouver_blocs_conflit`
+(même numérotation que l'affichage et que la résolution bloc par bloc),
+donc chaque texte final est garanti appliqué au bon bloc.
+
+- **Tout ou rien** : côté serveur, `resoudre_tous_blocs_conflit`
+  refuse le traitement complet — aucun bloc n'est écrit, même
+  partiellement — si le fichier a changé depuis l'affichage : nombre de
+  blocs actuellement présents différent de ce qui a été soumis, ou
+  empreinte (sha256 du contenu, calculée par `lire_conflits_fichier` au
+  moment de l'affichage puis transmise par des champs cachés) qui ne
+  correspond plus au contenu réel du fichier au moment de la
+  soumission. Même principe que la résolution bloc par bloc, appliqué à
+  l'ensemble du fichier plutôt qu'à un seul bloc.
+- **Ordre d'application** : les remplacements sont appliqués du dernier
+  bloc vers le premier — remplacer un bloc décale les index de ligne de
+  tous les blocs qui le suivent dans le fichier, jamais ceux qui le
+  précèdent, donc traiter dans l'ordre inverse garantit que chaque
+  remplacement utilise encore des index valides pour les blocs restant
+  à traiter.
+- **Confirmation JS** avant soumission, qui liste explicitement les
+  blocs dont le `<textarea>` est vide — un résultat vide est légitime
+  (suppression pure et simple du bloc) mais facile à soumettre par
+  inadvertance, d'où l'avertissement explicite plutôt qu'un silence sur
+  ce cas particulier.
+- Une fois tous les blocs traités, `git add <fichier>` est lancé
+  automatiquement, exactement comme pour le dernier bloc traité
+  individuellement — le commit et le push restent des gestes manuels.
+- « Traiter ce bloc » reste disponible, inchangé, pour un traitement
+  bloc par bloc quand c'est plus adapté (vérifier un bloc à la fois
+  avant de valider les suivants, par exemple).
 
 **Finaliser le merge (issue #61)** : une fois que `git status` ne
 signale plus aucun chemin non fusionné, la section « Fusion en

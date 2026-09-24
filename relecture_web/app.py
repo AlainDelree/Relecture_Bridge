@@ -45,6 +45,7 @@ from git_info import (
     nom_branche_recuperation,
     pousser_branche,
     resoudre_bloc_conflit,
+    resoudre_tous_blocs_conflit,
     revert_commit,
     securiser_commit_orphelin,
     supprimer_branche,
@@ -398,6 +399,66 @@ def traiter_bloc_conflit_route(nom_projet, chemin_relatif):
         "succes",
     )
     return redirect(url_for("conflit_fichier_route", nom_projet=nom_projet, chemin_relatif=chemin_relatif))
+
+
+@app.route("/projet/<nom_projet>/conflit/<path:chemin_relatif>/traiter-tous", methods=["POST"])
+def traiter_tous_blocs_conflit_route(nom_projet, chemin_relatif):
+    """Variante « tout ou rien » de `traiter_bloc_conflit_route` (issue #69,
+    bouton « Traiter tous les blocs ») : applique en une seule opération
+    chaque bloc de conflit de `chemin_relatif` au texte soumis pour lui,
+    plutôt que de recliquer « Traiter ce bloc » un par un (qui recharge la
+    page à chaque fois). Revalide `chemin_relatif` comme fichier en conflit
+    du projet, comme la route de lecture et la route bloc par bloc voisines.
+
+    `nb_blocs` et `empreinte` (formulaire, construits côté navigateur à
+    partir de ce qui a été affiché sur la page Conflit) sont transmis tels
+    quels à `resoudre_tous_blocs_conflit`, qui refuse tout le traitement si
+    le fichier a changé depuis l'affichage — jamais d'écriture partielle."""
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+
+    fichiers_conflit = get_fichiers_en_conflit(projet["repertoire"])
+    fichier = next((f for f in fichiers_conflit if f["chemin"] == chemin_relatif), None)
+    if not fichier:
+        flash(
+            f"❌ « {chemin_relatif} » n'est pas (ou plus) un fichier en conflit pour « {nom_projet} ».",
+            "erreur",
+        )
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    try:
+        nb_blocs = int(request.form.get("nb_blocs", ""))
+    except ValueError:
+        flash("❌ Nombre de blocs invalide.", "erreur")
+        return redirect(url_for("conflit_fichier_route", nom_projet=nom_projet, chemin_relatif=chemin_relatif))
+
+    empreinte_attendue = request.form.get("empreinte", "")
+    textes_finaux = [request.form.get(f"texte_final_{i}", "") for i in range(nb_blocs)]
+
+    resultat = resoudre_tous_blocs_conflit(projet["repertoire"], chemin_relatif, textes_finaux, empreinte_attendue)
+    if not resultat["ok"]:
+        flash(
+            f"❌ Échec du traitement groupé de « {chemin_relatif} » : {resultat['erreur']}",
+            "erreur",
+        )
+        return redirect(url_for("conflit_fichier_route", nom_projet=nom_projet, chemin_relatif=chemin_relatif))
+
+    git_add = resultat["git_add"]
+    if git_add and git_add["ok"]:
+        flash(
+            f"✅ « {chemin_relatif} » entièrement résolu — {nb_blocs} bloc(s) traité(s) en une seule "
+            "opération, `git add` effectué, prêt pour le commit (manuel).",
+            "succes",
+        )
+    else:
+        flash(
+            f"⚠️ « {chemin_relatif} » entièrement résolu ({nb_blocs} bloc(s)), mais `git add` a échoué : "
+            f"{git_add['erreur']}",
+            "erreur",
+        )
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 
 @app.route("/projet/<nom_projet>/finaliser-merge", methods=["POST"])
