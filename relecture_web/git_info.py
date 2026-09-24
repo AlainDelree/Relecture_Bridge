@@ -133,12 +133,15 @@ def fetch_projets():
         if nom in ("", "Nom") or repertoire in ("", "Répertoire de travail CCL"):
             continue
         # Colonne "Couleur" (issue #73) : dernier champ de la ligne, quand il
-        # y en a un au-delà de nom/dépôt/répertoire. Lecture tolérante par la
-        # forme du contenu (voir `normaliser_couleur_hex`), pas par position
-        # de colonne fixe ni par en-tête — un tableau à 4 colonnes existant
-        # (ex. "Topic ntfy" en dernière position) ne matche simplement pas le
-        # motif hexadécimal et retombe sans erreur sur couleur=None.
-        couleur = normaliser_couleur_hex(champs[-1]) if len(champs) > 3 else None
+        # y en a un au-delà de nom/dépôt/répertoire — généré entre backticks
+        # (``#rrggbb``) par `regenerer_tableaux_projets.py` côté bridge_agent
+        # (issue #608), même convention que la colonne "Nom" ci-dessus.
+        # Lecture tolérante par la forme du contenu (voir
+        # `normaliser_couleur_hex`), pas par position de colonne fixe ni par
+        # en-tête — un tableau à 4 colonnes existant (ex. "Topic ntfy" en
+        # dernière position) ne matche simplement pas le motif hexadécimal et
+        # retombe sans erreur sur couleur=None.
+        couleur = normaliser_couleur_hex(champs[-1].strip("`")) if len(champs) > 3 else None
         projets.append({
             "nom": nom,
             "depot": depot,
