@@ -337,6 +337,20 @@ header h1 { margin-bottom: 0.2rem; }
 .lien-fichier-conflit:hover { background: #fdecea; }
 .chemin-fichier { font-size: 0.85rem; color: #333; }
 
+.liste-fichiers-resolus { list-style: none; padding: 0; margin: 0.6rem 0 0 0; }
+.ligne-fichier-resolu {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  background: #fff;
+  border: 1px solid #c3d6f7;
+  border-radius: 8px;
+  padding: 0.5rem 0.8rem;
+  margin-bottom: 0.4rem;
+}
+.ligne-fichier-resolu form { margin: 0; }
+
 .contexte-conflit { background: #fff; }
 /* pre.brut plafonne la hauteur et scrolle en interne (branche.html,
    comparer.html) : sur la page conflit, cela transforme chaque segment de
