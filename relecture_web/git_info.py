@@ -931,12 +931,12 @@ def fusionner_changelog_worktree(repertoire, nom_projet=None):
     CHEMIN_JOURNAL_FUSION_CHANGELOG, indépendamment du message flash
     (issue #62)."""
     try:
-        presence = any(
-            MOTIF_CHANGELOG_WORKTREE.match(nom) for nom in os.listdir(repertoire)
+        fichiers_changelog = sorted(
+            nom for nom in os.listdir(repertoire) if MOTIF_CHANGELOG_WORKTREE.match(nom)
         )
     except OSError:
-        presence = False
-    if not presence:
+        fichiers_changelog = []
+    if not fichiers_changelog:
         return None
 
     nom_projet = nom_projet or os.path.basename(os.path.normpath(repertoire))
@@ -977,9 +977,31 @@ def fusionner_changelog_worktree(repertoire, nom_projet=None):
     # malgré un script qui, lui, réussissait). Committer ici rend la fusion
     # durable dès son exécution, indépendamment de ce que fait l'appelant
     # ensuite.
+    #
+    # Portée strictement limitée à CHANGELOG.md et aux CHANGELOG-<N>.md
+    # consommés (`git add -- <chemins>` puis `git commit -- <mêmes chemins>`,
+    # jamais `git commit -a`/`git add -A`) : `repertoire` est le worktree
+    # PRINCIPAL du projet, potentiellement le même dossier où un autre CCL
+    # travaille encore en repli sur REP_TRAVAIL (worktree dédié « déjà pris »)
+    # — `-a` aurait alors indexé et commité tout son travail inachevé sous ce
+    # message générique (issue #74, cause du commit 0c477c0 pendant l'issue
+    # #73). `git commit -- <pathspec>` ne committe que ces chemins précis même
+    # si l'index contient par ailleurs d'autres modifications déjà stagées
+    # par un tiers, indépendamment de ce qui vient d'être `git add`é ici.
+    chemins_changelog = ["CHANGELOG.md"] + fichiers_changelog
+    ajout = _lancer_git(repertoire, "add", "--", *chemins_changelog)
+    if ajout.returncode != 0:
+        return {
+            "ok": False,
+            "erreur": "fusion effectuée mais git add impossible : "
+                      + (ajout.stderr or ajout.stdout).strip(),
+            "commande": " ".join(commande),
+        }
+
     commit = _lancer_git(
-        repertoire, "commit", "-a", "-m",
+        repertoire, "commit", "-m",
         "chore: fusionne CHANGELOG-<N>.md dans CHANGELOG.md (auto)",
+        "--", *chemins_changelog,
     )
     if commit.returncode != 0:
         return {
@@ -990,6 +1012,30 @@ def fusionner_changelog_worktree(repertoire, nom_projet=None):
         }
 
     return {"ok": True, "erreur": None, "commande": " ".join(commande)}
+
+
+def get_modifications_non_committees(repertoire):
+    """Fichiers suivis modifiés ou fichiers non suivis non ignorés dans
+    `repertoire` (`git status --porcelain=v1`, qui exclut déjà les fichiers
+    ignorés par construction) — précondition du garde-fou avant Merger
+    (issue #74) : un dépôt dans cet état au moment de lancer un merge peut
+    signifier qu'une tâche CCL y travaille encore, repliée sur ce même
+    dossier faute de worktree dédié disponible (comme lors de l'issue #73,
+    où l'intégration automatique du CHANGELOG avait alors committé ce
+    travail en cours par-dessus). Contrairement à `get_fichiers_en_conflit`
+    (qui ne repère que les chemins non fusionnés d'un merge déjà en cours),
+    signale ici tout écart par rapport à un arbre de travail propre, fusion
+    en cours ou non.
+
+    Retourne une liste de chemins (vide = arbre propre), ou une liste vide
+    aussi si la commande échoue — comportement permissif par défaut, comme
+    les autres fonctions de lecture d'état de ce module, pour ne jamais
+    bloquer un merge légitime à cause d'une erreur d'exécution git elle-même
+    plutôt que d'un vrai état non committé."""
+    resultat = _lancer_git(repertoire, "status", "--porcelain=v1")
+    if resultat.returncode != 0:
+        return []
+    return [ligne[3:].strip() for ligne in resultat.stdout.splitlines() if ligne.strip()]
 
 
 def fusionner_worktree(repertoire, branche_cible, branche_source, nom_projet=None):

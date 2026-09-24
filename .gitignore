@@ -1,2 +1,6 @@
-Relecture_Bridge/Non_Lu/
+# Non_Lu/ de chaque projet (exports en attente de lecture, y compris
+# Relecture_Bridge/Non_Lu/ auto-référentiel) : jamais suivi, pour qu'un
+# `git add -A` (backup CCL, ou une future fusion CHANGELOG mal scopée) ne
+# puisse jamais les embarquer dans un commit sans rapport (issue #74).
+*/Non_Lu/
 relecture_web/changelog_fusion.log

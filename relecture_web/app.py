@@ -38,6 +38,7 @@ from git_info import (
     get_fichiers_resolus_merge,
     get_issue_deja_referencee,
     get_merge_en_cours,
+    get_modifications_non_committees,
     get_rapport_cherry_brut,
     get_remote_defaut,
     get_sujet_commit,
@@ -1004,6 +1005,21 @@ def merger_branches_route(nom_projet):
         return redirect(url_for("index"))
     if not noms_branches:
         flash("❌ Aucune branche sélectionnée.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    # Garde-fou avant tout merge (issue #74) : un dossier de branche cible
+    # avec des modifications non committées peut signifier qu'une tâche CCL y
+    # travaille encore, repliée sur ce même dossier faute de worktree dédié
+    # disponible (voir issue #73, où l'intégration automatique du CHANGELOG
+    # avait committé ce travail en cours par-dessus) — refus explicite plutôt
+    # que de fusionner par-dessus un travail potentiellement en cours.
+    modifications = get_modifications_non_committees(projet["repertoire"])
+    if modifications:
+        flash(
+            f"❌ Modifications non committées dans « {projet['repertoire']} » — une tâche CCL y "
+            f"travaille peut-être ; merge refusé ({len(modifications)} fichier(s) concerné(s)).",
+            "erreur",
+        )
         return redirect(url_for("projet_route", nom_projet=nom_projet))
 
     cible_configuree = projet["branche_cible_comparaison"]
