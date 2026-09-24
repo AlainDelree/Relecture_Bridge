@@ -92,8 +92,7 @@
         <div class="conflit-cellule conflit-cellule--droite conflit-bloc conflit-bloc--resultat" id="bloc-{{ segment.index }}-droite" data-bloc-index="{{ segment.index }}">
           <form method="post"
                 action="{{ url_for('traiter_bloc_conflit_route', nom_projet=projet.nom, chemin_relatif=chemin_relatif) }}"
-                class="conflit-bloc__formulaire"
-                onsubmit="return confirmerTraitementBloc(this, {{ segment.index }});">
+                class="conflit-bloc__formulaire">
             <input type="hidden" name="index_bloc" value="{{ segment.index }}">
             <label class="conflit-bloc__label" for="texte-final-{{ segment.index }}">Texte final à garder pour ce bloc :</label>
             <textarea id="texte-final-{{ segment.index }}" name="texte_final" class="conflit-bloc__textarea"
@@ -175,13 +174,18 @@
         if (!texte.trim()) positionsVides.push(position + 1);
       });
 
-      var message = "Traiter tous les blocs (" + indices.length + ") de « {{ chemin_relatif }} » en une "
-        + "seule opération ?\n\nChaque bloc de conflit sera remplacé par le contenu de son résultat "
-        + "actuel. Une fois terminé, git add sera lancé automatiquement.";
+      // Aucune confirmation par défaut (issue #71) : « Traiter tous les
+      // blocs » applique directement, sauf anomalie détectée (bloc au
+      // résultat vide) — seul cas où la confirmation actuelle reste
+      // affichée, pour attirer l'attention sur une suppression de bloc
+      // potentiellement non voulue.
       if (positionsVides.length > 0) {
-        message += "\n\n⚠️ Bloc(s) au résultat vide (= suppression du bloc) : " + positionsVides.join(", ") + ".";
+        var message = "Traiter tous les blocs (" + indices.length + ") de « {{ chemin_relatif }} » en une "
+          + "seule opération ?\n\nChaque bloc de conflit sera remplacé par le contenu de son résultat "
+          + "actuel. Une fois terminé, git add sera lancé automatiquement."
+          + "\n\n⚠️ Bloc(s) au résultat vide (= suppression du bloc) : " + positionsVides.join(", ") + ".";
+        if (!confirm(message)) return;
       }
-      if (!confirm(message)) return;
 
       var formulaire = document.getElementById("form-traiter-tous");
       function ajouterChampCache(nom, valeur) {
@@ -200,15 +204,6 @@
     });
   }
 })();
-
-function confirmerTraitementBloc(formulaire, indexBloc) {
-  var texte = formulaire.querySelector("textarea[name='texte_final']").value;
-  var apercu = texte.length > 300 ? texte.slice(0, 300) + "…" : texte;
-  return confirm(
-    "Remplacer le bloc de conflit n°" + indexBloc + " de « {{ chemin_relatif }} » par ce texte ?\n\n" + apercu
-    + "\n\nSi c'est le dernier bloc du fichier, « git add » sera lancé automatiquement."
-  );
-}
 </script>
 
 {% endblock %}

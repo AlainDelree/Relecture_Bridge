@@ -52,12 +52,42 @@
 {% set a_supprimer = resultats|selectattr("statut", "equalto", "doublon_confirme")|list %}
 {% if a_supprimer %}
 <form method="post" action="{{ url_for('supprimer_branches_recuperation_route', nom_projet=projet.nom) }}"
-      onsubmit="return confirm('Confirmer : supprimer définitivement la branche de récupération (et le(s) résumé(s) Non_Lu associé(s)) de {{ a_supprimer|length }} branche(s) confirmée(s) doublon (diff vide) ?\n\n' + [{% for r in a_supprimer %}'{{ r.nom_branche }}'{{ ', ' if not loop.last }}{% endfor %}].join('\n'));">
+      id="form-supprimer-selection-recuperation">
   {% for r in a_supprimer %}
   <input type="hidden" name="branches" value="{{ r.nom_branche }}">
   {% endfor %}
   <button type="submit" class="bouton bouton--supprimer">🗑️ Supprimer les {{ a_supprimer|length }} branche(s) confirmée(s) (diff vide)</button>
 </form>
+<script>
+(function () {
+  var formulaire = document.getElementById("form-supprimer-selection-recuperation");
+  var noms = [{% for r in a_supprimer %}"{{ r.nom_branche }}"{{ ", " if not loop.last }}{% endfor %}];
+  var envoiForce = false;
+
+  formulaire.addEventListener("submit", function (evenement) {
+    if (envoiForce) {
+      envoiForce = false;
+      return;
+    }
+    evenement.preventDefault();
+
+    // Confirmation forte (issue #71) : supprime des branches de
+    // récupération — références difficiles à récupérer, fichiers Non_Lu
+    // associés supprimés avec elles.
+    confirmationForte({
+      message: "Supprime définitivement la branche de récupération (et le(s) résumé(s) Non_Lu associé(s)) de "
+        + noms.length + " branche(s) confirmée(s) doublon (diff vide) ({{ projet.nom }}) — "
+        + "références difficiles à récupérer.",
+      commandes: noms,
+      libelleBouton: noms.length === 1 ? ("Supprimer " + noms[0]) : ("Supprimer " + noms.length + " branches"),
+      onConfirmer: function () {
+        envoiForce = true;
+        formulaire.requestSubmit();
+      },
+    });
+  });
+})();
+</script>
 {% else %}
 <p class="statut">Aucune branche confirmée diff vide dans cette sélection — rien à supprimer en groupe, traitement manuel nécessaire pour celles listées ci-dessus.</p>
 {% endif %}

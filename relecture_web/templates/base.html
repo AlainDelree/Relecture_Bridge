@@ -26,7 +26,62 @@
     {% block body %}{% endblock %}
   </div>
 </div>
+
+<div id="modal-confirmation-forte" class="modal-forte" hidden>
+  <div class="modal-forte__panneau" role="alertdialog" aria-modal="true" aria-labelledby="modal-forte-titre">
+    <p class="modal-forte__titre" id="modal-forte-titre">⚠ Confirmation requise</p>
+    <p class="modal-forte__message" id="modal-forte-message"></p>
+    <pre class="modal-forte__commande" id="modal-forte-commande"></pre>
+    <div class="modal-forte__boutons">
+      <button type="button" class="bouton bouton--annuler" id="modal-forte-annuler">Annuler</button>
+      <button type="button" class="bouton bouton--danger" id="modal-forte-confirmer"></button>
+    </div>
+  </div>
+</div>
+
 <script>
+// Fenêtre de confirmation forte (issue #71) : réservée aux actions difficiles
+// à défaire (push, suppression de branches). Contrairement à confirm(),
+// le focus par défaut est sur Annuler (pas de bouton OK générique) et le
+// bouton de validation décrit l'action réelle avec sa portée.
+function confirmationForte(options) {
+  var modal = document.getElementById("modal-confirmation-forte");
+  var texteMessage = document.getElementById("modal-forte-message");
+  var texteCommande = document.getElementById("modal-forte-commande");
+  var boutonAnnuler = document.getElementById("modal-forte-annuler");
+  var boutonConfirmer = document.getElementById("modal-forte-confirmer");
+
+  texteMessage.textContent = options.message || "";
+  var commandes = Array.isArray(options.commandes) ? options.commandes.join("\n") : (options.commandes || "");
+  texteCommande.textContent = commandes;
+  texteCommande.hidden = !commandes;
+  boutonConfirmer.textContent = options.libelleBouton;
+
+  function fermer() {
+    modal.hidden = true;
+    boutonConfirmer.removeEventListener("click", surConfirmer);
+    boutonAnnuler.removeEventListener("click", surAnnuler);
+    document.removeEventListener("keydown", surTouche);
+  }
+  function surConfirmer() {
+    fermer();
+    options.onConfirmer();
+  }
+  function surAnnuler() {
+    fermer();
+  }
+  function surTouche(evenement) {
+    if (evenement.key === "Escape") fermer();
+  }
+
+  boutonConfirmer.addEventListener("click", surConfirmer);
+  boutonAnnuler.addEventListener("click", surAnnuler);
+  document.addEventListener("keydown", surTouche);
+
+  modal.hidden = false;
+  boutonAnnuler.focus();
+}
+
 (function () {
   function copierAncienneMethode(texte) {
     var zone = document.createElement("textarea");

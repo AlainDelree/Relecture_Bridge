@@ -566,3 +566,59 @@ pre.brut {
 @keyframes overlay-action-tourner {
   to { transform: rotate(360deg); }
 }
+
+.modal-forte {
+  position: fixed;
+  inset: 0;
+  background: rgba(40, 10, 10, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+}
+
+.modal-forte__panneau {
+  background: #fff;
+  border: 2px solid #c0392b;
+  border-radius: 8px;
+  padding: 1.4rem 1.6rem;
+  max-width: 480px;
+  width: 90%;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+}
+
+.modal-forte__titre {
+  margin: 0 0 0.6rem 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #a33;
+}
+
+.modal-forte__message {
+  margin: 0 0 0.8rem 0;
+  font-size: 0.9rem;
+  color: #333;
+  white-space: pre-wrap;
+}
+
+.modal-forte__commande {
+  background: #fdecea;
+  border: 1px solid #f5c2c0;
+  border-radius: 4px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0 0 1rem 0;
+}
+
+.modal-forte__boutons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.bouton--annuler { background: #eef1f5; color: #3a4550; border-color: #d7dde5; }
+.bouton--annuler:hover { background: #e2e7ee; }
+.bouton--danger { background: #c0392b; color: #fff; border-color: #a33; font-weight: 600; }
+.bouton--danger:hover { background: #a3352a; }

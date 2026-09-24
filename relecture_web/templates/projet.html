@@ -14,16 +14,6 @@
       🧹 Nettoyer ce projet
     </button>
   </form>
-  <script>
-  (function () {
-    var formNettoyer = document.getElementById("form-nettoyer-ce-projet");
-    formNettoyer.addEventListener("submit", function (evenement) {
-      if (!confirm("Nettoyer « {{ projet.nom }} » ?")) {
-        evenement.preventDefault();
-      }
-    });
-  })();
-  </script>
   {% endif %}
 </header>
 
@@ -75,8 +65,7 @@
     fusionné selon <code>git status</code>). Il ne reste que le commit du
     merge lui-même — jusqu'ici un geste manuel en terminal.
   </p>
-  <form method="post" action="{{ url_for('finaliser_merge_route', nom_projet=projet.nom) }}"
-        onsubmit="return confirm('Finaliser le merge de {{ projet.nom }} ?\n\nExécute git commit avec le message par défaut déjà préparé par git (celui pré-rempli par un git commit sans -m).\n\nCommande équivalente :\n{{ projet.commande_finaliser_merge }}');">
+  <form method="post" action="{{ url_for('finaliser_merge_route', nom_projet=projet.nom) }}">
     <button type="submit" class="bouton bouton--merger">✅ Finaliser le merge</button>
   </form>
   {% endif %}
@@ -99,8 +88,7 @@
     « Comparer » pour chaque commit ci-dessous.
   </p>
   {% endif %}
-  <form method="post" action="{{ url_for('securiser_tous_orphelins_route', nom_projet=projet.nom) }}"
-        onsubmit="return confirm('Sécuriser tous les commits orphelins de {{ projet.nom }} ?\n\nGeste défensif pur : ne fusionne ni ne modifie rien. Les commits déjà sécurisés sont simplement ignorés.');">
+  <form method="post" action="{{ url_for('securiser_tous_orphelins_route', nom_projet=projet.nom) }}">
     <button type="submit" class="bouton bouton--securiser">🔒 Sécuriser tous les commits orphelins</button>
   </form>
   <ul class="liste-diagnostics">
@@ -134,8 +122,7 @@
         <span class="badge badge--ok">🔒 sécurisé ({{ d.nom_branche_recuperation }})</span>
         {% else %}
         <form method="post" action="{{ url_for('securiser_orphelin_route', nom_projet=projet.nom, hash_commit=d.hash) }}"
-              class="commit-actions--summary"
-              onsubmit="return confirm('Sécuriser le commit orphelin {{ d.hash }} ({{ projet.nom }}) en créant la branche « {{ d.nom_branche_recuperation }} » ?\n\nGeste défensif pur : ne fusionne ni ne modifie rien.\n\nCommande équivalente :\n{{ d.commande_securisation }}');">
+              class="commit-actions--summary">
           <button type="submit" class="bouton bouton--securiser">🔒 Sécuriser</button>
         </form>
         {% endif %}
@@ -294,22 +281,38 @@
   cases.forEach(function (c) { c.addEventListener("change", actualiser); });
   actualiser();
 
+  // Envoi programmatique après validation d'une confirmation forte (issue
+  // #71) : requestSubmit() redéclenche ce même écouteur, ce drapeau évite
+  // de rouvrir la modale une deuxième fois sur ce second passage.
+  var envoiForce = false;
+
   form.addEventListener("submit", function (evenement) {
-    var action = evenement.submitter ? evenement.submitter.getAttribute("formaction") : "";
+    if (envoiForce) {
+      envoiForce = false;
+      return;
+    }
+
+    var submitter = evenement.submitter;
     var selection = cochees();
     var lignes = [];
+    var nomsEligibles = [];
 
     selection.forEach(function (c) {
-      if (evenement.submitter === boutonPush) {
+      if (submitter === boutonPush) {
         lignes.push(c.dataset.commandePush);
-      } else if (evenement.submitter === boutonMerger && c.dataset.peutMerger === "1") {
+        nomsEligibles.push(c.dataset.nom);
+      } else if (submitter === boutonMerger && c.dataset.peutMerger === "1") {
         lignes.push(commandeMergePour(c));
-      } else if (evenement.submitter === boutonSupprimer && c.dataset.peutSupprimer === "1") {
+        nomsEligibles.push(c.dataset.nom);
+      } else if (submitter === boutonSupprimer && c.dataset.peutSupprimer === "1") {
         lignes.push(c.dataset.commandeSuppression);
-      } else if (evenement.submitter === boutonSupprimerBranche && c.dataset.peutSupprimerBranche === "1") {
+        nomsEligibles.push(c.dataset.nom);
+      } else if (submitter === boutonSupprimerBranche && c.dataset.peutSupprimerBranche === "1") {
         lignes.push(c.dataset.commandeSuppressionBranche);
-      } else if (evenement.submitter === boutonComparerSelection && c.dataset.peutSupprimerBranche === "1") {
+        nomsEligibles.push(c.dataset.nom);
+      } else if (submitter === boutonComparerSelection && c.dataset.peutSupprimerBranche === "1") {
         lignes.push(c.dataset.nom);
+        nomsEligibles.push(c.dataset.nom);
       }
     });
 
@@ -319,26 +322,66 @@
       return;
     }
 
-    if (evenement.submitter === boutonComparerSelection) {
+    if (submitter === boutonComparerSelection) {
       // Action de lecture seule (aucune commande git de modification) : pas
       // de confirmation, contrairement aux autres actions de ce panneau.
       return;
     }
 
-    var verbe = evenement.submitter === boutonPush ? "pousser"
-      : evenement.submitter === boutonMerger ? "fusionner"
-      : evenement.submitter === boutonSupprimerBranche ? "supprimer définitivement la branche de récupération (et son résumé Non_Lu associé) de"
-      : "supprimer";
-    var confirmation = "Confirmer : " + verbe + " " + lignes.length + " branche(s) ({{ projet.nom }}) ?\n\n"
-      + "Commande(s) équivalente(s) :\n" + lignes.join("\n");
-    if (!confirm(confirmation)) {
-      evenement.preventDefault();
+    function libelleUnitaireOuGroupe(prefixe, suffixe) {
+      suffixe = suffixe || "";
+      return nomsEligibles.length === 1
+        ? prefixe + " " + nomsEligibles[0] + suffixe
+        : prefixe + " " + nomsEligibles.length + " branches" + suffixe;
+    }
+
+    if (submitter === boutonMerger) {
+      // Confirmation légère (issue #71) : modifie la branche cible, mais
+      // reste local et annulable tant que le merge n'est pas finalisé —
+      // fenêtre native conservée.
+      var confirmationMerge = "Confirmer : fusionner " + lignes.length + " branche(s) ({{ projet.nom }}) ?\n\n"
+        + "Commande(s) équivalente(s) :\n" + lignes.join("\n");
+      if (!confirm(confirmationMerge)) {
+        evenement.preventDefault();
+        return;
+      }
+      afficherOverlaiAction("Fusion");
       return;
     }
 
-    if (evenement.submitter === boutonPush || evenement.submitter === boutonMerger) {
-      afficherOverlaiAction(evenement.submitter === boutonPush ? "Push" : "Fusion");
+    // Confirmation forte (issue #71) : Push, Supprimer les branches
+    // fusionnées, Supprimer les branches de récupération — actions
+    // difficiles à défaire (le push quitte la machine, les suppressions de
+    // branches de récupération visent des références difficiles à
+    // récupérer). Fenêtre propre à relecture_web, focus par défaut sur
+    // Annuler, bouton décrivant l'action réelle avec sa portée.
+    evenement.preventDefault();
+
+    var libelleBouton, message;
+    if (submitter === boutonPush) {
+      libelleBouton = libelleUnitaireOuGroupe("Pousser", " vers GitHub");
+      message = "Pousse " + lignes.length + " branche(s) de « {{ projet.nom }} » vers GitHub — quitte cette machine.";
+    } else if (submitter === boutonSupprimer) {
+      libelleBouton = libelleUnitaireOuGroupe("Supprimer");
+      message = "Supprime définitivement " + lignes.length + " branche(s) fusionnée(s) de « {{ projet.nom }} ».";
+    } else {
+      libelleBouton = libelleUnitaireOuGroupe("Supprimer");
+      message = "Supprime définitivement " + lignes.length + " branche(s) de récupération de « {{ projet.nom }} » "
+        + "(et le(s) résumé(s) Non_Lu associé(s)) — références difficiles à récupérer.";
     }
+
+    confirmationForte({
+      message: message,
+      commandes: lignes,
+      libelleBouton: libelleBouton,
+      onConfirmer: function () {
+        envoiForce = true;
+        if (submitter === boutonPush) {
+          afficherOverlaiAction("Push");
+        }
+        form.requestSubmit(submitter);
+      },
+    });
   });
 
   var overlay = document.getElementById("overlay-action-en-cours");

@@ -38,8 +38,7 @@
          class="bouton bouton--comparer lien-bouton">Comparer</a>
       <a href="{{ url_for('rapport_commit_route', nom_projet=projet.nom, hash_commit=r.hash, nom_branche=nom_branche) }}"
          class="bouton bouton--rapport lien-bouton">Générer rapport</a>
-      <form method="post" action="{{ url_for('revert_commit_route', nom_projet=projet.nom, nom_branche=nom_branche) }}"
-            onsubmit="return confirm('Revert (annuler) le commit {{ r.hash }} sur « {{ nom_branche }} » ({{ projet.nom }}) ?\n\nCommande équivalente :\n{{ r.commande_revert }}');">
+      <form method="post" action="{{ url_for('revert_commit_route', nom_projet=projet.nom, nom_branche=nom_branche) }}">
         <input type="hidden" name="hash_commit" value="{{ r.hash }}">
         <button type="submit" class="bouton bouton--revert">Revert ce commit</button>
       </form>

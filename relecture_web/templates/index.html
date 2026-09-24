@@ -8,16 +8,6 @@
       🧹 Nettoyer tous les projets
     </button>
   </form>
-  <script>
-  (function () {
-    var formNettoyer = document.getElementById("form-nettoyer-tous-les-projets");
-    formNettoyer.addEventListener("submit", function (evenement) {
-      if (!confirm("Nettoyer tous les projets ?")) {
-        evenement.preventDefault();
-      }
-    });
-  })();
-  </script>
 </header>
 
 {% if erreur %}
