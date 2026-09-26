@@ -4,3 +4,4 @@
 # puisse jamais les embarquer dans un commit sans rapport (issue #74).
 */Non_Lu/
 relecture_web/changelog_fusion.log
+__pycache__/
