@@ -243,11 +243,14 @@ def _pid_vivant(pid):
 
 def lire_verrous_actifs(repertoire_bridge_agent):
     """Chemins `rep=` des verrous actifs de Bridge_Agent — un fichier par
-    tâche `mode_write` en cours dans `logs/verrous/*.lock`, avec des lignes
+    tâche `mode_write` en cours dans `logs/verrous/*.lock`, avec des paires
     `pid=<pid>`, `rep=<chemin_worktree>` et `mode=<mode>` (ajouté par #609
-    côté bridge_agent) — utilisés pour signaler dans la page projet (issue
-    #88) qu'une tâche CCL travaille peut-être encore dans un worktree donné
-    avant de proposer sa suppression (voir `worktree_ccl_actif`).
+    côté bridge_agent) séparées par des espaces — sur une seule ligne en
+    pratique côté Bridge_Agent, mais réparties sur plusieurs lignes
+    également acceptées (issue #89) — utilisés pour signaler dans la page
+    projet (issue #88) qu'une tâche CCL travaille peut-être encore dans un
+    worktree donné avant de proposer sa suppression (voir
+    `worktree_ccl_actif`).
 
     Un verrou n'est retenu que si son `pid` correspond à un processus
     toujours vivant (voir `_pid_vivant`) — un fichier `.lock` laissé derrière
@@ -277,9 +280,10 @@ def lire_verrous_actifs(repertoire_bridge_agent):
 
         champs = {}
         for ligne in contenu.splitlines():
-            cle, separateur, valeur = ligne.partition("=")
-            if separateur:
-                champs[cle.strip()] = valeur.strip()
+            for jeton in ligne.split():
+                cle, separateur, valeur = jeton.partition("=")
+                if separateur:
+                    champs[cle.strip()] = valeur.strip()
 
         rep = champs.get("rep")
         pid_texte = champs.get("pid")

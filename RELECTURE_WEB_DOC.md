@@ -201,10 +201,12 @@ Sur la page « branches d'un projet » :
 - **`⚠ point d'attention`** — sur une carte de commit repliée, le résumé
   fonctionnel généré automatiquement contient du texte non vide dans sa
   section « Points d'attention ».
-- **`⚠ CCL travaille ici`** (issue #88) — un fichier de verrou actif de
-  Bridge_Agent (`logs/verrous/*.lock`, une ligne `pid=<pid>` et une ligne
-  `rep=<chemin>` par tâche `mode_write` en cours ; `mode=` ajouté par
-  l'issue #609 côté Bridge_Agent) désigne, par son `rep=`, le worktree de
+- **`⚠ CCL travaille ici`** (issue #88, format corrigé par l'issue #89) — un
+  fichier de verrou actif de Bridge_Agent (`logs/verrous/*.lock`, avec des
+  paires `pid=<pid>` et `rep=<chemin>` par tâche `mode_write` en cours,
+  toutes sur une seule ligne séparées par des espaces en pratique côté
+  Bridge_Agent ; `mode=` ajouté par l'issue #609 côté Bridge_Agent) désigne,
+  par son `rep=`, le worktree de
   cette branche — et le `pid` porté par ce verrou correspond à un
   processus toujours vivant (sinon fichier orphelin d'une tâche terminée
   sans nettoyage, ex. `kill -9`, ignoré). Signale qu'une tâche CCL travaille
