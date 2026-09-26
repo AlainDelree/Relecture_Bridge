@@ -399,10 +399,17 @@ pre.brut.contexte-conflit {
 }
 
 .conflit-bloc {
+  position: relative;
   border: 1px solid #ddd;
   border-radius: 6px;
   margin: 0.6rem 0;
   overflow: hidden;
+}
+.conflit-bloc__copier {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.4rem;
+  z-index: 1;
 }
 .conflit-bloc__entete {
   margin: 0;
@@ -538,6 +545,8 @@ pre.brut.contexte-conflit {
 .fleche--ours:hover { background: #c3d6f7; }
 .fleche--theirs { background: #fbe9cf; color: #a35a00; border-color: #f0d7ab; }
 .fleche--theirs:hover { background: #f0d7ab; }
+.fleche--deux { background: #ede7f6; color: #5e35b1; border-color: #d1c4e9; }
+.fleche--deux:hover { background: #d1c4e9; }
 .fleche--vider { background: #eafaf1; color: #1e7b34; border-color: #b7ddc3; }
 .fleche--vider:hover { background: #d9f3e4; }
 

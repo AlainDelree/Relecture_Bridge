@@ -1504,6 +1504,19 @@ def _trouver_blocs_conflit(lignes):
     return blocs
 
 
+def _texte_affiche_bloc(bloc):
+    """Reconstitue le texte tel qu'affiché dans le panneau gauche pour un
+    bloc de conflit (issue #90, bouton « Copier ce bloc ») : l'en-tête
+    HEAD, son contenu, l'en-tête de la branche entrante puis son contenu,
+    dans l'ordre où `conflit.html` les empile visuellement (chaque saut de
+    ligne entre eux n'est ajouté que si le texte qui précède n'en a pas déjà
+    un en fin, pour ne jamais dupliquer une ligne vide)."""
+    partie_ours = bloc["entete_ours"] + "\n" + bloc["texte_ours"]
+    if not partie_ours.endswith("\n"):
+        partie_ours += "\n"
+    return partie_ours + bloc["entete_theirs"] + "\n" + bloc["texte_theirs"]
+
+
 def _extraire_blocs_conflit(contenu):
     """Découpe le contenu d'un fichier en conflit en segments alternant
     texte de contexte et blocs de conflit (issue #55), via
@@ -1514,8 +1527,10 @@ def _extraire_blocs_conflit(contenu):
 
     Retourne une liste de segments : {type: 'contexte', texte} ou
     {type: 'conflit', index, entete_ours, texte_ours, entete_theirs,
-    texte_theirs} — `index` (0-based) est la numérotation stable du bloc,
-    à renvoyer telle quelle lors d'une résolution (issue #56)."""
+    texte_theirs, texte_affiche} — `index` (0-based) est la numérotation
+    stable du bloc, à renvoyer telle quelle lors d'une résolution (issue
+    #56) ; `texte_affiche` (issue #90) est le texte complet du panneau
+    gauche pour ce bloc, marqueurs de conflit compris, prêt à copier."""
     lignes = contenu.splitlines(keepends=True)
     blocs = _trouver_blocs_conflit(lignes)
 
@@ -1532,6 +1547,7 @@ def _extraire_blocs_conflit(contenu):
             "texte_ours": bloc["texte_ours"],
             "entete_theirs": bloc["entete_theirs"],
             "texte_theirs": bloc["texte_theirs"],
+            "texte_affiche": _texte_affiche_bloc(bloc),
         })
         position = bloc["fin"]
 

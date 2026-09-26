@@ -713,6 +713,32 @@ d'inventer un contenu — dans ce cas d'échec, la redirection reste celle
 vers la page projet (rien n'a changé à rouvrir). Le bouton disparaît
 naturellement une fois le merge finalisé (plus de `MERGE_HEAD`).
 
+**« Garder les deux » (issue #90)** : une quatrième flèche, violette
+(⇅), entre les flèches bleue/orange et le bouton ✕ vide. Contrairement
+aux flèches bleue et orange (remplacement complet du résultat, comportement
+inchangé), celle-ci concatène — le contenu HEAD puis celui de la branche
+entrante à la suite dans le `<textarea>` du résultat, avec un saut de
+ligne entre les deux uniquement si le texte HEAD n'en a pas déjà un en
+fin (jamais de ligne vide dupliquée). Répond au cas fréquent de deux
+ajouts indépendants au même endroit, où il faut garder les deux plutôt
+que choisir un seul côté.
+
+**« Copier ce bloc » (issue #90)** : dans le panneau gauche (lecture
+seule), chaque bloc porte en plus son propre bouton `.bouton-copier`
+(coin haut-droit), qui copie tout le texte affiché de ce bloc précis —
+en-têtes `<<<<<<<`/`>>>>>>>` et contenu des deux côtés compris, tel
+qu'affiché à l'écran — pour un collage direct dans une conversation
+Claude Chat, sans passer par une capture d'écran (imprécise sur les gros
+blocs). Le texte copié est précalculé côté serveur (`texte_affiche` dans
+`_extraire_blocs_conflit`, `git_info.py`), avec la même règle de saut de
+ligne que « Garder les deux » ci-dessus, pour ne jamais dupliquer une
+ligne vide entre les deux moitiés du bloc. Le marqueur `=======` séparant
+les deux versions dans un fichier en conflit brut n'apparaît volontairement
+pas dans cette page (ni à l'écran ni dans le texte copié) : le panneau
+gauche remplace déjà ce séparateur par l'en-tête `>>>>>>> <branche>` au-dessus
+du contenu de la branche entrante, qui joue le même rôle de repère visuel
+sans perdre le nom de la branche.
+
 ## 11. Comment interpréter une capture ou un export de `relecture_web`
 
 Si Alain montre une capture d'écran ou un texte copié depuis

@@ -80,6 +80,7 @@
         {% endif %}
       {% else %}
         <div class="conflit-cellule conflit-cellule--gauche conflit-bloc" id="bloc-{{ segment.index }}-gauche" data-bloc-index="{{ segment.index }}">
+          <button type="button" class="bouton-copier conflit-bloc__copier" data-copier="{{ segment.texte_affiche }}" title="Copier ce bloc (marqueurs de conflit compris)">📋</button>
           <p class="conflit-bloc__entete conflit-bloc__entete--ours">{{ segment.entete_ours }}</p>
           <pre class="conflit-bloc__texte conflit-bloc__texte--ours">{{ segment.texte_ours }}</pre>
           <p class="conflit-bloc__entete conflit-bloc__entete--theirs">{{ segment.entete_theirs }}</p>
@@ -90,6 +91,7 @@
         <div class="conflit-cellule conflit-cellule--milieu conflit-fleches" id="bloc-{{ segment.index }}-fleches" data-bloc-index="{{ segment.index }}">
           <button type="button" class="fleche fleche--ours" data-action="copier-ours" data-bloc-index="{{ segment.index }}" title="Copier la version HEAD (branche actuelle) dans le résultat">→</button>
           <button type="button" class="fleche fleche--theirs" data-action="copier-theirs" data-bloc-index="{{ segment.index }}" title="Copier la version de la branche entrante{% if nom_branche_bloc %} ({{ nom_branche_bloc }}){% endif %} dans le résultat">→</button>
+          <button type="button" class="fleche fleche--deux" data-action="garder-les-deux" data-bloc-index="{{ segment.index }}" title="Garder les deux versions (HEAD puis branche entrante) dans le résultat">⇅</button>
           <button type="button" class="fleche fleche--vider" data-action="vider" data-bloc-index="{{ segment.index }}" title="Vider le résultat">✕</button>
         </div>
 
@@ -158,6 +160,13 @@
     } else if (bouton.dataset.action === "copier-theirs") {
       var theirs = document.querySelector("#bloc-" + index + "-gauche .conflit-bloc__texte--theirs");
       zone.value = theirs ? theirs.textContent : "";
+    } else if (bouton.dataset.action === "garder-les-deux") {
+      var ours = document.querySelector("#bloc-" + index + "-gauche .conflit-bloc__texte--ours");
+      var theirs = document.querySelector("#bloc-" + index + "-gauche .conflit-bloc__texte--theirs");
+      var texteOurs = ours ? ours.textContent : "";
+      var texteTheirs = theirs ? theirs.textContent : "";
+      var jointure = (texteOurs && !texteOurs.endsWith("\n")) ? "\n" : "";
+      zone.value = texteOurs + jointure + texteTheirs;
     } else if (bouton.dataset.action === "vider") {
       zone.value = "";
     }
