@@ -897,6 +897,18 @@ CHEMIN_JOURNAL_FUSION_CHANGELOG = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "changelog_fusion.log"
 )
 
+# Script de fusion CHANGELOG-<N>.md -> CHANGELOG.md : toujours celui de CE
+# dépôt (relecture_bridge), résolu à partir de l'emplacement de ce fichier
+# (relecture_web/git_info.py est à un niveau sous la racine du dépôt, comme
+# scripts/) — jamais une copie potentiellement absente dans le dépôt cible
+# (issue #87 : le merge sur chesscoach échouait avec « script introuvable »
+# faute d'une telle copie, alors que seuls quelques projets en possèdent
+# une). `--repo` cible ensuite le dépôt sur lequel la fusion doit avoir lieu.
+CHEMIN_SCRIPT_FUSION_CHANGELOG = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "scripts", "fusionner_changelog.py",
+)
+
 
 def _journaliser_fusion_changelog(nom_projet, commande, ok, erreur):
     """Ajoute une ligne au journal persistant des tentatives de fusion du
@@ -920,10 +932,11 @@ def fusionner_changelog_worktree(repertoire, nom_projet=None):
     ou plusieurs `CHANGELOG-<N>.md` à la racine du dépôt (chaque worktree
     mode_write écrit le sien plutôt que dans `CHANGELOG.md` directement,
     pour éviter les conflits entre worktrees actifs en parallèle — issue
-    #577 côté Bridge_Agent), lance `scripts/fusionner_changelog.py` (déjà
-    présent dans chaque projet équipé du système de worktrees) pour les
-    intégrer dans `CHANGELOG.md`, geste qu'Alain devait jusqu'ici penser à
-    faire lui-même à chaque merge (issue #51). Retourne None si aucun
+    #577 côté Bridge_Agent), lance `scripts/fusionner_changelog.py` — celui
+    de CE dépôt (relecture_bridge, voir CHEMIN_SCRIPT_FUSION_CHANGELOG),
+    jamais une copie du dépôt cible qui peut ne pas en avoir (issue #87) —
+    pour les intégrer dans `CHANGELOG.md`, geste qu'Alain devait jusqu'ici
+    penser à faire lui-même à chaque merge (issue #51). Retourne None si aucun
     `CHANGELOG-<N>.md` trouvé (rien à fusionner, pas de message nécessaire),
     sinon {ok, erreur, commande} pour affichage transparent — jamais
     d'échec silencieux même si le script est absent. Chaque tentative
@@ -940,7 +953,7 @@ def fusionner_changelog_worktree(repertoire, nom_projet=None):
         return None
 
     nom_projet = nom_projet or os.path.basename(os.path.normpath(repertoire))
-    script = os.path.join(repertoire, "scripts", "fusionner_changelog.py")
+    script = CHEMIN_SCRIPT_FUSION_CHANGELOG
     commande = ["python3", script, "--repo", repertoire]
     commande_str = " ".join(commande)
     if not os.path.isfile(script):

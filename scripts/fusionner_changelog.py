@@ -24,6 +24,21 @@ worktrees) mais par `fusionner_changelog_worktree` dans relecture_web/git_info.p
 depuis l'interface relecture_web — un lancement manuel reste possible (voir
 Usage ci-dessous) pour rattraper un cas resté non fusionné.
 
+Depuis l'issue #87, c'est toujours CETTE copie (celle de relecture_bridge)
+qui est utilisée, quel que soit le projet cible (passé via `--repo`) : la
+plupart des projets n'ont pas leur propre copie du script, seul relecture_web
+en a besoin pour intégrer le CHANGELOG. Le script doit donc rester robuste
+face à un `CHANGELOG.md` cible qui ne suit pas forcément la convention
+« Convention d'ajout : ... » de relecture_bridge (issue #252) :
+- en-tête attendu présent -> insertion juste après, comme avant ;
+- en-tête absent mais un titre de niveau 1 (`# ...`) présent -> insertion
+  juste après ce titre (et la ligne vide qui le suit, le cas échéant) ;
+- ni l'un ni l'autre (fichier vide, ou sans titre) -> insertion en tête du
+  fichier ;
+- `CHANGELOG.md` absent -> créé avec pour seul contenu les entrées fusionnées.
+Dans tous les cas, le contenu existant est conservé intégralement : jamais de
+perte de contenu, seulement un point d'insertion différent.
+
 Usage :
     python3 scripts/fusionner_changelog.py                # dépôt courant (.)
     python3 scripts/fusionner_changelog.py --repo /chemin/vers/le/depot
@@ -53,8 +68,9 @@ def _trouver_fichiers(repo: Path) -> list:
 def _point_insertion(lignes: list) -> int:
     """Index (dans `lignes`) de la ligne juste après la ligne vide qui suit
     « Convention d'ajout : ... » — point d'insertion en tête du contenu,
-    juste après l'en-tête fixe de CHANGELOG.md. None si l'en-tête attendu
-    est introuvable (fichier non conforme à la convention #252)."""
+    juste après l'en-tête fixe de CHANGELOG.md (convention #252). None si
+    l'en-tête attendu est introuvable (CHANGELOG.md d'un autre projet, qui ne
+    suit pas forcément cette convention — voir `_point_insertion_repli`)."""
     for i, ligne in enumerate(lignes):
         if ligne.startswith("Convention d'ajout"):
             for j in range(i + 1, len(lignes)):
@@ -62,6 +78,22 @@ def _point_insertion(lignes: list) -> int:
                     return j + 1
             return len(lignes)
     return None
+
+
+def _point_insertion_repli(lignes: list) -> int:
+    """Point d'insertion utilisé quand l'en-tête « Convention d'ajout : ... »
+    est absent (issue #87 — CHANGELOG.md d'un projet sans cette convention) :
+    juste après le premier titre de niveau 1 (`# ...`) rencontré, et la ligne
+    vide qui le suit le cas échéant ; sinon (aucun titre, ou fichier vide/
+    absent) en tête du fichier (index 0). Ne perd jamais de contenu : ne fait
+    que choisir où insérer les nouvelles entrées."""
+    for i, ligne in enumerate(lignes):
+        if ligne.lstrip().startswith("# "):
+            j = i + 1
+            while j < len(lignes) and lignes[j].strip() == "":
+                j += 1
+            return j
+    return 0
 
 
 def fusionner(repo: Path) -> dict:
@@ -72,15 +104,17 @@ def fusionner(repo: Path) -> dict:
         return {"erreur": None, "traites": [], "message": "Aucun CHANGELOG-<N>.md trouvé — rien à fusionner."}
 
     fichier_changelog = repo / "CHANGELOG.md"
-    if not fichier_changelog.exists():
-        return {"erreur": f"CHANGELOG.md introuvable : {fichier_changelog}"}
-
-    contenu = fichier_changelog.read_text(encoding="utf-8")
-    lignes = contenu.splitlines(keepends=True)
-    idx = _point_insertion(lignes)
-    if idx is None:
-        return {"erreur": "en-tête fixe introuvable dans CHANGELOG.md "
-                           "(ligne « Convention d'ajout : ... » absente)"}
+    en_tete_absent = False
+    if fichier_changelog.exists():
+        contenu = fichier_changelog.read_text(encoding="utf-8")
+        lignes = contenu.splitlines(keepends=True)
+        idx = _point_insertion(lignes)
+        if idx is None:
+            en_tete_absent = True
+            idx = _point_insertion_repli(lignes)
+    else:
+        lignes = []
+        idx = 0
 
     blocs = []
     for n, chemin in fichiers:
@@ -93,7 +127,11 @@ def fusionner(repo: Path) -> dict:
     for n, chemin in fichiers:
         chemin.unlink()
 
-    return {"erreur": None, "traites": [(n, chemin.name) for n, chemin in fichiers]}
+    return {
+        "erreur": None,
+        "traites": [(n, chemin.name) for n, chemin in fichiers],
+        "en_tete_absent": en_tete_absent,
+    }
 
 
 def _afficher_rapport(rapport: dict) -> int:
@@ -109,6 +147,10 @@ def _afficher_rapport(rapport: dict) -> int:
     print(f"{len(rapport['traites'])} fichier(s) fusionné(s) dans CHANGELOG.md (issues {numeros}) :")
     for n, nom in rapport["traites"]:
         print(f"  - {nom} -> supprimé après fusion")
+    if rapport.get("en_tete_absent"):
+        print("NOTE : en-tête « Convention d'ajout : ... » absent de CHANGELOG.md "
+              "(projet sans cette convention) — insertion en repli, après le "
+              "premier titre trouvé ou en tête de fichier.")
     return 0
 
 
