@@ -44,6 +44,7 @@ from git_info import (
     get_sujet_commit,
     hash_depuis_branche_recuperation,
     lire_conflits_fichier,
+    lire_verrous_actifs,
     nom_branche_recuperation,
     pousser_branche,
     resoudre_bloc_conflit,
@@ -57,6 +58,7 @@ from git_info import (
     verifier_finalisation_merge_apres_timeout,
     verifier_merge_apres_timeout,
     verifier_push_apres_timeout,
+    worktree_ccl_actif,
 )
 from resumes_info import (
     collect_resumes_projet,
@@ -112,6 +114,18 @@ def _branches_par_nom(projet):
         branche["nom"]: branche
         for branche in get_branches_locales(projet["repertoire"], projet["branche_cible_comparaison"])
     }
+
+
+def _verrous_actifs_projets(projets):
+    """Verrous Bridge_Agent actifs (issue #88, voir `lire_verrous_actifs`) —
+    localise le répertoire du projet "bridge_agent" dans `projets` (même
+    tableau BRIDGE_AGENT_DOC.md que `collect_etat_projets`, réutilisé ici
+    plutôt que retélécharger la doc), puis lit ses `logs/verrous/*.lock`.
+    Dégrade proprement à liste vide si ce projet est absent du tableau."""
+    repertoire_bridge_agent = next(
+        (p["repertoire"] for p in projets if p["nom"] == "bridge_agent"), None
+    )
+    return lire_verrous_actifs(repertoire_bridge_agent)
 
 
 def _diagnostiquer_orphelins(projet, resumes_orphelins):
@@ -722,6 +736,13 @@ def projet_route(nom_projet):
     cible_merge_configuree = projet["branche_cible_comparaison"]
     branches = get_branches_locales(projet["repertoire"], cible_merge_configuree)
 
+    # Badge « ⚠ CCL travaille ici » (issue #88) : un verrou Bridge_Agent actif
+    # dont le `rep=` correspond au worktree d'une branche signale qu'une
+    # tâche mode_write y travaille peut-être encore (reprise après
+    # redémarrage, cf. l'incident #73/#609 côté Bridge_Agent) — simple signal
+    # visuel avant toute action, voir `worktree_ccl_actif` plus bas.
+    verrous_actifs = _verrous_actifs_projets(projets)
+
     # Issue #52 : un projet à plusieurs cibles configurées (ex. `scrabble`,
     # `master` ou `feature/moteur-strategique`) n'a pas de cible évidente à
     # calculer automatiquement — merger vers l'une ou l'autre n'a pas le même
@@ -748,6 +769,7 @@ def projet_route(nom_projet):
         branche["nb_resumes"] = len(resumes_par_branche.get(branche["nom"], []))
         branche["est_principale"] = branche["nom"] == projet["branche_principale"]
         branche["commande_push"] = f"git -C {projet['repertoire']} push {remote} {branche['nom']}"
+        branche["verrou_ccl_actif"] = worktree_ccl_actif(branche["chemin_worktree"], verrous_actifs)
 
         branche["peut_merger"] = branche["nom"] not in cibles_merge
 
@@ -775,6 +797,41 @@ def projet_route(nom_projet):
             branche["commandes_merge"] = (
                 {cible: _commande_merge(cible, branche["nom"]) for cible in cibles_merge}
                 if branche["peut_merger"] else None
+            )
+
+        # Bouton combiné « Merger et supprimer » (issue #88) : mêmes
+        # conditions d'éligibilité que le Merger seul (`peut_merger`),
+        # PLUS le refus si le badge « CCL travaille ici » est actif pour
+        # cette branche — contrairement au Merger seul, qui reste autorisé
+        # avec ce badge (l'utilisateur peut savoir ce qu'il fait
+        # délibérément, voir `merger_et_supprimer_route`). La commande de
+        # suppression prévisualisée ici est calculée SANS passer par
+        # `peut_supprimer` (qui exige `mergee`, forcément faux avant le
+        # merge que ce bouton s'apprête justement à faire) : une fois la
+        # fusion faite, la branche sera par construction fusionnée dans la
+        # cible choisie, donc supprimable selon la même logique que
+        # `commande_suppression` ci-dessous.
+        branche["peut_merger_et_supprimer"] = branche["peut_merger"] and not branche["verrou_ccl_actif"]
+        commande_suppression_apres_merge = (
+            f"git -C {projet['repertoire']} worktree remove {branche['chemin_worktree']}"
+            f" && git -C {projet['repertoire']} branch -D {branche['nom']}"
+            if branche["a_un_worktree"]
+            else f"git -C {projet['repertoire']} branch -D {branche['nom']}"
+        )
+        if len(cibles_merge) == 1:
+            branche["commande_merger_et_supprimer"] = (
+                f"{branche['commande_merge']} && {commande_suppression_apres_merge}"
+                if branche["peut_merger_et_supprimer"] else None
+            )
+            branche["commandes_merger_et_supprimer"] = None
+        else:
+            branche["commande_merger_et_supprimer"] = None
+            branche["commandes_merger_et_supprimer"] = (
+                {
+                    cible: f"{commande} && {commande_suppression_apres_merge}"
+                    for cible, commande in branche["commandes_merge"].items()
+                }
+                if branche["peut_merger_et_supprimer"] else None
             )
 
         # Une branche fusionnée reste supprimable même sans worktree associé
@@ -1101,6 +1158,200 @@ def merger_branches_route(nom_projet):
                 flash(f"⚠️ {erreur_retour_branche}", "erreur")
         else:
             flash(f"❌ Échec de la fusion de « {nom} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+
+@app.route("/projet/<nom_projet>/merger-et-supprimer", methods=["POST"])
+def merger_et_supprimer_route(nom_projet):
+    """Bouton combiné « Merger et supprimer » (issue #88) : enchaîne dans le
+    même clic la fusion d'une branche (même logique que
+    `merger_branches_route`) puis sa suppression (même logique que
+    `supprimer_worktrees_route`), pour les branches sélectionnées où les deux
+    conditions d'aujourd'hui du Merger seul sont réunies (branche pas la
+    cible, pas de contenu doublons uniquement) — mêmes garde-fous que
+    `merger_branches_route` par ailleurs (modifications non committées,
+    choix explicite de la cible pour un projet à plusieurs cibles
+    configurées).
+
+    Refuse en plus d'agir, avec un message flash explicite, si le badge
+    « ⚠ CCL travaille ici » (issue #88, voir `worktree_ccl_actif`) est actif
+    pour une branche — contrairement au Merger seul, qui reste autorisé même
+    avec ce badge affiché (l'utilisateur peut savoir ce qu'il fait
+    délibérément).
+
+    Si le merge échoue (conflit, erreur, timeout non confirmé abouti), aucune
+    suppression n'est tentée pour cette branche — comportement identique à
+    `merger_branches_route`. Si le merge réussit mais que la suppression
+    échoue ensuite (modifications non committées détectées entre-temps par
+    git, cas rare mais réel), les deux résultats sont rapportés séparément
+    dans le message flash : le merge a eu lieu, la suppression non, avec la
+    raison."""
+    noms_branches = request.form.getlist("branches")
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+    if not noms_branches:
+        flash("❌ Aucune branche sélectionnée.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    # Même garde-fou qu'avant tout merge (issue #74) : voir
+    # merger_branches_route pour le détail du raisonnement.
+    modifications = get_modifications_non_committees(projet["repertoire"])
+    if modifications:
+        flash(
+            f"❌ Modifications non committées dans « {projet['repertoire']} » — une tâche CCL y "
+            f"travaille peut-être ; fusion+suppression refusée ({len(modifications)} fichier(s) concerné(s)).",
+            "erreur",
+        )
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    cible_configuree = projet["branche_cible_comparaison"]
+    if isinstance(cible_configuree, list):
+        cible_choisie = request.form.get("cible_merge")
+        if not cible_choisie or cible_choisie not in cible_configuree:
+            flash(
+                f"❌ Plusieurs cibles sont configurées pour « {nom_projet} » "
+                f"({', '.join(cible_configuree)}) — choisissez explicitement la "
+                "cible de fusion avant de merger.",
+                "erreur",
+            )
+            return redirect(url_for("projet_route", nom_projet=nom_projet))
+        branche_cible = cible_choisie
+    else:
+        branche_cible = cible_configuree
+
+    branches = _branches_par_nom(projet)
+    projets, _erreur = _charger_projets()
+    verrous_actifs = _verrous_actifs_projets(projets)
+
+    for nom in noms_branches:
+        branche = branches.get(nom)
+        if not branche:
+            flash(f"❌ Branche « {nom} » introuvable.", "erreur")
+            continue
+        if nom == branche_cible:
+            flash(f"❌ « {nom} » est la branche cible de fusion, fusion ignorée.", "erreur")
+            continue
+        if get_diagnostic_doublons_branche(projet["repertoire"], branche_cible, nom):
+            flash(
+                f"❌ « {nom} » ne contient que des doublons déjà intégrés dans « {branche_cible} », fusion ignorée.",
+                "erreur",
+            )
+            continue
+        if worktree_ccl_actif(branche["chemin_worktree"], verrous_actifs):
+            flash(
+                f"❌ « {nom} » : un verrou Bridge_Agent actif signale une tâche CCL toujours en cours "
+                "dans ce worktree — fusion+suppression refusée (le Merger seul reste possible si vous "
+                "savez ce que vous faites).",
+                "erreur",
+            )
+            continue
+
+        merge_confirme = False
+        try:
+            resultat = fusionner_worktree(projet["repertoire"], branche_cible, nom, projet["nom"])
+        except subprocess.TimeoutExpired:
+            verification = verifier_merge_apres_timeout(projet["repertoire"], branche_cible, nom)
+            if verification["etat"] == "reussie":
+                merge_confirme = True
+                flash(
+                    f"✅ La fusion de « {nom} » a dépassé le délai affiché, mais la vérification "
+                    f"automatique confirme qu'elle a bien abouti dans « {branche_cible} ».",
+                    "succes",
+                )
+            elif verification["etat"] == "conflits_en_attente":
+                flash(
+                    f"⚠️ La fusion de « {nom} » a dépassé le délai — le dépôt est en état de fusion "
+                    "avec des conflits à résoudre (voir la page de résolution de conflits) ; "
+                    "suppression non tentée.",
+                    "erreur",
+                )
+            elif verification["etat"] == "non_aboutie":
+                flash(
+                    f"❌ La fusion de « {nom} » a dépassé le délai et la vérification automatique "
+                    "confirme qu'elle n'a PAS abouti — à relancer ; suppression non tentée.",
+                    "erreur",
+                )
+            else:
+                flash(
+                    f"⚠️ La fusion de « {nom} » a dépassé le délai, et la vérification automatique n'a "
+                    f"pas pu déterminer l'état réel ({verification['erreur'] or 'raison inconnue'}) — "
+                    "suppression non tentée.",
+                    "erreur",
+                )
+        except Exception as exc:
+            flash(
+                f"❌ Erreur inattendue lors de la fusion de « {nom} » : {exc} — suppression non tentée.",
+                "erreur",
+            )
+        else:
+            if resultat["ok"]:
+                merge_confirme = True
+                flash(f"✅ « {nom} » fusionnée dans « {branche_cible} » — {resultat['commande']}", "succes")
+                changelog = resultat.get("changelog")
+                if changelog is not None:
+                    if changelog["ok"]:
+                        flash(f"✅ CHANGELOG-<N>.md fusionné dans CHANGELOG.md — {changelog['commande']}", "succes")
+                    else:
+                        flash(
+                            f"⚠️ « {nom} » fusionnée, mais l'intégration du CHANGELOG a échoué "
+                            f"({changelog['commande']}) : {changelog['erreur']} — à fusionner manuellement.",
+                            "erreur",
+                        )
+                erreur_retour_branche = resultat.get("erreur_retour_branche")
+                if erreur_retour_branche:
+                    flash(f"⚠️ {erreur_retour_branche}", "erreur")
+            else:
+                flash(
+                    f"❌ Échec de la fusion de « {nom} » ({resultat['commande']}) : {resultat['erreur']} — "
+                    "suppression non tentée.",
+                    "erreur",
+                )
+
+        if not merge_confirme:
+            continue
+
+        # Merge confirmé abouti (chemin direct ou après vérification de
+        # timeout) : on enchaîne la suppression, même logique que
+        # `supprimer_worktrees_route` — sauf que `mergee` n'est pas
+        # revérifié ici : la fusion qui vient d'avoir lieu dans
+        # `branche_cible` suffit par construction (comportement volontaire de
+        # ce bouton combiné, contrairement à Supprimer seul qui repart d'un
+        # état affiché potentiellement obsolète).
+        if branche["a_un_worktree"]:
+            resultat_worktree = supprimer_worktree(projet["repertoire"], branche["chemin_worktree"])
+            if not resultat_worktree["ok"]:
+                flash(
+                    f"⚠️ « {nom} » fusionnée, mais la suppression du worktree a échoué "
+                    f"({resultat_worktree['commande']}) : {resultat_worktree['erreur']}.",
+                    "erreur",
+                )
+                continue
+            resultat_branche = supprimer_branche(projet["repertoire"], nom)
+            if resultat_branche["ok"]:
+                flash(
+                    f"✅ Worktree et branche « {nom} » supprimés — {resultat_worktree['commande']} "
+                    f"+ {resultat_branche['commande']}",
+                    "succes",
+                )
+            else:
+                flash(
+                    f"⚠️ « {nom} » fusionnée et worktree supprimé ({resultat_worktree['commande']}), mais la "
+                    f"branche n'a pas pu être supprimée ({resultat_branche['commande']}) : "
+                    f"{resultat_branche['erreur']}",
+                    "erreur",
+                )
+        else:
+            resultat_branche = supprimer_branche(projet["repertoire"], nom)
+            if resultat_branche["ok"]:
+                flash(f"✅ Branche « {nom} » supprimée — {resultat_branche['commande']}", "succes")
+            else:
+                flash(
+                    f"⚠️ « {nom} » fusionnée, mais la suppression de la branche a échoué "
+                    f"({resultat_branche['commande']}) : {resultat_branche['erreur']}.",
+                    "erreur",
+                )
     return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 

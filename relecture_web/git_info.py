@@ -221,6 +221,91 @@ def worktree_orphelin_signale(chemin_worktree, lignes_deja_pris):
     return any(chemin_worktree in ligne for ligne in lignes_deja_pris)
 
 
+def _pid_vivant(pid):
+    """True si un processus `pid` existe actuellement sur la machine (signal
+    0, qui ne tue rien — juste un test d'existence standard côté Unix, voir
+    `os.kill`). Un verrou Bridge_Agent (voir `lire_verrous_actifs`) dont le
+    pid ne correspond plus à aucun processus vivant est un fichier orphelin
+    (tâche terminée sans nettoyage, ex. kill -9) : il ne doit plus compter
+    comme actif."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        # PermissionError (pid existant mais appartenant à un autre
+        # utilisateur) ou toute autre erreur d'accès : impossible d'affirmer
+        # que le processus est mort, on le considère par prudence toujours
+        # vivant plutôt que de risquer un faux négatif sur le badge.
+        return True
+    return True
+
+
+def lire_verrous_actifs(repertoire_bridge_agent):
+    """Chemins `rep=` des verrous actifs de Bridge_Agent — un fichier par
+    tâche `mode_write` en cours dans `logs/verrous/*.lock`, avec des lignes
+    `pid=<pid>`, `rep=<chemin_worktree>` et `mode=<mode>` (ajouté par #609
+    côté bridge_agent) — utilisés pour signaler dans la page projet (issue
+    #88) qu'une tâche CCL travaille peut-être encore dans un worktree donné
+    avant de proposer sa suppression (voir `worktree_ccl_actif`).
+
+    Un verrou n'est retenu que si son `pid` correspond à un processus
+    toujours vivant (voir `_pid_vivant`) — un fichier `.lock` laissé derrière
+    par une tâche terminée sans nettoyage (ex. kill -9) ne doit pas signaler
+    indéfiniment un worktree comme occupé.
+
+    Dégrade proprement à liste vide si Bridge_Agent n'est pas installé au
+    même endroit (`repertoire_bridge_agent` absent) ou si son dossier de
+    verrous est inaccessible/inexistant — jamais d'exception qui romprait
+    l'affichage de la page projet, même principe que
+    `_lignes_deja_pris_watcher`."""
+    if not repertoire_bridge_agent:
+        return []
+    dossier_verrous = os.path.join(repertoire_bridge_agent, "logs", "verrous")
+    try:
+        noms_fichiers = [n for n in os.listdir(dossier_verrous) if n.endswith(".lock")]
+    except OSError:
+        return []
+
+    reps_actifs = []
+    for nom in noms_fichiers:
+        try:
+            with open(os.path.join(dossier_verrous, nom), encoding="utf-8", errors="replace") as fichier:
+                contenu = fichier.read()
+        except OSError:
+            continue
+
+        champs = {}
+        for ligne in contenu.splitlines():
+            cle, separateur, valeur = ligne.partition("=")
+            if separateur:
+                champs[cle.strip()] = valeur.strip()
+
+        rep = champs.get("rep")
+        pid_texte = champs.get("pid")
+        if not rep or not pid_texte:
+            continue
+        try:
+            pid = int(pid_texte)
+        except ValueError:
+            continue
+        if _pid_vivant(pid):
+            reps_actifs.append(rep)
+    return reps_actifs
+
+
+def worktree_ccl_actif(chemin_worktree, reps_actifs):
+    """True si `chemin_worktree` correspond au `rep=` d'un verrou Bridge_Agent
+    actif (voir `lire_verrous_actifs`) — badge « ⚠ CCL travaille ici » de la
+    page projet (issue #88). Comparaison par chemin réel (`os.path.realpath`)
+    des deux côtés, pour ne pas manquer une correspondance à cause d'un lien
+    symbolique ou d'un `..` résiduel dans l'un des deux chemins."""
+    if not chemin_worktree:
+        return False
+    chemin_reel = os.path.realpath(chemin_worktree)
+    return any(os.path.realpath(rep) == chemin_reel for rep in reps_actifs)
+
+
 def get_branche_courante(repertoire):
     """Branche extraite (HEAD) dans `repertoire` — le répertoire du projet
     est toujours le worktree principal du dépôt (le premier de `git worktree

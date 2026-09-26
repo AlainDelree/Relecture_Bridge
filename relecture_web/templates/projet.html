@@ -204,6 +204,9 @@
                data-commandes-merge='{{ (b.commandes_merge or {})|tojson }}'
                data-peut-supprimer="{{ '1' if b.peut_supprimer else '0' }}"
                data-commande-suppression="{{ b.commande_suppression or '' }}"
+               data-peut-merger-supprimer="{{ '1' if b.peut_merger_et_supprimer else '0' }}"
+               data-commande-merger-supprimer="{{ b.commande_merger_et_supprimer or '' }}"
+               data-commandes-merger-supprimer='{{ (b.commandes_merger_et_supprimer or {})|tojson }}'
                data-peut-supprimer-branche="{{ '1' if b.peut_supprimer_branche_recuperation else '0' }}"
                data-commande-suppression-branche="{{ b.commande_suppression_branche_recuperation or '' }}">
       </label>
@@ -213,6 +216,9 @@
         <span class="compteur">({{ b.nb_resumes }})</span>
         {% if b.est_principale %}<span class="badge badge--principal">principale</span>{% endif %}
         {% if b.a_un_worktree %}<span class="badge badge--info">worktree</span>{% endif %}
+        {% if b.verrou_ccl_actif %}
+        <span class="badge badge--attention" title="Un verrou Bridge_Agent actif (logs/verrous/*.lock, pid vivant) désigne ce worktree comme occupé par une tâche CCL en cours — signal visuel seulement, ne bloque pas Merger, mais évitez d'y toucher tant qu'elle n'est pas terminée.">⚠ CCL travaille ici</span>
+        {% endif %}
         {% if b.mergee and not b.est_principale %}<span class="badge badge--ok">fusionnée</span>{% endif %}
         {% if b.ne_contient_que_doublons %}
         <span class="badge badge--doublon" title="Tous les commits propres de cette branche sont déjà intégrés dans « {{ projet.branche_cible_comparaison }} » sous un autre hash — fusion inutile.">♻️ doublons uniquement — rien à merger</span>
@@ -255,6 +261,8 @@
     {% endif %}
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('supprimer_worktrees_route', nom_projet=projet.nom) }}"
             class="bouton bouton--supprimer" id="bouton-supprimer">Supprimer la/les branche(s) fusionnée(s)</button>
+    <button type="submit" form="form-actions-branches" formaction="{{ url_for('merger_et_supprimer_route', nom_projet=projet.nom) }}"
+            class="bouton bouton--supprimer" id="bouton-merger-supprimer">Merger et supprimer</button>
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('comparer_selection_route', nom_projet=projet.nom) }}"
             class="bouton bouton--comparer" id="bouton-comparer-selection">Comparer la sélection</button>
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('supprimer_branches_recuperation_route', nom_projet=projet.nom) }}"
@@ -282,6 +290,7 @@
   var boutonPush = document.getElementById("bouton-push");
   var boutonMerger = document.getElementById("bouton-merger");
   var boutonSupprimer = document.getElementById("bouton-supprimer");
+  var boutonMergerSupprimer = document.getElementById("bouton-merger-supprimer");
   var boutonComparerSelection = document.getElementById("bouton-comparer-selection");
   var boutonSupprimerBranche = document.getElementById("bouton-supprimer-branche-recuperation");
   var selectCibleMerge = document.getElementById("select-cible-merge");
@@ -309,12 +318,29 @@
     }
   }
 
+  // Même principe que commandeMergePour ci-dessus, pour la commande de
+  // suppression prévisualisée après la fusion du bouton combiné.
+  function commandeMergerSupprimerPour(c) {
+    if (c.dataset.commandeMergerSupprimer) {
+      return c.dataset.commandeMergerSupprimer;
+    }
+    if (!selectCibleMerge || !c.dataset.commandesMergerSupprimer) {
+      return "";
+    }
+    try {
+      return JSON.parse(c.dataset.commandesMergerSupprimer)[selectCibleMerge.value] || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
   function actualiser() {
     var selection = cochees();
     panneau.hidden = selection.length === 0;
     compteur.textContent = selection.length;
     boutonMerger.disabled = !selection.some(function (c) { return c.dataset.peutMerger === "1"; });
     boutonSupprimer.disabled = !selection.some(function (c) { return c.dataset.peutSupprimer === "1"; });
+    boutonMergerSupprimer.disabled = !selection.some(function (c) { return c.dataset.peutMergerSupprimer === "1"; });
     boutonComparerSelection.disabled = !selection.some(function (c) { return c.dataset.peutSupprimerBranche === "1"; });
     boutonSupprimerBranche.disabled = !selection.some(function (c) { return c.dataset.peutSupprimerBranche === "1"; });
   }
@@ -347,6 +373,9 @@
         nomsEligibles.push(c.dataset.nom);
       } else if (submitter === boutonSupprimer && c.dataset.peutSupprimer === "1") {
         lignes.push(c.dataset.commandeSuppression);
+        nomsEligibles.push(c.dataset.nom);
+      } else if (submitter === boutonMergerSupprimer && c.dataset.peutMergerSupprimer === "1") {
+        lignes.push(commandeMergerSupprimerPour(c));
         nomsEligibles.push(c.dataset.nom);
       } else if (submitter === boutonSupprimerBranche && c.dataset.peutSupprimerBranche === "1") {
         lignes.push(c.dataset.commandeSuppressionBranche);
@@ -395,6 +424,31 @@
         onConfirmer: function () {
           envoiForce = true;
           afficherOverlaiAction("Fusion");
+          form.requestSubmit(submitter);
+        },
+      });
+      return;
+    }
+
+    if (submitter === boutonMergerSupprimer) {
+      // Confirmation légère unique pour l'ensemble (issue #88), décrivant
+      // les deux étapes qui vont s'enchaîner dans le même clic — même
+      // variant visuel que le Merger seul (reste local et annulable tant
+      // que le worktree n'a pas réellement été retiré).
+      evenement.preventDefault();
+      var cibleChoisieMergerSupprimer = selectCibleMerge ? selectCibleMerge.value : CIBLE_MERGE_UNIQUE;
+      var libelleMergerSupprimer = nomsEligibles.length === 1
+        ? "Merger " + nomsEligibles[0] + " dans " + cibleChoisieMergerSupprimer + " puis la supprimer"
+        : "Merger " + nomsEligibles.length + " branches dans " + cibleChoisieMergerSupprimer + " puis les supprimer";
+      ouvrirConfirmation({
+        variant: "legere",
+        message: libelleMergerSupprimer + " — " + NOM_PROJET,
+        commandes: lignes,
+        libelleBouton: libelleMergerSupprimer,
+        nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
+        onConfirmer: function () {
+          envoiForce = true;
+          afficherOverlaiAction("Fusion et suppression");
           form.requestSubmit(submitter);
         },
       });
