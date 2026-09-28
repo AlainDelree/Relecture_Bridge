@@ -8,17 +8,23 @@ programme est la maison des futures actions de relecture (merge/suppression
 de worktree, résumés) ; la lecture git est réimplémentée dans git_info.py,
 sans importer le code de bridge_agent (hors périmètre relecture_bridge).
 
-Usage local uniquement, pas de protection par mot de passe (même choix que
-new_issue.py).
+Authentification (issue #92, voir auth.py) : mot de passe optionnel selon le
+mode de lancement — voir RELECTURE_WEB_DOC.md.
 
-    python3 relecture_web/app.py
+    python3 relecture_web/app.py             # 127.0.0.1, sans mot de passe
+    python3 relecture_web/app.py --lan       # 0.0.0.0, HTTP, sans mot de passe
+    python3 relecture_web/app.py --externe   # 0.0.0.0, HTTPS, mot de passe obligatoire
+    python3 relecture_web/app.py --set-password
 """
 
 import os
 import subprocess
+from datetime import timedelta
+from functools import wraps
 
-from flask import Flask, flash, g, redirect, render_template, request, url_for
+from flask import Flask, flash, g, redirect, render_template, request, session, url_for
 
+import auth
 from git_info import (
     ErreurRecuperationProjets,
     collect_etat_projets,
@@ -70,9 +76,30 @@ from resumes_info import (
 PORT = 5057
 
 app = Flask(__name__)
-# Usage strictement local (pas d'exposition réseau) : une clé fixe par
-# processus suffit, seule utilité ici est la signature des messages flash.
-app.secret_key = os.urandom(24)
+# Clé persistée (issue #92, auth.py) — jamais régénérée à chaque lancement,
+# sinon une session survivante serait invalidée à chaque redémarrage.
+app.secret_key = auth.charger_ou_creer_cle_secrete()
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
+# MDP_EXIGE n'est vrai qu'en mode --externe (voir bloc __main__ en bas de ce
+# fichier) — False par défaut pour que les imports (tests, etc.) ne se
+# retrouvent jamais avec une authentification exigée sans configuration
+# explicite.
+app.config["MDP_EXIGE"] = False
+
+
+def login_requis(f):
+    """Décorateur de connexion (issue #92, même principe que côté
+    bridge_agent) appliqué à toutes les routes. Ne bloque rien tant que
+    `MDP_EXIGE` est faux (modes par défaut et --lan, comportement local
+    préservé) — seul le mode --externe l'active."""
+    @wraps(f)
+    def enveloppe(*args, **kwargs):
+        if not app.config.get("MDP_EXIGE"):
+            return f(*args, **kwargs)
+        if not session.get("authentifie"):
+            return redirect(url_for("connexion_route", suivant=request.path))
+        return f(*args, **kwargs)
+    return enveloppe
 
 
 def _charger_projets():
@@ -216,6 +243,33 @@ def _construire_rapport_commit(
     return "\n".join(lignes)
 
 
+@app.route("/connexion", methods=["GET", "POST"])
+def connexion_route():
+    """Page de connexion (issue #92) — n'existe fonctionnellement qu'en mode
+    --externe (`MDP_EXIGE`) : dans les autres modes, redirige directement
+    vers `suivant` sans rien demander, pour ne jamais bloquer l'usage local
+    ou LAN existant."""
+    suivant = request.values.get("suivant") or url_for("index")
+    if not app.config.get("MDP_EXIGE"):
+        return redirect(suivant)
+
+    if request.method == "POST":
+        if auth.verifier_mot_de_passe(request.form.get("mot_de_passe", "")):
+            session.clear()
+            session["authentifie"] = True
+            session.permanent = True
+            return redirect(suivant)
+        flash("❌ Mot de passe incorrect.", "erreur")
+
+    return render_template("connexion.html", suivant=suivant)
+
+
+@app.route("/deconnexion", methods=["POST"])
+def deconnexion_route():
+    session.clear()
+    return redirect(url_for("connexion_route"))
+
+
 @app.context_processor
 def injecter_barre_laterale():
     """Barre latérale (issue #44) injectée dans tous les templates : liste
@@ -235,6 +289,7 @@ def injecter_barre_laterale():
 
 
 @app.route("/projet/<nom_projet>/rapport/<hash_commit>")
+@login_requis
 def rapport_commit_route(nom_projet, hash_commit):
     """Rapport texte prêt à copier pour un commit que le diagnostic
     automatique ne peut pas trancher (typiquement cas F, issue #22) :
@@ -283,6 +338,7 @@ def rapport_commit_route(nom_projet, hash_commit):
 
 
 @app.route("/projet/<nom_projet>/comparer/<hash_commit>")
+@login_requis
 def comparer_commit_route(nom_projet, hash_commit):
     """Bouton « Comparer » (issue #30) pour un commit orphelin diagnostiqué
     doublon (cas B) : retrouve le commit exact de la branche cible dont le
@@ -315,6 +371,7 @@ def comparer_commit_route(nom_projet, hash_commit):
 
 
 @app.route("/projet/<nom_projet>/conflit/<path:chemin_relatif>")
+@login_requis
 def conflit_fichier_route(nom_projet, chemin_relatif):
     """Détail d'un fichier en conflit de fusion non résolue (issue #55) :
     localise chaque bloc entre `<<<<<<<`/`=======`/`>>>>>>>` et l'affiche en
@@ -353,6 +410,7 @@ def conflit_fichier_route(nom_projet, chemin_relatif):
 
 
 @app.route("/projet/<nom_projet>/conflit/<path:chemin_relatif>/traiter", methods=["POST"])
+@login_requis
 def traiter_bloc_conflit_route(nom_projet, chemin_relatif):
     """Applique le texte final composé par Alain pour un bloc de conflit
     précis (issue #56) : remplace ce bloc (marqueurs compris) par le
@@ -422,6 +480,7 @@ def traiter_bloc_conflit_route(nom_projet, chemin_relatif):
 
 
 @app.route("/projet/<nom_projet>/conflit/<path:chemin_relatif>/traiter-tous", methods=["POST"])
+@login_requis
 def traiter_tous_blocs_conflit_route(nom_projet, chemin_relatif):
     """Variante « tout ou rien » de `traiter_bloc_conflit_route` (issue #69,
     bouton « Traiter tous les blocs ») : applique en une seule opération
@@ -482,6 +541,7 @@ def traiter_tous_blocs_conflit_route(nom_projet, chemin_relatif):
 
 
 @app.route("/projet/<nom_projet>/finaliser-merge", methods=["POST"])
+@login_requis
 def finaliser_merge_route(nom_projet):
     """Finalise le commit de merge une fois tous les conflits résolus (issue
     #61) — jusqu'ici une étape manuelle en terminal (`git commit` sans `-m`,
@@ -546,6 +606,7 @@ def finaliser_merge_route(nom_projet):
 
 
 @app.route("/projet/<nom_projet>/conflit/<path:chemin_relatif>/retraiter", methods=["POST"])
+@login_requis
 def retraiter_fichier_conflit_route(nom_projet, chemin_relatif):
     """Remet un fichier déjà résolu pendant le merge en cours dans son état
     de conflit d'origine (issue #72) — corrige la limite documentée à tort
@@ -595,6 +656,7 @@ def retraiter_fichier_conflit_route(nom_projet, chemin_relatif):
 
 
 @app.route("/projet/<nom_projet>/orphelin/<hash_commit>/securiser", methods=["POST"])
+@login_requis
 def securiser_orphelin_route(nom_projet, hash_commit):
     """Sécurise un commit orphelin (issue #23) en créant une branche
     `recuperation-<hash>` pointant dessus — action déclenchée en un clic
@@ -620,6 +682,7 @@ def securiser_orphelin_route(nom_projet, hash_commit):
 
 
 @app.route("/projet/<nom_projet>/orphelins/securiser-tous", methods=["POST"])
+@login_requis
 def securiser_tous_orphelins_route(nom_projet):
     """Sécurise en un seul geste tous les commits orphelins affichés pour ce
     projet (issue #34), en appliquant `securiser_commit_orphelin` (issue #23)
@@ -666,6 +729,7 @@ def securiser_tous_orphelins_route(nom_projet):
 
 
 @app.route("/")
+@login_requis
 def index():
     """Niveau 1 : liste des projets, avec le nombre de résumés en attente
     pour chacun — pas de détail de branches/commits ici. Le nombre de
@@ -688,6 +752,7 @@ def index():
 
 
 @app.route("/projet/<nom_projet>")
+@login_requis
 def projet_route(nom_projet):
     """Niveau 2 : branches d'un projet (issue #10), chacune avec son compteur
     de résumés en attente et une case à cocher pour la sélection multiple
@@ -871,6 +936,7 @@ def projet_route(nom_projet):
 
 
 @app.route("/projet/<nom_projet>/branche/<path:nom_branche>")
+@login_requis
 def branche_route(nom_projet, nom_branche):
     """Niveau 3 : commits d'une branche, en cartes repliées par défaut (hash +
     message seulement) — le résumé structuré et le diff complet restent
@@ -893,6 +959,7 @@ def branche_route(nom_projet, nom_branche):
 
 
 @app.route("/projet/<nom_projet>/branche/<path:nom_branche>/revert", methods=["POST"])
+@login_requis
 def revert_commit_route(nom_projet, nom_branche):
     hash_commit = request.form.get("hash_commit", "")
     projet, message_erreur = _projet_pret(nom_projet)
@@ -924,6 +991,7 @@ def _supprimer_fichiers(chemins):
 
 
 @app.route("/nettoyer-tous-les-projets", methods=["POST"])
+@login_requis
 def nettoyer_tous_les_projets_route():
     """Applique à chaque projet accessible (statut « ok ») le nettoyage des
     résumés déjà pushés (issue #17, remplace le bouton par-projet de l'issue
@@ -962,6 +1030,7 @@ def nettoyer_tous_les_projets_route():
 
 
 @app.route("/projet/<nom_projet>/nettoyer", methods=["POST"])
+@login_requis
 def nettoyer_projet_route(nom_projet):
     """Nettoie les résumés déjà pushés du seul projet affiché (issue #68) —
     même critère de sécurité que `nettoyer_tous_les_projets_route` (issue
@@ -988,6 +1057,7 @@ def nettoyer_projet_route(nom_projet):
 
 
 @app.route("/projet/<nom_projet>/pousser", methods=["POST"])
+@login_requis
 def pousser_branches_route(nom_projet):
     """Pousse chaque branche sélectionnée (case à cocher, niveau 2) jusqu'à
     son dernier commit — un push cible toujours une branche entière, jamais
@@ -1041,6 +1111,7 @@ def pousser_branches_route(nom_projet):
 
 
 @app.route("/projet/<nom_projet>/merger", methods=["POST"])
+@login_requis
 def merger_branches_route(nom_projet):
     """Fusionne chaque branche sélectionnée (case à cocher, niveau 2) dans la
     branche cible de comparaison configurée pour le projet (repli sur la
@@ -1162,6 +1233,7 @@ def merger_branches_route(nom_projet):
 
 
 @app.route("/projet/<nom_projet>/merger-et-supprimer", methods=["POST"])
+@login_requis
 def merger_et_supprimer_route(nom_projet):
     """Bouton combiné « Merger et supprimer » (issue #88) : enchaîne dans le
     même clic la fusion d'une branche (même logique que
@@ -1356,6 +1428,7 @@ def merger_et_supprimer_route(nom_projet):
 
 
 @app.route("/projet/<nom_projet>/supprimer", methods=["POST"])
+@login_requis
 def supprimer_worktrees_route(nom_projet):
     """Supprime chaque branche sélectionnée (case à cocher, niveau 2),
     seulement si son merge est confirmé — même garde-fou qu'avant (issue
@@ -1427,6 +1500,7 @@ def supprimer_worktrees_route(nom_projet):
 
 
 @app.route("/projet/<nom_projet>/supprimer-branche-recuperation", methods=["POST"])
+@login_requis
 def supprimer_branches_recuperation_route(nom_projet):
     """Supprime définitivement (`git branch -D`) chaque branche de
     récupération sélectionnée (case à cocher, niveau 2), ainsi que les
@@ -1508,6 +1582,7 @@ def supprimer_branches_recuperation_route(nom_projet):
 
 
 @app.route("/projet/<nom_projet>/comparer-selection", methods=["POST"])
+@login_requis
 def comparer_selection_route(nom_projet):
     """Vérification groupée (issue #47) pour une sélection de branches de
     récupération (case à cocher, niveau 2, même sélection que
@@ -1575,7 +1650,47 @@ def comparer_selection_route(nom_projet):
 
 
 if __name__ == "__main__":
+    import argparse
     import threading
     import webbrowser
-    threading.Timer(1.0, lambda: webbrowser.open(f"http://127.0.0.1:{PORT}/")).start()
-    app.run(host="127.0.0.1", port=PORT, debug=False)
+
+    analyseur = argparse.ArgumentParser(description="Lance relecture_web.")
+    groupe_mode = analyseur.add_mutually_exclusive_group()
+    groupe_mode.add_argument(
+        "--lan", action="store_true",
+        help="Écoute sur 0.0.0.0 en HTTP, sans mot de passe (réseau local de confiance uniquement).",
+    )
+    groupe_mode.add_argument(
+        "--externe", action="store_true",
+        help="Écoute sur 0.0.0.0 en HTTPS, mot de passe obligatoire (exposition au-delà du LAN).",
+    )
+    analyseur.add_argument(
+        "--set-password", action="store_true", dest="set_password",
+        help="Définit (ou change) le mot de passe de relecture_web, puis quitte.",
+    )
+    arguments = analyseur.parse_args()
+
+    if arguments.set_password:
+        raise SystemExit(0 if auth.definir_mot_de_passe_interactif() else 1)
+
+    contexte_ssl = None
+    if arguments.externe:
+        if not auth.mot_de_passe_configure():
+            print(
+                "❌ Mode --externe refusé : aucun mot de passe configuré pour relecture_web.\n"
+                "   Lancez d'abord : python3 relecture_web/app.py --set-password"
+            )
+            raise SystemExit(1)
+        hote = "0.0.0.0"
+        app.config["MDP_EXIGE"] = True
+        contexte_ssl = auth.assurer_certificat_ssl()
+    elif arguments.lan:
+        hote = "0.0.0.0"
+        app.config["MDP_EXIGE"] = False
+    else:
+        hote = "127.0.0.1"
+        app.config["MDP_EXIGE"] = False
+
+    schema = "https" if contexte_ssl else "http"
+    threading.Timer(1.0, lambda: webbrowser.open(f"{schema}://127.0.0.1:{PORT}/")).start()
+    app.run(host=hote, port=PORT, debug=False, ssl_context=contexte_ssl)

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Connexion — Relecture</title>
+<link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon.svg') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="connexion">
+  <h1>relecture_web</h1>
+  <p class="sous-titre">Accès protégé (mode --externe) — mot de passe requis.</p>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <ul class="messages">
+      {% for categorie, message in messages %}
+      <li class="message message--{{ categorie }}">{{ message }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  {% endwith %}
+
+  <form method="post" class="connexion__formulaire">
+    <label for="mot_de_passe">Mot de passe</label>
+    <input type="password" id="mot_de_passe" name="mot_de_passe" autofocus required>
+    <input type="hidden" name="suivant" value="{{ suivant }}">
+    <button type="submit" class="bouton bouton--push">Se connecter</button>
+  </form>
+</div>
+</body>
+</html>

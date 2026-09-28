@@ -15,8 +15,13 @@ lecture seule pour l'instant.
 ## Lancer
 
 ```bash
-python3 relecture_web/app.py
+python3 relecture_web/app.py             # 127.0.0.1, HTTP, sans mot de passe (défaut)
+python3 relecture_web/app.py --lan       # 0.0.0.0, HTTP, sans mot de passe
+python3 relecture_web/app.py --externe   # 0.0.0.0, HTTPS, mot de passe obligatoire
+python3 relecture_web/app.py --set-password
 ```
 
-Sert sur `http://127.0.0.1:5057/`. Usage local uniquement, pas de
-protection par mot de passe (même choix que `new_issue.py`).
+Sert sur le port `5057/`. Voir `RELECTURE_WEB_DOC.md` (section « Lancement
+et modes réseau ») pour le détail de l'authentification (issue #92) —
+mêmes noms de modes que `new_issue.py`, implémentation propre à
+`relecture_bridge` (`relecture_web/auth.py`), sans code partagé.

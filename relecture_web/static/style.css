@@ -724,3 +724,25 @@ pre.brut {
 .bouton--danger:hover { background: #a3352a; }
 .bouton--confirmer-legere { background: #eef1f5; color: #1a4fb4; border-color: #c3d6f7; font-weight: 600; }
 .bouton--confirmer-legere:hover { background: #e2e7ee; }
+
+/* Page de connexion (issue #92) — page autonome, hors mise-en-page à barre
+   latérale (base.html), affichée uniquement en mode --externe. */
+.connexion {
+  max-width: 320px;
+  margin: 4rem auto;
+  padding: 1.5rem;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+}
+.connexion h1 { font-size: 1.2rem; margin: 0 0 0.3rem 0; }
+.connexion .sous-titre { font-size: 0.85rem; color: #666; margin: 0 0 1rem 0; }
+.connexion__formulaire { display: flex; flex-direction: column; gap: 0.5rem; }
+.connexion__formulaire label { font-size: 0.85rem; color: #3a4550; }
+.connexion__formulaire input[type="password"] {
+  font-size: 0.9rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #d7dde5;
+  border-radius: 5px;
+}
+.connexion__formulaire .bouton { margin-top: 0.4rem; align-self: flex-start; }

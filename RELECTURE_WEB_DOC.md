@@ -35,15 +35,54 @@ Le fichier `relecture_web/README.md` résume l'intention d'origine :
 « vocation à devenir la maison des futures actions de relecture », pas
 un simple visualiseur en lecture seule.
 
-### Lancement
+### Lancement et modes réseau (issue #92)
+
+`relecture_web` peut déclencher merge, push, suppression de branches et de
+worktrees — contrairement à un simple visualiseur, l'exposer au-delà de la
+machine d'Alain sans protection serait risqué. Trois modes de lancement,
+mêmes noms que `new_issue.py` (`bridge_agent`) pour la cohérence, mais
+implémentation propre à `relecture_bridge` (`relecture_web/auth.py`), sans
+code partagé entre les deux dépôts :
 
 ```bash
-python3 relecture_web/app.py
+python3 relecture_web/app.py             # par défaut : 127.0.0.1, HTTP, sans mot de passe
+python3 relecture_web/app.py --lan       # 0.0.0.0, HTTP, sans mot de passe
+python3 relecture_web/app.py --externe   # 0.0.0.0, HTTPS, mot de passe obligatoire
+python3 relecture_web/app.py --set-password
 ```
 
-Sert sur `http://127.0.0.1:5057/`. Usage strictement local, aucune
-authentification (même choix assumé que `new_issue.py`) — l'outil n'est
-jamais exposé au-delà de la machine d'Alain.
+- **Par défaut (aucun argument)** — `127.0.0.1:5057`, comportement inchangé
+  depuis la création de l'outil : aucune authentification exigée, même si un
+  mot de passe est configuré (usage strictement local).
+- **`--lan`** — `0.0.0.0:5057` en HTTP, toujours sans mot de passe :
+  réservé à un réseau local de confiance, jamais à une exposition au-delà.
+- **`--externe`** — `0.0.0.0:5057` en HTTPS obligatoire (certificat
+  auto-signé, généré une seule fois via `openssl` dans `relecture_web/ssl/`
+  s'il n'existe pas déjà, puis réutilisé) et mot de passe obligatoire :
+  refuse de démarrer si aucun mot de passe n'est configuré, avec un message
+  invitant à lancer `--set-password` d'abord. `--lan` et `--externe` sont
+  incompatibles entre eux (erreur explicite si les deux sont passés).
+- **`--set-password`** — demande le mot de passe deux fois (confirmation,
+  saisie masquée via `getpass`, jamais affiché ni stocké en clair) puis
+  enregistre son hash sha256 dans `relecture_web/mot_de_passe.conf`
+  (permissions 0600, gitignoré — jamais commité) ; quitte sans lancer le
+  serveur.
+
+**Session persistante** : la `SECRET_KEY` Flask est générée une seule fois
+puis persistée dans `relecture_web/secret_key.conf` (gitignoré, permissions
+0600), relue aux lancements suivants — jamais régénérée aléatoirement à
+chaque démarrage, sinon toute session survivante serait invalidée à chaque
+redémarrage. Une connexion réussie (mode `--externe`) reste valide 30 jours
+(`PERMANENT_SESSION_LIFETIME`) : l'outil n'étant pas un service permanent
+(relancé manuellement à chaque merge d'issue), la session doit survivre à
+ses redémarrages fréquents sans devenir illimitée pour autant.
+
+Le décorateur `@login_requis` (`app.py`) est appliqué à toutes les routes,
+mais ne bloque rien tant que le mode courant n'exige pas de mot de passe
+(par défaut et `--lan`) — seul `--externe` l'active réellement. Le mode SSH
+vers un futur PC fixe Windows n'est pas couvert par cette issue : elle ne
+fait que poser l'authentification, prérequis avant d'envisager un jour une
+exposition LAN/externe réelle ; le host d'écoute par défaut ne change pas.
 
 ### Source de la liste des projets
 

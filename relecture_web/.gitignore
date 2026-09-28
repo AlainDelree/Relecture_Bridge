@@ -1,2 +1,8 @@
 __pycache__/
 *.pyc
+
+# Authentification (issue #92) — jamais commités : hash du mot de passe,
+# clé de session Flask persistée, certificat auto-signé (--externe).
+mot_de_passe.conf
+secret_key.conf
+ssl/
