@@ -157,10 +157,18 @@ def fetch_projets():
     return projets
 
 
-def _lancer_git(repertoire, *args):
+def _lancer_git(repertoire, *args, timeout=TIMEOUT_GIT, entree=None):
+    """Point d'entrée unique pour toute commande git de ce module (issue
+    #93, préparation au mode SSH à venir : router `repertoire` vers une
+    exécution locale ou distante en un seul endroit). `timeout` permet aux
+    appelants aux durées atypiques (`TIMEOUT_GIT_LONG` pour push/merge/commit,
+    `TIMEOUT_RESEAU` pour `ls-remote`) de le surcharger sans dupliquer
+    l'appel ; `entree` transmet un texte sur l'entrée standard, pour les
+    commandes qui lisent un pipe (ex. `git patch-id` recevant la sortie de
+    `git show`/`git log -p`)."""
     return subprocess.run(
         ["git", "-C", repertoire, *args],
-        capture_output=True, text=True, timeout=TIMEOUT_GIT,
+        input=entree, capture_output=True, text=True, timeout=timeout,
     )
 
 
@@ -584,7 +592,7 @@ def get_rapport_cherry_brut(repertoire, branche_cible, hash_commit):
     if not branche_cible:
         return {"commande": None, "sortie": None, "erreur": "Branche cible de comparaison non configurée pour ce projet."}
     commande = ["git", "-C", repertoire, "cherry", branche_cible, hash_commit]
-    resultat = subprocess.run(commande, capture_output=True, text=True, timeout=TIMEOUT_GIT)
+    resultat = _lancer_git(repertoire, "cherry", branche_cible, hash_commit)
     return {
         "commande": " ".join(commande),
         "sortie": resultat.stdout.strip() if resultat.returncode == 0 else None,
@@ -600,16 +608,10 @@ def get_patch_id_commit(repertoire, hash_commit):
     la branche cible correspond à un commit orphelin diagnostiqué doublon
     (cas B, bouton « Comparer », issue #30). Retourne None si le commit est
     introuvable ou si le calcul échoue."""
-    diff = subprocess.run(
-        ["git", "-C", repertoire, "show", "--no-color", hash_commit],
-        capture_output=True, text=True, timeout=TIMEOUT_GIT,
-    )
+    diff = _lancer_git(repertoire, "show", "--no-color", hash_commit)
     if diff.returncode != 0:
         return None
-    patch_id = subprocess.run(
-        ["git", "-C", repertoire, "patch-id", "--stable"],
-        input=diff.stdout, capture_output=True, text=True, timeout=TIMEOUT_GIT,
-    )
+    patch_id = _lancer_git(repertoire, "patch-id", "--stable", entree=diff.stdout)
     if patch_id.returncode != 0:
         return None
     lignes = patch_id.stdout.strip().splitlines()
@@ -661,17 +663,11 @@ def trouver_commit_correspondant(repertoire, branche_cible, hash_commit):
     if not patch_id_cible:
         return None
 
-    log = subprocess.run(
-        ["git", "-C", repertoire, "log", "--no-color", "-p", f"{base_commune}..{branche_cible}"],
-        capture_output=True, text=True, timeout=TIMEOUT_GIT,
-    )
+    log = _lancer_git(repertoire, "log", "--no-color", "-p", f"{base_commune}..{branche_cible}")
     if log.returncode != 0 or not log.stdout.strip():
         return None
 
-    patch_ids = subprocess.run(
-        ["git", "-C", repertoire, "patch-id", "--stable"],
-        input=log.stdout, capture_output=True, text=True, timeout=TIMEOUT_GIT,
-    )
+    patch_ids = _lancer_git(repertoire, "patch-id", "--stable", entree=log.stdout)
     if patch_ids.returncode != 0:
         return None
 
@@ -687,10 +683,7 @@ def get_diff_entre_commits(repertoire, hash_a, hash_b):
     (bouton « Comparer », issue #30) — pour un vrai doublon détecté par
     `trouver_commit_correspondant`, attendu vide ou quasi vide. Retourne
     None si la commande git échoue."""
-    resultat = subprocess.run(
-        ["git", "-C", repertoire, "diff", "--no-color", hash_a, hash_b],
-        capture_output=True, text=True, timeout=TIMEOUT_GIT,
-    )
+    resultat = _lancer_git(repertoire, "diff", "--no-color", hash_a, hash_b)
     if resultat.returncode != 0:
         return None
     return resultat.stdout
@@ -942,7 +935,7 @@ def securiser_commit_orphelin(repertoire, hash_commit):
         }
 
     commande = ["git", "-C", repertoire, "branch", nom_branche, hash_commit]
-    resultat = subprocess.run(commande, capture_output=True, text=True, timeout=TIMEOUT_GIT)
+    resultat = _lancer_git(repertoire, "branch", nom_branche, hash_commit)
     return {
         "ok": resultat.returncode == 0,
         "deja_securise": False,
@@ -1054,6 +1047,10 @@ def fusionner_changelog_worktree(repertoire, nom_projet=None):
             "commande": commande_str,
         }
 
+    # `commande` lance un script Python, pas une commande git : reste hors
+    # de la centralisation _lancer_git de l'issue #93 (routage local/SSH à
+    # venir), donc une deuxième surface d'exécution distincte de git dans ce
+    # module, à garder à l'esprit pour une éventuelle issue de suivi.
     resultat = subprocess.run(
         commande, capture_output=True, text=True, timeout=TIMEOUT_GIT,
     )
@@ -1173,9 +1170,7 @@ def fusionner_worktree(repertoire, branche_cible, branche_source, nom_projet=Non
             }
 
     commande = ["git", "-C", repertoire, "merge", branche_source]
-    resultat = subprocess.run(
-        commande, capture_output=True, text=True, timeout=TIMEOUT_GIT_LONG,
-    )
+    resultat = _lancer_git(repertoire, "merge", branche_source, timeout=TIMEOUT_GIT_LONG)
 
     resultat_changelog = None
     if resultat.returncode == 0:
@@ -1246,9 +1241,7 @@ def supprimer_worktree(repertoire, chemin_worktree):
     refuse de lui-même si le worktree a des modifications non commitées).
     Retourne {ok, erreur, commande} pour affichage transparent."""
     commande = ["git", "-C", repertoire, "worktree", "remove", chemin_worktree]
-    resultat = subprocess.run(
-        commande, capture_output=True, text=True, timeout=TIMEOUT_GIT,
-    )
+    resultat = _lancer_git(repertoire, "worktree", "remove", chemin_worktree)
     return {
         "ok": resultat.returncode == 0,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
@@ -1267,9 +1260,7 @@ def supprimer_branche(repertoire, nom_branche):
     l'appelant avant l'appel, exactement comme pour `supprimer_worktree`.
     Retourne {ok, erreur, commande} pour affichage transparent."""
     commande = ["git", "-C", repertoire, "branch", "-D", nom_branche]
-    resultat = subprocess.run(
-        commande, capture_output=True, text=True, timeout=TIMEOUT_GIT,
-    )
+    resultat = _lancer_git(repertoire, "branch", "-D", nom_branche)
     return {
         "ok": resultat.returncode == 0,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
@@ -1299,9 +1290,7 @@ def supprimer_branche_recuperation(repertoire, nom_branche):
         }
 
     commande = ["git", "-C", repertoire, "branch", "-D", nom_branche]
-    resultat = subprocess.run(
-        commande, capture_output=True, text=True, timeout=TIMEOUT_GIT,
-    )
+    resultat = _lancer_git(repertoire, "branch", "-D", nom_branche)
     return {
         "ok": resultat.returncode == 0,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
@@ -1315,9 +1304,7 @@ def revert_commit(repertoire, hash_commit):
     (contrairement au push, pas de contrainte d'ordre). Retourne
     {ok, erreur, commande} pour affichage transparent."""
     commande = ["git", "-C", repertoire, "revert", "--no-edit", hash_commit]
-    resultat = subprocess.run(
-        commande, capture_output=True, text=True, timeout=TIMEOUT_GIT,
-    )
+    resultat = _lancer_git(repertoire, "revert", "--no-edit", hash_commit)
     return {
         "ok": resultat.returncode == 0,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
@@ -1332,9 +1319,7 @@ def pousser_branche(repertoire, branche):
     Retourne {ok, erreur, commande} pour affichage transparent."""
     remote = get_remote_defaut(repertoire)
     commande = ["git", "-C", repertoire, "push", remote, branche]
-    resultat = subprocess.run(
-        commande, capture_output=True, text=True, timeout=TIMEOUT_GIT_LONG,
-    )
+    resultat = _lancer_git(repertoire, "push", remote, branche, timeout=TIMEOUT_GIT_LONG)
     return {
         "ok": resultat.returncode == 0,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
@@ -1362,9 +1347,8 @@ def verifier_push_apres_timeout(repertoire, branche):
 
     remote = get_remote_defaut(repertoire)
     try:
-        resultat = subprocess.run(
-            ["git", "-C", repertoire, "ls-remote", remote, f"refs/heads/{branche}"],
-            capture_output=True, text=True, timeout=TIMEOUT_RESEAU,
+        resultat = _lancer_git(
+            repertoire, "ls-remote", remote, f"refs/heads/{branche}", timeout=TIMEOUT_RESEAU
         )
     except subprocess.TimeoutExpired:
         return {
@@ -1584,9 +1568,7 @@ def finaliser_commit_merge(repertoire):
 
     Retourne {ok, erreur, commande} pour affichage transparent."""
     commande = ["git", "-C", repertoire, "commit", "--no-edit"]
-    resultat = subprocess.run(
-        commande, capture_output=True, text=True, timeout=TIMEOUT_GIT_LONG,
-    )
+    resultat = _lancer_git(repertoire, "commit", "--no-edit", timeout=TIMEOUT_GIT_LONG)
     return {
         "ok": resultat.returncode == 0,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
