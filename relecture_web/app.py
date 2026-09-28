@@ -28,6 +28,7 @@ import auth
 from git_info import (
     ErreurRecuperationProjets,
     collect_etat_projets,
+    commande_affichee,
     comparer_commit_doublon,
     commit_est_securise,
     diagnostiquer_commits_orphelins,
@@ -131,6 +132,8 @@ def _projet_pret(nom_projet):
     git actuel (pas des seules données du formulaire) avant toute action.
     Retourne (projet, None) si prêt, sinon (None, message_erreur)."""
     projet, _erreur = _trouver_projet(nom_projet)
+    if projet and projet["statut"] == "injoignable":
+        return None, "🔌 PC fixe éteint ou injoignable — projet indisponible pour le moment."
     if not projet or projet["statut"] != "ok":
         return None, f"❌ Projet « {nom_projet} » introuvable ou inaccessible."
     return projet, None
@@ -198,8 +201,9 @@ def _diagnostiquer_orphelins(projet, resumes_orphelins):
         # affichée pour tout commit orphelin, tranché ou non.
         diagnostic["nom_branche_recuperation"] = nom_branche_recuperation(diagnostic["hash"])
         diagnostic["deja_securise"] = commit_est_securise(repertoire, diagnostic["hash"])
-        diagnostic["commande_securisation"] = (
-            f"git -C {repertoire} branch {diagnostic['nom_branche_recuperation']} {diagnostic['hash']}"
+        diagnostic["commande_securisation"] = commande_affichee(
+            repertoire,
+            f"git -C {repertoire} branch {diagnostic['nom_branche_recuperation']} {diagnostic['hash']}",
         )
     return diagnostics
 
@@ -786,7 +790,8 @@ def projet_route(nom_projet):
     projet["merge_en_cours"] = get_merge_en_cours(projet["repertoire"])
     projet["peut_finaliser_merge"] = projet["merge_en_cours"] and not projet["fichiers_conflit"]
     projet["commande_finaliser_merge"] = (
-        f"git -C {projet['repertoire']} commit --no-edit" if projet["peut_finaliser_merge"] else None
+        commande_affichee(projet["repertoire"], f"git -C {projet['repertoire']} commit --no-edit")
+        if projet["peut_finaliser_merge"] else None
     )
 
     # Bouton « Retraiter le fichier en conflit » (issue #72) : proposé pour
@@ -833,11 +838,20 @@ def projet_route(nom_projet):
     for branche in branches:
         branche["nb_resumes"] = len(resumes_par_branche.get(branche["nom"], []))
         branche["est_principale"] = branche["nom"] == projet["branche_principale"]
-        branche["commande_push"] = f"git -C {projet['repertoire']} push {remote} {branche['nom']}"
+        branche["commande_push"] = commande_affichee(
+            projet["repertoire"], f"git -C {projet['repertoire']} push {remote} {branche['nom']}"
+        )
         branche["verrou_ccl_actif"] = worktree_ccl_actif(branche["chemin_worktree"], verrous_actifs)
 
         branche["peut_merger"] = branche["nom"] not in cibles_merge
 
+        # Commandes brutes (sans préfixe ssh) gardées à part pour composer
+        # l'aperçu combiné « Merger et supprimer » ci-dessous — un seul
+        # préfixe ssh en tête de l'aperçu final pour un projet distant
+        # (issue #94, voir `commande_affichee`), jamais un par segment
+        # enchaîné par `&&` : la commande git est envoyée seule à chaque
+        # étape (voir `_lancer_git_distant`), le `&&` n'existe que dans cet
+        # aperçu, pas dans ce qui est réellement exécuté sur le PC fixe.
         if len(cibles_merge) == 1:
             branche_cible_merge = cibles_merge[0]
             branche["ne_contient_que_doublons"] = branche["peut_merger"] and get_diagnostic_doublons_branche(
@@ -845,10 +859,14 @@ def projet_route(nom_projet):
             )
             if branche["ne_contient_que_doublons"]:
                 branche["peut_merger"] = False
-            branche["commande_merge"] = (
+            commande_merge_brute = (
                 _commande_merge(branche_cible_merge, branche["nom"]) if branche["peut_merger"] else None
             )
+            branche["commande_merge"] = (
+                commande_affichee(projet["repertoire"], commande_merge_brute) if commande_merge_brute else None
+            )
             branche["commandes_merge"] = None
+            commandes_merge_brutes = None
         else:
             # Plusieurs cibles configurées : aucun diagnostic de doublons
             # automatique (même parti pris que le cas M du diagnostic des
@@ -859,9 +877,16 @@ def projet_route(nom_projet):
             # la cible choisie explicitement dans le formulaire.
             branche["ne_contient_que_doublons"] = False
             branche["commande_merge"] = None
-            branche["commandes_merge"] = (
+            commandes_merge_brutes = (
                 {cible: _commande_merge(cible, branche["nom"]) for cible in cibles_merge}
                 if branche["peut_merger"] else None
+            )
+            branche["commandes_merge"] = (
+                {
+                    cible: commande_affichee(projet["repertoire"], commande)
+                    for cible, commande in commandes_merge_brutes.items()
+                }
+                if commandes_merge_brutes else None
             )
 
         # Bouton combiné « Merger et supprimer » (issue #88) : mêmes
@@ -877,7 +902,7 @@ def projet_route(nom_projet):
         # cible choisie, donc supprimable selon la même logique que
         # `commande_suppression` ci-dessous.
         branche["peut_merger_et_supprimer"] = branche["peut_merger"] and not branche["verrou_ccl_actif"]
-        commande_suppression_apres_merge = (
+        commande_suppression_apres_merge_brute = (
             f"git -C {projet['repertoire']} worktree remove {branche['chemin_worktree']}"
             f" && git -C {projet['repertoire']} branch -D {branche['nom']}"
             if branche["a_un_worktree"]
@@ -885,18 +910,23 @@ def projet_route(nom_projet):
         )
         if len(cibles_merge) == 1:
             branche["commande_merger_et_supprimer"] = (
-                f"{branche['commande_merge']} && {commande_suppression_apres_merge}"
-                if branche["peut_merger_et_supprimer"] else None
+                commande_affichee(
+                    projet["repertoire"],
+                    f"{commande_merge_brute} && {commande_suppression_apres_merge_brute}",
+                )
+                if branche["peut_merger_et_supprimer"] and commande_merge_brute else None
             )
             branche["commandes_merger_et_supprimer"] = None
         else:
             branche["commande_merger_et_supprimer"] = None
             branche["commandes_merger_et_supprimer"] = (
                 {
-                    cible: f"{commande} && {commande_suppression_apres_merge}"
-                    for cible, commande in branche["commandes_merge"].items()
+                    cible: commande_affichee(
+                        projet["repertoire"], f"{commande} && {commande_suppression_apres_merge_brute}"
+                    )
+                    for cible, commande in commandes_merge_brutes.items()
                 }
-                if branche["peut_merger_et_supprimer"] else None
+                if branche["peut_merger_et_supprimer"] and commandes_merge_brutes else None
             )
 
         # Une branche fusionnée reste supprimable même sans worktree associé
@@ -906,13 +936,17 @@ def projet_route(nom_projet):
         # commandes s'enchaînent dans le même clic (issue #54), d'où
         # l'aperçu combiné affiché avant confirmation.
         branche["peut_supprimer"] = branche["mergee"] and not branche["est_principale"]
-        branche["commande_suppression"] = (
+        commande_suppression_brute = (
             f"git -C {projet['repertoire']} worktree remove {branche['chemin_worktree']}"
             f" && git -C {projet['repertoire']} branch -D {branche['nom']}"
             if branche["peut_supprimer"] and branche["a_un_worktree"]
             else f"git -C {projet['repertoire']} branch -D {branche['nom']}"
             if branche["peut_supprimer"]
             else None
+        )
+        branche["commande_suppression"] = (
+            commande_affichee(projet["repertoire"], commande_suppression_brute)
+            if commande_suppression_brute else None
         )
 
         # Suppression de branche de récupération (issue #29) : seule la
@@ -924,7 +958,7 @@ def projet_route(nom_projet):
             hash_depuis_branche_recuperation(branche["nom"]) is not None
         )
         branche["commande_suppression_branche_recuperation"] = (
-            f"git -C {projet['repertoire']} branch -D {branche['nom']}"
+            commande_affichee(projet["repertoire"], f"git -C {projet['repertoire']} branch -D {branche['nom']}")
             if branche["peut_supprimer_branche_recuperation"] else None
         )
     projet["branches"] = branches
@@ -951,7 +985,9 @@ def branche_route(nom_projet, nom_branche):
     resumes_par_branche = regrouper_resumes_par_branche(resumes, projet["repertoire"])
     resumes_branche = resumes_par_branche.get(nom_branche, [])
     for resume in resumes_branche:
-        resume["commande_revert"] = f"git -C {projet['repertoire']} revert --no-edit {resume['hash']}"
+        resume["commande_revert"] = commande_affichee(
+            projet["repertoire"], f"git -C {projet['repertoire']} revert --no-edit {resume['hash']}"
+        )
 
     return render_template(
         "branche.html", projet=projet, nom_branche=nom_branche, resumes=resumes_branche,

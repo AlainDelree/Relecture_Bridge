@@ -40,6 +40,25 @@ MAX_COMMITS_AFFICHES = 30
 # dans relecture_bridge, pas dans configs/ de bridge_agent (hors périmètre).
 CHEMIN_BRANCHES_CIBLES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "branches_cibles.conf")
 
+# Config du PC fixe Windows (issue #94, voir ccw_host.conf) : un seul hôte
+# pour tous les projets CCW distants, pas besoin de sur-ingénierie pour un
+# seul hôte configurable (contrairement à branches_cibles.conf, une entrée
+# par projet).
+CHEMIN_CONFIG_CCW = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ccw_host.conf")
+CLE_SSH_CCW_DEFAUT = os.path.expanduser("~/.ssh/ccl_ccw")
+# ConnectTimeout court côté ssh (en plus du timeout applicatif existant,
+# TIMEOUT_GIT/TIMEOUT_GIT_LONG) : un PC fixe éteint ne doit jamais faire
+# attendre un appel indéfiniment ni bloquer le serveur Flask de
+# développement, mono-thread (issue #94).
+TIMEOUT_SSH_CONNECT = 6
+
+# Un projet est « distant » si son `repertoire` (tel que retourné par
+# fetch_projets) a la forme d'un chemin Windows (`C:\...`) — heuristique
+# gratuite validée par le diagnostic de l'issue #91 : le PC fixe CCW est
+# aujourd'hui le seul cas où ce format apparaît (le ThinkPad, lui, n'utilise
+# que des chemins POSIX).
+MOTIF_CHEMIN_WINDOWS = re.compile(r"^[A-Za-z]:\\")
+
 
 class ErreurRecuperationProjets(Exception):
     """La liste des projets n'a pas pu être récupérée depuis BRIDGE_AGENT_DOC.md."""
@@ -157,15 +176,160 @@ def fetch_projets():
     return projets
 
 
+def est_projet_distant(repertoire):
+    """True si `repertoire` a la forme d'un chemin Windows (`C:\\...`,
+    voir MOTIF_CHEMIN_WINDOWS) — le PC fixe CCW (issue #94), par
+    opposition à un projet local sur le ThinkPad (chemin POSIX)."""
+    return bool(MOTIF_CHEMIN_WINDOWS.match(repertoire or ""))
+
+
+def charger_config_ccw():
+    """Lit `ccw_host.conf` (issue #94, même convention que
+    `charger_branches_cibles` : `cle = valeur`, une entrée par ligne, `#`
+    pour les commentaires). Retourne {"host": "user@hote", "cle": chemin}
+    si `ccw_host` est configuré, sinon None (fichier absent, vide, ou
+    entrée `ccw_host` manquante/commentée) — état par défaut avant
+    qu'Alain ne renseigne le PC fixe. `ccw_key` est optionnelle, repli sur
+    CLE_SSH_CCW_DEFAUT (~/.ssh/ccl_ccw, déjà en place côté ThinkPad)."""
+    try:
+        with open(CHEMIN_CONFIG_CCW, encoding="utf-8") as fichier:
+            contenu = fichier.read()
+    except FileNotFoundError:
+        return None
+
+    config = {"host": None, "cle": CLE_SSH_CCW_DEFAUT}
+    for ligne in contenu.splitlines():
+        ligne = ligne.split("#", 1)[0].strip()
+        if not ligne or "=" not in ligne:
+            continue
+        cle, _, valeur = ligne.partition("=")
+        cle, valeur = cle.strip(), valeur.strip()
+        if cle == "ccw_host" and valeur:
+            config["host"] = valeur
+        elif cle == "ccw_key" and valeur:
+            config["cle"] = os.path.expanduser(valeur)
+
+    return config if config["host"] else None
+
+
+def _quoter_argument_distant(argument):
+    """Échappe un argument pour la commande transmise au shell distant
+    (issue #94) — un chemin Windows du PC fixe (ex. `C:\\CCW\\Nom Projet`)
+    peut contenir des espaces, et le shell réellement utilisé côté PC fixe
+    (PowerShell, cmd.exe ou Git Bash) n'a pas pu être confirmé par le
+    diagnostic (issue #91). Entourer de guillemets doubles dès qu'un espace
+    est présent reste correct dans les trois cas : cmd.exe ne traite pas
+    l'antislash comme caractère d'échappement à l'intérieur de guillemets
+    (un chemin Windows s'y comporte donc normalement), et un shell POSIX
+    (Git Bash) préserve de même un antislash isolé entre guillemets
+    doubles."""
+    if not argument:
+        return '""'
+    if any(c in argument for c in (" ", "\t")):
+        return f'"{argument}"'
+    return argument
+
+
+def _commande_ssh_ccw(config, commande_distante):
+    """Commande `ssh` complète (liste d'arguments, prête pour
+    `subprocess.run`) vers le PC fixe CCW configuré (issue #94) —
+    `ConnectTimeout` court (TIMEOUT_SSH_CONNECT) pour qu'un PC fixe éteint
+    échoue vite plutôt que de bloquer, `BatchMode=yes` pour ne jamais
+    tomber sur une invite de mot de passe interactive (clé déjà en place),
+    `StrictHostKeyChecking=accept-new` pour accepter silencieusement un
+    hôte encore inconnu (première connexion) sans échouer ni demander de
+    confirmation interactive, comme une machine physique unique et déjà
+    identifiée par sa clé le permet ici."""
+    return [
+        "ssh", "-i", config["cle"],
+        "-o", f"ConnectTimeout={TIMEOUT_SSH_CONNECT}",
+        "-o", "BatchMode=yes",
+        "-o", "StrictHostKeyChecking=accept-new",
+        config["host"],
+        commande_distante,
+    ]
+
+
+def _lancer_git_distant(repertoire, args, timeout, entree):
+    """Exécute une commande git sur le PC fixe CCW via SSH (issue #94),
+    appelée par `_lancer_git` quand `est_projet_distant(repertoire)` est
+    vrai — conserve la même interface de retour (code de retour, stdout,
+    stderr, via un `subprocess.CompletedProcess`) que l'exécution locale,
+    pour ne rien casser côté appelants de ce module.
+
+    Chaque commande git est envoyée seule (jamais enchaînée par `&&` sur le
+    shell distant, dont l'implémentation exacte — PowerShell, cmd.exe ou
+    Git Bash — n'a pas pu être confirmée par le diagnostic) : les
+    appelants de haut niveau qui enchaînent plusieurs étapes (ex.
+    `fusionner_worktree` : checkout, merge, checkout retour) le font déjà
+    via des appels `_lancer_git` séparés, jamais via un seul `&&` shell —
+    ce module reste donc robuste au shell distant réel sans rien changer à
+    ces appelants.
+
+    Si `ccw_host` n'est pas configuré (voir `charger_config_ccw`), retourne
+    directement un échec (code 1) sans tenter de connexion — évite une
+    erreur SSH confuse (hôte manquant) là où le message peut être clair
+    immédiatement."""
+    config = charger_config_ccw()
+    if not config:
+        return subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="",
+            stderr="ccw_host non configuré (relecture_web/ccw_host.conf) — impossible de joindre le PC fixe.",
+        )
+
+    commande_git = " ".join(_quoter_argument_distant(a) for a in ("git", "-C", repertoire, *args))
+    commande_ssh = _commande_ssh_ccw(config, commande_git)
+    return subprocess.run(commande_ssh, input=entree, capture_output=True, text=True, timeout=timeout)
+
+
+def tester_connectivite_ccw():
+    """True si le PC fixe CCW configuré (voir `charger_config_ccw`) répond
+    actuellement via SSH, False sinon (hôte non configuré, PC éteint,
+    mauvais hôte/port, timeout) — précondition testée par
+    `collect_etat_projets` avant toute tentative de commande git sur un
+    projet distant (issue #94), sur le modèle du test `os.path.isdir` déjà
+    en place pour les projets locaux. `ConnectTimeout` court
+    (TIMEOUT_SSH_CONNECT) : un PC fixe éteint ne doit jamais faire attendre
+    indéfiniment, le serveur Flask de développement étant mono-thread."""
+    config = charger_config_ccw()
+    if not config:
+        return False
+    commande = _commande_ssh_ccw(config, "exit 0")
+    try:
+        resultat = subprocess.run(
+            commande, capture_output=True, text=True, timeout=TIMEOUT_SSH_CONNECT + 3,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return resultat.returncode == 0
+
+
+def commande_affichee(repertoire, commande_git):
+    """Commande à afficher à Alain avant confirmation (issue #94) : pour un
+    projet distant (voir `est_projet_distant`), préfixe `commande_git`
+    (ex. `git -C C:\\CCW\\Projet push origin main`) par la commande ssh
+    réellement exécutée, pour qu'il sache que l'action passera par le
+    réseau plutôt que de lui montrer seulement la commande git nue. Pour un
+    projet local, retourne `commande_git` inchangée (comportement
+    d'affichage identique à avant cette issue)."""
+    if not est_projet_distant(repertoire):
+        return commande_git
+    config = charger_config_ccw()
+    prefixe_ssh = f"ssh -i {config['cle']} {config['host']}" if config else "ssh <ccw_host non configuré>"
+    return f"{prefixe_ssh} {commande_git}"
+
+
 def _lancer_git(repertoire, *args, timeout=TIMEOUT_GIT, entree=None):
     """Point d'entrée unique pour toute commande git de ce module (issue
-    #93, préparation au mode SSH à venir : router `repertoire` vers une
-    exécution locale ou distante en un seul endroit). `timeout` permet aux
-    appelants aux durées atypiques (`TIMEOUT_GIT_LONG` pour push/merge/commit,
-    `TIMEOUT_RESEAU` pour `ls-remote`) de le surcharger sans dupliquer
-    l'appel ; `entree` transmet un texte sur l'entrée standard, pour les
-    commandes qui lisent un pipe (ex. `git patch-id` recevant la sortie de
-    `git show`/`git log -p`)."""
+    #93/#94 : router `repertoire` vers une exécution locale ou distante,
+    voir `est_projet_distant`/`_lancer_git_distant`, en un seul endroit).
+    `timeout` permet aux appelants aux durées atypiques (`TIMEOUT_GIT_LONG`
+    pour push/merge/commit, `TIMEOUT_RESEAU` pour `ls-remote`) de le
+    surcharger sans dupliquer l'appel ; `entree` transmet un texte sur
+    l'entrée standard, pour les commandes qui lisent un pipe (ex. `git
+    patch-id` recevant la sortie de `git show`/`git log -p`)."""
+    if est_projet_distant(repertoire):
+        return _lancer_git_distant(repertoire, args, timeout, entree)
     return subprocess.run(
         ["git", "-C", repertoire, *args],
         input=entree, capture_output=True, text=True, timeout=timeout,
@@ -594,7 +758,7 @@ def get_rapport_cherry_brut(repertoire, branche_cible, hash_commit):
     commande = ["git", "-C", repertoire, "cherry", branche_cible, hash_commit]
     resultat = _lancer_git(repertoire, "cherry", branche_cible, hash_commit)
     return {
-        "commande": " ".join(commande),
+        "commande": commande_affichee(repertoire, " ".join(commande)),
         "sortie": resultat.stdout.strip() if resultat.returncode == 0 else None,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
     }
@@ -940,7 +1104,7 @@ def securiser_commit_orphelin(repertoire, hash_commit):
         "ok": resultat.returncode == 0,
         "deja_securise": False,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
-        "commande": " ".join(commande),
+        "commande": commande_affichee(repertoire, " ".join(commande)),
         "nom_branche": nom_branche,
     }
 
@@ -1165,7 +1329,7 @@ def fusionner_worktree(repertoire, branche_cible, branche_source, nom_projet=Non
             return {
                 "ok": False,
                 "erreur": (bascule.stderr or bascule.stdout).strip(),
-                "commande": f"git -C {repertoire} checkout {branche_cible}",
+                "commande": commande_affichee(repertoire, f"git -C {repertoire} checkout {branche_cible}"),
                 "changelog": None,
             }
 
@@ -1195,7 +1359,7 @@ def fusionner_worktree(repertoire, branche_cible, branche_source, nom_projet=Non
     return {
         "ok": resultat.returncode == 0,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
-        "commande": " ".join(commande),
+        "commande": commande_affichee(repertoire, " ".join(commande)),
         "changelog": resultat_changelog,
         "erreur_retour_branche": erreur_retour_branche,
     }
@@ -1245,7 +1409,7 @@ def supprimer_worktree(repertoire, chemin_worktree):
     return {
         "ok": resultat.returncode == 0,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
-        "commande": " ".join(commande),
+        "commande": commande_affichee(repertoire, " ".join(commande)),
     }
 
 
@@ -1264,7 +1428,7 @@ def supprimer_branche(repertoire, nom_branche):
     return {
         "ok": resultat.returncode == 0,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
-        "commande": " ".join(commande),
+        "commande": commande_affichee(repertoire, " ".join(commande)),
     }
 
 
@@ -1294,7 +1458,7 @@ def supprimer_branche_recuperation(repertoire, nom_branche):
     return {
         "ok": resultat.returncode == 0,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
-        "commande": " ".join(commande),
+        "commande": commande_affichee(repertoire, " ".join(commande)),
     }
 
 
@@ -1308,7 +1472,7 @@ def revert_commit(repertoire, hash_commit):
     return {
         "ok": resultat.returncode == 0,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
-        "commande": " ".join(commande),
+        "commande": commande_affichee(repertoire, " ".join(commande)),
     }
 
 
@@ -1323,7 +1487,7 @@ def pousser_branche(repertoire, branche):
     return {
         "ok": resultat.returncode == 0,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
-        "commande": " ".join(commande),
+        "commande": commande_affichee(repertoire, " ".join(commande)),
     }
 
 
@@ -1572,7 +1736,7 @@ def finaliser_commit_merge(repertoire):
     return {
         "ok": resultat.returncode == 0,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
-        "commande": " ".join(commande),
+        "commande": commande_affichee(repertoire, " ".join(commande)),
     }
 
 
@@ -1640,7 +1804,7 @@ def retraiter_fichier_conflit(repertoire, chemin_relatif):
     return {
         "ok": resultat.returncode == 0,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
-        "commande": " ".join(commande),
+        "commande": commande_affichee(repertoire, " ".join(commande)),
     }
 
 
@@ -1837,11 +2001,24 @@ def collect_etat_projets():
         # "alchess" pour le dossier "NicLink" — voir post-commit).
         entree["dossier_relecture"] = os.path.basename(os.path.normpath(repertoire))
 
-        if not os.path.isdir(repertoire):
+        if est_projet_distant(repertoire):
+            # Projet distant (PC fixe CCW, issue #94) : le test `os.path.isdir`
+            # ci-dessous ne peut pas s'appliquer (chemin Windows, pas de
+            # filesystem partagé) — pendant distant du même garde-fou, un
+            # test de connectivité SSH borné (ConnectTimeout court, voir
+            # tester_connectivite_ccw) avant toute tentative de commande git,
+            # pour qu'un PC fixe éteint ne bloque jamais le serveur Flask de
+            # développement (mono-thread) ni ne fasse attendre la page
+            # indéfiniment.
+            if not tester_connectivite_ccw():
+                entree["statut"] = "injoignable"
+                resultat.append(entree)
+                continue
+        elif not os.path.isdir(repertoire):
             entree["statut"] = "introuvable"
             resultat.append(entree)
             continue
-        if not os.path.exists(os.path.join(repertoire, ".git")):
+        elif not os.path.exists(os.path.join(repertoire, ".git")):
             entree["statut"] = "pas_un_depot_git"
             resultat.append(entree)
             continue

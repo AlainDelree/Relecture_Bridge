@@ -45,6 +45,8 @@
       <p class="statut">Dossier introuvable : {{ projet.repertoire }}</p>
     {% elif projet.statut == "pas_un_depot_git" %}
       <p class="statut">Pas un dépôt git : {{ projet.repertoire }}</p>
+    {% elif projet.statut == "injoignable" %}
+      <p class="statut">🔌 PC fixe éteint ou injoignable — projet indisponible pour le moment.</p>
     {% endif %}
     {% endif %}
   </li>

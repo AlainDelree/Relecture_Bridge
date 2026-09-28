@@ -778,7 +778,111 @@ gauche remplace déjà ce séparateur par l'en-tête `>>>>>>> <branche>` au-dess
 du contenu de la branche entrante, qui joue le même rôle de repère visuel
 sans perdre le nom de la branche.
 
-## 11. Comment interpréter une capture ou un export de `relecture_web`
+## 11. Le mode SSH vers le PC fixe Windows (CCW, issue #94)
+
+Un seul PC physique Windows héberge tous les projets CCW (chemins locaux
+du type `C:\CCW\<NomProjet>`), distinct du ThinkPad où tourne
+`relecture_web`. Cette issue ajoute le **routage local/distant des
+commandes git elles-mêmes** — étape 2 vers le pilotage de ces projets
+depuis `relecture_web`, après le socle de centralisation de l'issue #93
+(`_lancer_git`, point d'entrée unique de toute commande git de
+`git_info.py`).
+
+**Détection d'un projet distant** — un projet est considéré distant si
+son `repertoire` (tel que retourné par `fetch_projets`, donc par
+`BRIDGE_AGENT_DOC.md`) a la forme d'un chemin Windows (`^[A-Za-z]:\\`,
+`est_projet_distant`) : heuristique gratuite, sans appel réseau ni
+configuration par projet — le PC fixe CCW est aujourd'hui le seul cas où
+ce format apparaît (le ThinkPad n'utilise que des chemins POSIX).
+
+**Configuration (`relecture_web/ccw_host.conf`)** — même convention que
+`branches_cibles.conf` (`cle = valeur`, une entrée par ligne, `#` pour
+les commentaires), mais un seul hôte pour tous les projets CCW :
+
+```
+ccw_host = AlainW@<ip-locale>
+ccw_key = ~/.ssh/ccl_ccw   # optionnel, c'est déjà la valeur par défaut
+```
+
+- `ccw_host` : `utilisateur@hôte` (ou IP locale) du PC fixe. Tant qu'il
+  n'est pas renseigné, `charger_config_ccw()` retourne `None` : toute
+  tentative de commande git sur un projet distant échoue proprement
+  (code de retour 1, message d'erreur clair), sans tenter de connexion.
+- `ccw_key` : chemin de la clé SSH privée à utiliser, optionnel — repli
+  sur `~/.ssh/ccl_ccw`, la clé déjà en place côté ThinkPad.
+- Même statut que `branches_cibles.conf` (section 7) : CCL ne modifie
+  jamais ce fichier de sa propre initiative une fois l'entrée `ccw_host`
+  renseignée — seul Alain l'édite à la main.
+
+**Routage (`_lancer_git`)** — quand `repertoire` est distant,
+`_lancer_git_distant` exécute la commande via
+`ssh -i <ccw_key> -o ConnectTimeout=6 -o BatchMode=yes -o
+StrictHostKeyChecking=accept-new <ccw_host> "git -C <repertoire> ..."`
+plutôt qu'un `subprocess.run(["git", "-C", repertoire, ...])` local, en
+conservant exactement la même interface de retour (code de retour,
+stdout, stderr via un `subprocess.CompletedProcess`) — aucun appelant de
+`git_info.py`/`app.py` n'a besoin de savoir si le projet qu'il manipule
+est local ou distant.
+
+- **`ConnectTimeout` court (6s)**, en plus du timeout applicatif déjà en
+  place (`TIMEOUT_GIT`/`TIMEOUT_GIT_LONG`/`TIMEOUT_RESEAU`) : un PC fixe
+  éteint échoue vite plutôt que de bloquer — le serveur Flask de
+  développement utilisé par `relecture_web` est mono-thread, une seule
+  requête qui reste bloquée gèlerait l'outil entier pour Alain.
+- **Échappement des chemins Windows** (`_quoter_argument_distant`) : un
+  chemin comme `C:\CCW\Nom Projet` peut contenir des espaces ; chaque
+  argument est entouré de guillemets doubles dès qu'un espace est
+  présent, une forme acceptée aussi bien par `cmd.exe` (qui ne traite pas
+  l'antislash comme caractère d'échappement) que par un shell POSIX
+  (Git Bash) — le diagnostic de l'issue #91 n'ayant pas pu confirmer
+  lequel des deux tourne réellement côté PC fixe.
+- **Jamais de `&&` envoyé au shell distant** : une commande git est
+  toujours envoyée seule à `_lancer_git_distant`. Les enchaînements
+  visibles dans l'outil (ex. merge puis retour de branche dans
+  `fusionner_worktree`, worktree remove puis branch -D) restent, côté
+  exécution réelle, des appels `_lancer_git` séparés — jamais un seul
+  `&&` shell — pour rester robuste au shell distant réel, quel qu'il
+  soit. Les `&&` qu'Alain voit dans les commandes prévisualisées
+  (paragraphe suivant) sont donc un résumé lisible de plusieurs commandes
+  séquentielles, pas ce qui est littéralement envoyé au PC fixe.
+
+**Commandes prévisualisées** — `commande_affichee(repertoire,
+commande_git)` préfixe la commande git nue par la commande `ssh`
+réellement utilisée (`ssh -i <clé> <ccw_host> <commande_git>`) pour un
+projet distant, inchangée pour un projet local. Utilisée partout où
+`git_info.py`/`app.py` construisaient déjà une commande à afficher avant
+confirmation (push, merge, suppression de branche/worktree, revert,
+sécurisation, finalisation de merge...) : Alain voit donc explicitement
+qu'une action passera par le réseau avant de la confirmer, jamais
+seulement la commande git nue comme s'il s'agissait d'un projet local.
+
+**Statut « injoignable »** — `collect_etat_projets` teste la
+connectivité SSH (`tester_connectivite_ccw`, même `ConnectTimeout` court)
+avant toute tentative de commande git sur un projet distant, sur le
+modèle du test `os.path.isdir` déjà en place pour les projets locaux. Un
+échec donne un statut `"injoignable"`, distinct de `"introuvable"` (qui
+reste réservé aux projets locaux dont le dossier n'existe pas) :
+`index.html` et `projet.html` affichent alors « 🔌 PC fixe éteint ou
+injoignable — projet indisponible pour le moment » à la place du contenu
+habituel, et `_projet_pret` (`app.py`) refuse toute action sur ce projet
+avec le même message flash — même comportement dégradé que l'existant
+(branches/diagnostics/conflits indisponibles), sans jamais faire planter
+la page.
+
+**Hors périmètre de cette issue** (suivi à prévoir) : la résolution de
+conflit sur un fichier distant (`lire_conflits_fichier`,
+`resoudre_bloc_conflit`, `resoudre_tous_blocs_conflit` — lecture/écriture
+de fichier, pas des commandes git), l'exécution distante de
+`scripts/fusionner_changelog.py` (déjà signalé hors du périmètre
+`_lancer_git` par l'issue #93 : c'est un script Python, pas une commande
+git), et l'équivalent Windows du badge « CCL travaille ici » (issue #88)
+pour un worktree distant. Le mode LAN/externe d'exposition de
+`relecture_web` lui-même (section « Lancement et modes réseau »
+ci-dessus, issue #92) n'est pas non plus concerné par cette issue : elle
+ne change rien à qui peut accéder à `relecture_web`, seulement à ce qu'il
+peut atteindre une fois qu'on y accède.
+
+## 12. Comment interpréter une capture ou un export de `relecture_web`
 
 Si Alain montre une capture d'écran ou un texte copié depuis
 `relecture_web` dans une conversation Claude Chat d'un autre projet
