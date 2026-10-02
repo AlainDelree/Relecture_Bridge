@@ -210,7 +210,10 @@
                data-commande-merger-supprimer="{{ b.commande_merger_et_supprimer or '' }}"
                data-commandes-merger-supprimer='{{ (b.commandes_merger_et_supprimer or {})|tojson }}'
                data-peut-supprimer-branche="{{ '1' if b.peut_supprimer_branche_recuperation else '0' }}"
-               data-commande-suppression-branche="{{ b.commande_suppression_branche_recuperation or '' }}">
+               data-commande-suppression-branche="{{ b.commande_suppression_branche_recuperation or '' }}"
+               data-peut-rejeter="{{ '1' if b.peut_rejeter else '0' }}"
+               data-commande-rejet="{{ b.commande_rejet or '' }}"
+               data-nb-commits-non-fusionnes="{{ b.nb_commits_non_fusionnes if b.nb_commits_non_fusionnes is not none else '' }}">
       </label>
       <a href="{{ url_for('branche_route', nom_projet=projet.nom, nom_branche=b.nom) }}" class="lien-branche">
         <span class="nom-branche">{{ b.nom }}</span>
@@ -265,10 +268,20 @@
             class="bouton bouton--supprimer" id="bouton-supprimer">Supprimer la/les branche(s) fusionnée(s)</button>
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('merger_et_supprimer_route', nom_projet=projet.nom) }}"
             class="bouton bouton--supprimer" id="bouton-merger-supprimer">Merger et supprimer</button>
+    <button type="submit" form="form-actions-branches" formaction="{{ url_for('rejeter_worktrees_route', nom_projet=projet.nom) }}"
+            class="bouton bouton--supprimer" id="bouton-rejeter" title="Supprime le worktree et la branche SANS jamais les fusionner — pour un travail jamais destiné à être intégré (doublon, conflits inutiles).">Rejeter (sans fusionner)</button>
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('comparer_selection_route', nom_projet=projet.nom) }}"
             class="bouton bouton--comparer" id="bouton-comparer-selection">Comparer la sélection</button>
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('supprimer_branches_recuperation_route', nom_projet=projet.nom) }}"
             class="bouton bouton--supprimer" id="bouton-supprimer-branche-recuperation">Supprimer la/les branche(s) de récupération</button>
+  </div>
+  <div class="panneau-actions__options-rejet">
+    <label class="case-fermer-issue-rejet">
+      <input type="checkbox" name="fermer_issue_rejet" form="form-actions-branches" id="case-fermer-issue-rejet">
+      Fermer aussi l'issue GitHub correspondante si elle est encore ouverte (Rejeter)
+    </label>
+    <input type="text" name="raison_rejet" form="form-actions-branches" id="champ-raison-rejet"
+           placeholder="Raison du rejet (optionnel — commentaire de fermeture d'issue)">
   </div>
 </div>
 
@@ -293,6 +306,7 @@
   var boutonMerger = document.getElementById("bouton-merger");
   var boutonSupprimer = document.getElementById("bouton-supprimer");
   var boutonMergerSupprimer = document.getElementById("bouton-merger-supprimer");
+  var boutonRejeter = document.getElementById("bouton-rejeter");
   var boutonComparerSelection = document.getElementById("bouton-comparer-selection");
   var boutonSupprimerBranche = document.getElementById("bouton-supprimer-branche-recuperation");
   var selectCibleMerge = document.getElementById("select-cible-merge");
@@ -343,6 +357,7 @@
     boutonMerger.disabled = !selection.some(function (c) { return c.dataset.peutMerger === "1"; });
     boutonSupprimer.disabled = !selection.some(function (c) { return c.dataset.peutSupprimer === "1"; });
     boutonMergerSupprimer.disabled = !selection.some(function (c) { return c.dataset.peutMergerSupprimer === "1"; });
+    boutonRejeter.disabled = !selection.some(function (c) { return c.dataset.peutRejeter === "1"; });
     boutonComparerSelection.disabled = !selection.some(function (c) { return c.dataset.peutSupprimerBranche === "1"; });
     boutonSupprimerBranche.disabled = !selection.some(function (c) { return c.dataset.peutSupprimerBranche === "1"; });
   }
@@ -365,6 +380,7 @@
     var selection = cochees();
     var lignes = [];
     var nomsEligibles = [];
+    var resumesRejet = [];
 
     selection.forEach(function (c) {
       if (submitter === boutonPush) {
@@ -379,6 +395,16 @@
       } else if (submitter === boutonMergerSupprimer && c.dataset.peutMergerSupprimer === "1") {
         lignes.push(commandeMergerSupprimerPour(c));
         nomsEligibles.push(c.dataset.nom);
+      } else if (submitter === boutonRejeter && c.dataset.peutRejeter === "1") {
+        lignes.push(c.dataset.commandeRejet);
+        nomsEligibles.push(c.dataset.nom);
+        resumesRejet.push(
+          c.dataset.nom + " : " + (
+            c.dataset.nbCommitsNonFusionnes !== ""
+              ? c.dataset.nbCommitsNonFusionnes + " commit(s) jamais fusionné(s), perdu(s) définitivement"
+              : "nombre de commits non fusionnés indéterminable"
+          )
+        );
       } else if (submitter === boutonSupprimerBranche && c.dataset.peutSupprimerBranche === "1") {
         lignes.push(c.dataset.commandeSuppressionBranche);
         nomsEligibles.push(c.dataset.nom);
@@ -451,6 +477,30 @@
         onConfirmer: function () {
           envoiForce = true;
           afficherOverlaiAction("Fusion et suppression");
+          form.requestSubmit(submitter);
+        },
+      });
+      return;
+    }
+
+    if (submitter === boutonRejeter) {
+      // Confirmation forte (issue #95) : perte réelle et définitive d'un
+      // travail jamais intégré — bouton nommé explicitement (jamais un OK
+      // générique), focus par défaut sur Annuler (comportement commun à
+      // toute confirmation forte, voir ouvrirConfirmation), et avertissement
+      // mettant en avant le nombre de commits non fusionnés par branche
+      // concernée, pour qu'Alain voie l'ampleur avant de confirmer.
+      evenement.preventDefault();
+      var libelleRejeter = libelleUnitaireOuGroupe("Rejeter");
+      ouvrirConfirmation({
+        variant: "forte",
+        message: libelleRejeter + " — " + NOM_PROJET,
+        avertissement: resumesRejet.join(" — "),
+        commandes: lignes,
+        libelleBouton: libelleRejeter,
+        nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
+        onConfirmer: function () {
+          envoiForce = true;
           form.requestSubmit(submitter);
         },
       });

@@ -11,6 +11,7 @@ et même tableau qu'installer.sh), pas codée en dur ici.
 
 import datetime
 import hashlib
+import json
 import os
 import re
 import socket
@@ -514,6 +515,19 @@ def est_branche_mergee(repertoire, branche_principale, branche):
         _lancer_git(repertoire, "merge-base", "--is-ancestor", branche, candidate).returncode == 0
         for candidate in candidates
     )
+
+
+def get_nombre_commits_non_fusionnes(repertoire, branche_reference, branche):
+    """Nombre de commits propres à `branche` absents de `branche_reference`
+    (`git log branche_reference..branche --oneline`) — résumé affiché avant
+    confirmation du bouton « Rejeter » (issue #95), pour qu'Alain voie
+    l'ampleur du travail jamais fusionné qu'il s'apprête à perdre
+    définitivement. Retourne None si la commande échoue plutôt que 0, pour
+    distinguer « aucun commit en avance » de « indéterminable »."""
+    resultat = _lancer_git(repertoire, "log", "--oneline", f"{branche_reference}..{branche}")
+    if resultat.returncode != 0:
+        return None
+    return len([ligne for ligne in resultat.stdout.splitlines() if ligne.strip()])
 
 
 def charger_branches_cibles():
@@ -1028,6 +1042,20 @@ def extraire_numero_issue(sujet):
     return correspondance.group(1) if correspondance else None
 
 
+def numero_issue_depuis_nom_branche(nom_branche, sujet_dernier_commit=None):
+    """Numéro d'issue GitHub associé à une branche, pour la fermeture
+    optionnelle proposée par le bouton « Rejeter » (issue #95) : extrait de
+    préférence du nom de la branche, convention Bridge_Agent
+    `worktree-issue-<N>` (créée par watcher.py côté bridge_agent, hors
+    périmètre ici), à défaut du sujet de son dernier commit (motif `#<N>`,
+    via `extraire_numero_issue` — ex. `fix(#94): ...`). Retourne None si
+    aucun numéro n'est identifiable d'une façon ou de l'autre."""
+    correspondance = re.match(r"^worktree-issue-(\d+)$", nom_branche or "")
+    if correspondance:
+        return correspondance.group(1)
+    return extraire_numero_issue(sujet_dernier_commit)
+
+
 def get_issue_deja_referencee(repertoire, branche_cible, numero_issue):
     """True si au moins un commit de `branche_cible` référence `numero_issue`
     dans son message (motif `#<numero_issue>`, bordé pour ne pas confondre
@@ -1459,6 +1487,60 @@ def supprimer_branche_recuperation(repertoire, nom_branche):
         "ok": resultat.returncode == 0,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
         "commande": commande_affichee(repertoire, " ".join(commande)),
+    }
+
+
+TIMEOUT_GH = 15
+
+# Fermeture optionnelle d'issue GitHub (issue #95, bouton « Rejeter ») :
+# toujours via le CLI `gh` lancé localement, jamais routé vers le PC fixe
+# CCW (contrairement à `_lancer_git`) — une issue GitHub n'a rien à voir
+# avec l'emplacement du dépôt git, et `gh` n'a aucune raison d'être présent
+# côté Windows pour cet usage.
+
+
+def get_etat_issue_github(numero_issue, depot):
+    """État (`"open"`/`"closed"`) d'une issue GitHub via `gh issue view
+    --json state`, ou None si indéterminable (gh absent, non authentifié,
+    dépôt sans remote GitHub, issue introuvable, timeout...) — lecture seule
+    utilisée uniquement pour proposer, jamais imposer, la fermeture
+    optionnelle depuis le bouton « Rejeter » (issue #95). Ne doit jamais
+    faire échouer l'appelant : toute erreur retourne simplement None."""
+    if not numero_issue or not depot:
+        return None
+    try:
+        resultat = subprocess.run(
+            ["gh", "issue", "view", str(numero_issue), "--repo", depot, "--json", "state"],
+            capture_output=True, text=True, timeout=TIMEOUT_GH,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if resultat.returncode != 0:
+        return None
+    try:
+        etat = json.loads(resultat.stdout).get("state")
+    except (ValueError, AttributeError):
+        return None
+    return etat.lower() if etat else None
+
+
+def fermer_issue_github(numero_issue, commentaire, depot):
+    """Ferme une issue GitHub via `gh issue close`, avec un commentaire
+    (ex. « Rejeté depuis relecture_web : <raison> »). Volontairement isolée
+    de la suppression du worktree elle-même (issue #95) : l'appelant ne doit
+    jamais conditionner la réussite de `supprimer_worktree`/`supprimer_branche`
+    à celle-ci — un échec ici (gh absent, non authentifié, erreur réseau)
+    est seulement rapporté à part. Retourne {ok, erreur}."""
+    commande = ["gh", "issue", "close", str(numero_issue), "--repo", depot]
+    if commentaire:
+        commande += ["--comment", commentaire]
+    try:
+        resultat = subprocess.run(commande, capture_output=True, text=True, timeout=TIMEOUT_GH)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"ok": False, "erreur": str(exc)}
+    return {
+        "ok": resultat.returncode == 0,
+        "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
     }
 
 
@@ -2067,5 +2149,4 @@ def collect_etat_projets():
 
 
 if __name__ == "__main__":
-    import json
     print(json.dumps(collect_etat_projets(), ensure_ascii=False, indent=2))

@@ -33,6 +33,7 @@ from git_info import (
     commit_est_securise,
     diagnostiquer_commits_orphelins,
     extraire_numero_issue,
+    fermer_issue_github,
     finaliser_commit_merge,
     fusionner_worktree,
     get_branches_contenant,
@@ -41,11 +42,13 @@ from git_info import (
     get_chaine_cherry,
     get_date_commit,
     get_diagnostic_doublons_branche,
+    get_etat_issue_github,
     get_fichiers_en_conflit,
     get_fichiers_resolus_merge,
     get_issue_deja_referencee,
     get_merge_en_cours,
     get_modifications_non_committees,
+    get_nombre_commits_non_fusionnes,
     get_rapport_cherry_brut,
     get_remote_defaut,
     get_sujet_commit,
@@ -53,6 +56,7 @@ from git_info import (
     lire_conflits_fichier,
     lire_verrous_actifs,
     nom_branche_recuperation,
+    numero_issue_depuis_nom_branche,
     pousser_branche,
     resoudre_bloc_conflit,
     resoudre_tous_blocs_conflit,
@@ -949,6 +953,37 @@ def projet_route(nom_projet):
             if commande_suppression_brute else None
         )
 
+        # Bouton « Rejeter » (issue #95) : garde-fou strictement inverse de
+        # « Supprimer la/les branche(s) fusionnée(s) » ci-dessus — cible
+        # explicitement une branche PAS confirmée fusionnée (sinon
+        # « Supprimer » est le bon bouton), jamais la branche principale.
+        # Même mécanique de suppression (worktree remove puis branch -D, ou
+        # branch -D seule), mais sans jamais tenter de merge au préalable :
+        # un rejet signale que le travail ne doit jamais être intégré (ex.
+        # doublon d'une autre issue déjà traitée, fusion qui créerait des
+        # conflits inutiles). Le nombre de commits non fusionnés (contre la
+        # branche principale du dépôt, toujours une chaîne unique même pour
+        # un projet à plusieurs cibles configurées) est calculé ici pour
+        # être affiché dans l'avertissement de la confirmation forte, avant
+        # qu'Alain ne valide une perte réelle et définitive.
+        branche["peut_rejeter"] = not branche["mergee"] and not branche["est_principale"]
+        branche["nb_commits_non_fusionnes"] = (
+            get_nombre_commits_non_fusionnes(projet["repertoire"], projet["branche_principale"], branche["nom"])
+            if branche["peut_rejeter"] else None
+        )
+        commande_rejet_brute = (
+            f"git -C {projet['repertoire']} worktree remove {branche['chemin_worktree']}"
+            f" && git -C {projet['repertoire']} branch -D {branche['nom']}"
+            if branche["peut_rejeter"] and branche["a_un_worktree"]
+            else f"git -C {projet['repertoire']} branch -D {branche['nom']}"
+            if branche["peut_rejeter"]
+            else None
+        )
+        branche["commande_rejet"] = (
+            commande_affichee(projet["repertoire"], commande_rejet_brute)
+            if commande_rejet_brute else None
+        )
+
         # Suppression de branche de récupération (issue #29) : seule la
         # convention de nom `recuperation-<hash>` conditionne la
         # disponibilité de l'action, indépendamment du badge de diagnostic
@@ -1532,6 +1567,124 @@ def supprimer_worktrees_route(nom_projet):
             flash(f"✅ Branche « {nom} » supprimée — {resultat['commande']}", "succes")
         else:
             flash(f"❌ Échec de la suppression de « {nom} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+
+@app.route("/projet/<nom_projet>/rejeter", methods=["POST"])
+@login_requis
+def rejeter_worktrees_route(nom_projet):
+    """Rejette chaque branche sélectionnée confirmée NON fusionnée (issue
+    #95) — garde-fou strictement inverse de `supprimer_worktrees_route` :
+    cette action cible explicitement une branche qui ne doit jamais être
+    intégrée (ex. doublon d'une autre issue déjà traitée, fusion qui
+    créerait des conflits inutiles sur du travail redondant), là où
+    « Supprimer » exige au contraire une branche confirmée fusionnée. Même
+    mécanique de suppression (worktree remove puis branch -D, ou branch -D
+    seule si le worktree a déjà été retiré), sans jamais tenter de merge au
+    préalable.
+
+    Si la case « Fermer aussi l'issue GitHub correspondante » est cochée
+    (champ `fermer_issue_rejet`), tente en plus — pour chaque branche
+    effectivement rejetée — de fermer l'issue GitHub associée (numéro extrait
+    du nom de la branche `worktree-issue-<N>`, ou à défaut du sujet de son
+    dernier commit, voir `numero_issue_depuis_nom_branche`) avec un
+    commentaire reprenant la raison optionnelle saisie (`raison_rejet`) —
+    seulement si elle apparaît encore ouverte (`get_etat_issue_github`) ;
+    sans effet si elle est déjà fermée (cas normal : le watcher CCL la ferme
+    déjà lui-même dès la fin de son traitement, bien avant qu'Alain ne
+    décide de rejeter le worktree correspondant). Cette vérification/
+    fermeture reste volontairement isolée de la suppression du worktree
+    elle-même : un échec ici (gh absent, non authentifié, pas de remote
+    GitHub) n'annule jamais une suppression déjà effectuée, il est
+    seulement rapporté à part."""
+    noms_branches = request.form.getlist("branches")
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+    if not noms_branches:
+        flash("❌ Aucune branche sélectionnée.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    fermer_issue = request.form.get("fermer_issue_rejet") == "on"
+    raison = request.form.get("raison_rejet", "").strip()
+
+    branche_principale = projet["branche_principale"]
+    branches = _branches_par_nom(projet)
+    for nom in noms_branches:
+        branche = branches.get(nom)
+        if not branche:
+            flash(f"❌ Branche « {nom} » introuvable.", "erreur")
+            continue
+        if nom == branche_principale:
+            flash(f"❌ « {nom} » est la branche principale, rejet ignoré.", "erreur")
+            continue
+        if branche["mergee"]:
+            flash(
+                f"❌ Rejet de « {nom} » refusé : branche confirmée fusionnée — utilisez « Supprimer la/les "
+                "branche(s) fusionnée(s) » à la place.",
+                "erreur",
+            )
+            continue
+
+        rejet_reussi = False
+        if branche["a_un_worktree"]:
+            resultat_worktree = supprimer_worktree(projet["repertoire"], branche["chemin_worktree"])
+            if not resultat_worktree["ok"]:
+                flash(
+                    f"❌ Échec du rejet de « {nom} » ({resultat_worktree['commande']}) : "
+                    f"{resultat_worktree['erreur']}",
+                    "erreur",
+                )
+                continue
+            resultat_branche = supprimer_branche(projet["repertoire"], nom)
+            if resultat_branche["ok"]:
+                rejet_reussi = True
+                flash(
+                    f"✅ Worktree et branche « {nom} » rejetés (jamais fusionnés) — "
+                    f"{resultat_worktree['commande']} + {resultat_branche['commande']}",
+                    "succes",
+                )
+            else:
+                flash(
+                    f"⚠️ Worktree de « {nom} » retiré ({resultat_worktree['commande']}), mais la branche "
+                    f"n'a pas pu être supprimée ({resultat_branche['commande']}) : {resultat_branche['erreur']}",
+                    "erreur",
+                )
+        else:
+            resultat_branche = supprimer_branche(projet["repertoire"], nom)
+            if resultat_branche["ok"]:
+                rejet_reussi = True
+                flash(f"✅ Branche « {nom} » rejetée (jamais fusionnée) — {resultat_branche['commande']}", "succes")
+            else:
+                flash(
+                    f"❌ Échec du rejet de « {nom} » ({resultat_branche['commande']}) : "
+                    f"{resultat_branche['erreur']}",
+                    "erreur",
+                )
+
+        if not rejet_reussi or not fermer_issue:
+            continue
+
+        numero_issue = numero_issue_depuis_nom_branche(nom, branche["dernier_commit"]["sujet"])
+        if numero_issue is None:
+            continue
+        etat_issue = get_etat_issue_github(numero_issue, projet["depot"])
+        if etat_issue is None:
+            flash(
+                f"⚠️ Issue #{numero_issue} : état indéterminable (gh absent/non authentifié, ou pas de "
+                "remote GitHub) — fermeture non tentée.",
+                "erreur",
+            )
+            continue
+        if etat_issue != "open":
+            continue
+        commentaire = "Rejeté depuis relecture_web" + (f" : {raison}" if raison else "")
+        resultat_fermeture = fermer_issue_github(numero_issue, commentaire, projet["depot"])
+        if resultat_fermeture["ok"]:
+            flash(f"✅ Issue #{numero_issue} fermée avec commentaire.", "succes")
+        else:
+            flash(f"⚠️ Échec de la fermeture de l'issue #{numero_issue} : {resultat_fermeture['erreur']}", "erreur")
     return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 
