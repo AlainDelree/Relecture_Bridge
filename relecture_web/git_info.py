@@ -530,6 +530,78 @@ def get_nombre_commits_non_fusionnes(repertoire, branche_reference, branche):
     return len([ligne for ligne in resultat.stdout.splitlines() if ligne.strip()])
 
 
+def get_hashes_commits_non_fusionnes(repertoire, branche_reference, branche):
+    """Hashes complets des commits propres à `branche` absents de
+    `branche_reference` (`git log branche_reference..branche --format=%H`) —
+    pendant de `get_nombre_commits_non_fusionnes` qui retourne les hashes
+    plutôt qu'un compte, pour que le bouton « Rejeter » sache précisément
+    quels commits deviendront orphelins après `branch -D` et doivent donc
+    être ciblés par la purge réelle optionnelle (`purger_reflog_et_gc`,
+    issue #96). Retourne None si la commande échoue, même convention que
+    `get_nombre_commits_non_fusionnes`."""
+    resultat = _lancer_git(repertoire, "log", "--format=%H", f"{branche_reference}..{branche}")
+    if resultat.returncode != 0:
+        return None
+    return [ligne.strip() for ligne in resultat.stdout.splitlines() if ligne.strip()]
+
+
+def commit_existe(repertoire, hash_commit):
+    """True si `hash_commit` désigne toujours un commit valide dans le dépôt
+    (`git cat-file -e <hash>^{commit}`) — utilisé après `purger_reflog_et_gc`
+    (issue #96) pour vérifier, avant de nettoyer son résumé `Non_Lu/`, qu'un
+    commit visé par le rejet a réellement disparu plutôt que de le supposer."""
+    resultat = _lancer_git(repertoire, "cat-file", "-e", f"{hash_commit}^{{commit}}")
+    return resultat.returncode == 0
+
+
+def purger_reflog_et_gc(repertoire):
+    """Purge réelle et DÉFINITIVE de tout objet non atteignable du dépôt
+    (`git reflog expire --expire=now --all` puis `git gc --prune=now`) —
+    complément à la suppression de branche du bouton « Rejeter » (issue #96) :
+    `git branch -D` seul ne fait que détacher la branche, le commit reste
+    récupérable (reflog, 90 jours par défaut) et continue d'apparaître comme
+    commit orphelin « ambigu » dans le diagnostic automatique.
+
+    Ces deux commandes sont globales au dépôt entier : aucune option git ne
+    permet de n'expirer/purger que le reflog d'une branche déjà supprimée
+    (son fichier de reflog, orphelin lui aussi, n'est plus listé par
+    `--all`, qui n'énumère que les refs existantes). Tout AUTRE commit
+    orphelin présent dans le dépôt est donc également concerné, SAUF s'il
+    reste atteignable depuis une vraie branche — notamment une branche de
+    sécurisation `recuperation-<hash>` créée par `securiser_commit_orphelin`
+    : un pointeur de branche protège son commit indépendamment du reflog, de
+    cette purge y compris. C'est pourquoi « Sécuriser » reste le geste à
+    recommander à l'appelant (voir `rejeter_worktrees_route`) pour mettre un
+    commit orphelin hors d'atteinte de cette purge — aucune purge ciblée
+    plus fine n'est possible avec les commandes git disponibles.
+
+    N'est appelée qu'après confirmation explicite d'Alain (jamais en
+    arrière-plan silencieux) : à l'appelant de lister les autres commits
+    orphelins non sécurisés menacés avant de déclencher cet appel. Timeout
+    long (`TIMEOUT_GIT_LONG`) : `git gc` peut prendre du temps sur un
+    historique volumineux. Retourne {ok, erreur, commande} ; le `gc` n'est
+    pas tenté si le `reflog expire` a déjà échoué."""
+    commande_reflog = ["git", "-C", repertoire, "reflog", "expire", "--expire=now", "--all"]
+    resultat_reflog = _lancer_git(
+        repertoire, "reflog", "expire", "--expire=now", "--all", timeout=TIMEOUT_GIT_LONG
+    )
+    if resultat_reflog.returncode != 0:
+        return {
+            "ok": False,
+            "erreur": (resultat_reflog.stderr or resultat_reflog.stdout).strip(),
+            "commande": commande_affichee(repertoire, " ".join(commande_reflog)),
+        }
+
+    commande_gc = ["git", "-C", repertoire, "gc", "--prune=now"]
+    resultat_gc = _lancer_git(repertoire, "gc", "--prune=now", timeout=TIMEOUT_GIT_LONG)
+    commande_complete = " ".join(commande_reflog) + " && " + " ".join(commande_gc)
+    return {
+        "ok": resultat_gc.returncode == 0,
+        "erreur": (resultat_gc.stderr or resultat_gc.stdout).strip() if resultat_gc.returncode != 0 else None,
+        "commande": commande_affichee(repertoire, commande_complete),
+    }
+
+
 def charger_branches_cibles():
     """Lit `branches_cibles.conf` (une ligne `nom_projet = branche` par
     entrée, `#` pour les commentaires) — configure, projet par projet, la ou

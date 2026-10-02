@@ -282,6 +282,27 @@
     </label>
     <input type="text" name="raison_rejet" form="form-actions-branches" id="champ-raison-rejet"
            placeholder="Raison du rejet (optionnel — commentaire de fermeture d'issue)">
+    <label class="case-purger-rejet">
+      <input type="checkbox" name="purger_commit_rejet" form="form-actions-branches" id="case-purger-rejet"
+             data-commande-purge="{{ projet.commande_purge_rejet }}"
+             data-nb-autres-orphelins="{{ projet.orphelins_non_securises_menaces|length }}">
+      Purger réellement le(s) commit(s) rejeté(s) (<code>git reflog expire</code> + <code>git gc --prune=now</code>)
+      — IRRÉVERSIBLE, affecte TOUT le dépôt (Rejeter)
+    </label>
+    <p class="avertissement-purge-rejet">
+      ⚠️ Sans cette case, le commit rejeté reste récupérable (orphelin, signalé
+      « ambigu » par le diagnostic ci-dessus) le temps du reflog ; avec elle, il est
+      réellement détruit. Mais ces deux commandes sont globales au dépôt, pas
+      ciblées sur ce seul commit :
+      {% if projet.orphelins_non_securises_menaces %}
+      {{ projet.orphelins_non_securises_menaces|length }} autre(s) commit(s) orphelin(s) non sécurisé(s) de ce
+      dépôt serai(en)t aussi perdu(s) définitivement, même sans rapport avec ce rejet —
+      {% for d in projet.orphelins_non_securises_menaces %}<code class="hash">{{ d.hash }}</code>{% if d.sujet %} ({{ d.sujet }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}.
+      Sécurisez-les d'abord (🔒 ci-dessus) si vous voulez les garder.
+      {% else %}
+      aucun autre commit orphelin non sécurisé n'est actuellement détecté dans ce dépôt.
+      {% endif %}
+    </p>
   </div>
 </div>
 
@@ -490,13 +511,35 @@
       // toute confirmation forte, voir ouvrirConfirmation), et avertissement
       // mettant en avant le nombre de commits non fusionnés par branche
       // concernée, pour qu'Alain voie l'ampleur avant de confirmer.
+      //
+      // Option « Purger réellement » (issue #96) : quand cochée, l'avertissement
+      // rappelle que cette purge est globale au dépôt (pas ciblée sur ce seul
+      // commit) et combien d'autres commits orphelins non sécurisés seraient
+      // aussi perdus définitivement — le détail nominatif est déjà visible en
+      // permanence sous la case à cocher (voir panneau-actions__options-rejet),
+      // cette confirmation ne fait que le rappeler avant l'envoi réel.
       evenement.preventDefault();
       var libelleRejeter = libelleUnitaireOuGroupe("Rejeter");
+      var casePurgerRejet = document.getElementById("case-purger-rejet");
+      var purgerCoche = !!(casePurgerRejet && casePurgerRejet.checked);
+      var avertissementRejet = resumesRejet.join(" — ");
+      var lignesRejet = lignes.slice();
+      if (purgerCoche) {
+        var nbAutresOrphelins = casePurgerRejet.dataset.nbAutresOrphelins || "0";
+        avertissementRejet += " — ⚠️ PURGE RÉELLE DEMANDÉE (irréversible, globale au dépôt)" + (
+          nbAutresOrphelins !== "0"
+            ? " : détruira aussi " + nbAutresOrphelins + " autre(s) commit(s) orphelin(s) non sécurisé(s)"
+            : ""
+        );
+        if (casePurgerRejet.dataset.commandePurge) {
+          lignesRejet.push(casePurgerRejet.dataset.commandePurge);
+        }
+      }
       ouvrirConfirmation({
         variant: "forte",
-        message: libelleRejeter + " — " + NOM_PROJET,
-        avertissement: resumesRejet.join(" — "),
-        commandes: lignes,
+        message: libelleRejeter + (purgerCoche ? " + purge réelle" : "") + " — " + NOM_PROJET,
+        avertissement: avertissementRejet,
+        commandes: lignesRejet,
         libelleBouton: libelleRejeter,
         nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
         onConfirmer: function () {

@@ -31,6 +31,7 @@ from git_info import (
     commande_affichee,
     comparer_commit_doublon,
     commit_est_securise,
+    commit_existe,
     diagnostiquer_commits_orphelins,
     extraire_numero_issue,
     fermer_issue_github,
@@ -45,6 +46,7 @@ from git_info import (
     get_etat_issue_github,
     get_fichiers_en_conflit,
     get_fichiers_resolus_merge,
+    get_hashes_commits_non_fusionnes,
     get_issue_deja_referencee,
     get_merge_en_cours,
     get_modifications_non_committees,
@@ -58,6 +60,7 @@ from git_info import (
     nom_branche_recuperation,
     numero_issue_depuis_nom_branche,
     pousser_branche,
+    purger_reflog_et_gc,
     resoudre_bloc_conflit,
     resoudre_tous_blocs_conflit,
     retraiter_fichier_conflit,
@@ -787,6 +790,23 @@ def projet_route(nom_projet):
     resumes_par_branche = regrouper_resumes_par_branche(resumes, projet["repertoire"])
     projet["diagnostics_orphelins"] = _diagnostiquer_orphelins(projet, resumes_par_branche.get(None, []))
     projet["fichiers_conflit"] = get_fichiers_en_conflit(projet["repertoire"])
+
+    # Option « Purger réellement » du bouton Rejeter (issue #96) : commits
+    # orphelins déjà connus du diagnostic ci-dessus, mais pas encore
+    # sécurisés (donc réellement menacés par `purger_reflog_et_gc`, globale
+    # au dépôt) — affichés dans l'avertissement de confirmation pour
+    # qu'Alain sache ce qu'il perdrait EN PLUS du commit qu'il rejette.
+    # `commande_purge_rejet` est la même pour tout le projet (pas par
+    # branche, contrairement à `commande_rejet`), affichée telle quelle dans
+    # la confirmation quand la case est cochée.
+    projet["orphelins_non_securises_menaces"] = [
+        d for d in projet["diagnostics_orphelins"] if not d["deja_securise"]
+    ]
+    projet["commande_purge_rejet"] = commande_affichee(
+        projet["repertoire"],
+        f"git -C {projet['repertoire']} reflog expire --expire=now --all && "
+        f"git -C {projet['repertoire']} gc --prune=now",
+    )
 
     # Bouton « Finaliser le merge » (issue #61) : proposé seulement quand un
     # merge est réellement en cours (MERGE_HEAD présent) ET qu'il ne reste
@@ -1596,7 +1616,20 @@ def rejeter_worktrees_route(nom_projet):
     fermeture reste volontairement isolée de la suppression du worktree
     elle-même : un échec ici (gh absent, non authentifié, pas de remote
     GitHub) n'annule jamais une suppression déjà effectuée, il est
-    seulement rapporté à part."""
+    seulement rapporté à part.
+
+    Si la case « Purger réellement » est cochée (champ `purger_commit_rejet`,
+    issue #96) : `branch -D` seul ne fait que détacher la branche, le commit
+    reste récupérable via le reflog (90 jours par défaut) et continue
+    d'apparaître comme orphelin « ambigu » dans le diagnostic automatique
+    (constat fait en testant le geste manuel équivalent sur chesscoach,
+    worktree-issue-88). Les hashes propres à chaque branche effectivement
+    rejetée (`get_hashes_commits_non_fusionnes`, capturés AVANT le
+    `branch -D` : la plage `principale..branche` ne se résout plus une fois
+    la branche supprimée) sont donc accumulés puis purgés pour de bon en une
+    seule fois après la boucle, via `_purger_commits_rejetes` ci-dessous —
+    jamais par branche, pour n'exécuter qu'un seul `git gc --prune=now`
+    (coûteux) par clic plutôt qu'un par branche sélectionnée."""
     noms_branches = request.form.getlist("branches")
     projet, message_erreur = _projet_pret(nom_projet)
     if not projet:
@@ -1608,9 +1641,11 @@ def rejeter_worktrees_route(nom_projet):
 
     fermer_issue = request.form.get("fermer_issue_rejet") == "on"
     raison = request.form.get("raison_rejet", "").strip()
+    purger = request.form.get("purger_commit_rejet") == "on"
 
     branche_principale = projet["branche_principale"]
     branches = _branches_par_nom(projet)
+    hashes_a_purger = set()
     for nom in noms_branches:
         branche = branches.get(nom)
         if not branche:
@@ -1626,6 +1661,10 @@ def rejeter_worktrees_route(nom_projet):
                 "erreur",
             )
             continue
+
+        hashes_branche = (
+            get_hashes_commits_non_fusionnes(projet["repertoire"], branche_principale, nom) if purger else None
+        )
 
         rejet_reussi = False
         if branche["a_un_worktree"]:
@@ -1663,7 +1702,13 @@ def rejeter_worktrees_route(nom_projet):
                     "erreur",
                 )
 
-        if not rejet_reussi or not fermer_issue:
+        if not rejet_reussi:
+            continue
+
+        if purger and hashes_branche:
+            hashes_a_purger.update(hashes_branche)
+
+        if not fermer_issue:
             continue
 
         numero_issue = numero_issue_depuis_nom_branche(nom, branche["dernier_commit"]["sujet"])
@@ -1685,7 +1730,90 @@ def rejeter_worktrees_route(nom_projet):
             flash(f"✅ Issue #{numero_issue} fermée avec commentaire.", "succes")
         else:
             flash(f"⚠️ Échec de la fermeture de l'issue #{numero_issue} : {resultat_fermeture['erreur']}", "erreur")
+
+    if purger:
+        if hashes_a_purger:
+            _purger_commits_rejetes(projet, hashes_a_purger)
+        else:
+            flash("ℹ️ Purge demandée, mais aucun rejet n'a réussi — aucun commit à purger.", "erreur")
     return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+
+def _hashes_orphelins_non_securises(projet, hashes_a_exclure):
+    """Hashes des commits actuellement orphelins (diagnostic habituel, voir
+    `_diagnostiquer_orphelins`) et pas encore sécurisés, hors
+    `hashes_a_exclure` (hashes complets) — ce sont les commits qu'une purge
+    globale au dépôt (`purger_reflog_et_gc`, issue #96) détruirait EN PLUS de
+    ceux visés par le rejet en cours. Un commit déjà sécurisé reste
+    atteignable depuis sa branche `recuperation-<hash>`, donc jamais
+    concerné par cette purge — inutile de le signaler ici.
+
+    `hashes_a_exclure` contient des hashes complets (`git log --format=%H`),
+    les résumés `Non_Lu/` n'en connaissent que le hash court (nom de
+    fichier) : comparaison par préfixe, comme `lister_fichiers_resumes_hash`."""
+    resumes = collect_resumes_projet(projet["dossier_relecture"], projet["repertoire"])
+    resumes_orphelins = regrouper_resumes_par_branche(resumes, projet["repertoire"]).get(None, [])
+    return [
+        r["hash"] for r in resumes_orphelins
+        if not any(h.startswith(r["hash"]) for h in hashes_a_exclure)
+        and not commit_est_securise(projet["repertoire"], r["hash"])
+    ]
+
+
+def _purger_commits_rejetes(projet, hashes_cibles):
+    """Purge réellement (issue #96) les commits de `hashes_cibles` — ceux
+    dont la branche vient d'être rejetée par `rejeter_worktrees_route` —
+    via `purger_reflog_et_gc`, globale au dépôt : calcule d'abord les autres
+    commits orphelins non sécurisés qui seraient perdus par la même purge
+    (Alain en a déjà été averti avant l'envoi du formulaire, voir
+    l'avertissement de confirmation dans projet.html), pour les citer dans
+    le message de résultat plutôt que de les laisser disparaître en silence.
+
+    Nettoie ensuite, pour tout hash confirmé disparu (`commit_existe`), les
+    fichiers `Non_Lu/` associés — aussi bien les commits visés que ces
+    orphelins collatéraux, puisque leur résumé laisserait sinon exactement
+    le même résidu « ambigu » déjà constaté par le diagnostic (second
+    symptôme de l'issue #96)."""
+    repertoire = projet["repertoire"]
+    autres_orphelins = _hashes_orphelins_non_securises(projet, hashes_cibles)
+
+    resultat = purger_reflog_et_gc(repertoire)
+    if not resultat["ok"]:
+        flash(f"❌ Échec de la purge ({resultat['commande']}) : {resultat['erreur']}", "erreur")
+        return
+
+    hashes_a_verifier = set(hashes_cibles) | set(autres_orphelins)
+    hashes_purges = {h for h in hashes_a_verifier if not commit_existe(repertoire, h)}
+    hashes_cibles_non_purgees = [h for h in hashes_cibles if h not in hashes_purges]
+
+    fichiers = set()
+    for h in hashes_purges:
+        fichiers.update(lister_fichiers_resumes_hash(projet["dossier_relecture"], h))
+    nb_supprimes, nb_echecs = _supprimer_fichiers(fichiers)
+
+    nb_cibles_purgees = len(hashes_cibles) - len(hashes_cibles_non_purgees)
+    nb_collateraux_purges = len(hashes_purges) - nb_cibles_purgees
+    message = (
+        f"🔥 Purge réelle effectuée ({resultat['commande']}) — {nb_cibles_purgees}/{len(hashes_cibles)} "
+        "commit(s) rejeté(s) réellement supprimé(s) du dépôt"
+    )
+    if nb_collateraux_purges:
+        message += (
+            f", {nb_collateraux_purges} autre(s) commit(s) orphelin(s) non sécurisé(s) perdu(s) en même temps"
+        )
+    if nb_supprimes:
+        message += f" — {nb_supprimes} fichier(s) Non_Lu/ associé(s) nettoyé(s)"
+    flash(message + ".", "erreur" if hashes_cibles_non_purgees or nb_echecs else "succes")
+
+    if hashes_cibles_non_purgees:
+        flash(
+            "⚠️ Toujours présent(s) dans le dépôt après la purge (probablement protégé(s) par une autre "
+            "référence) : " + ", ".join(h[:10] for h in hashes_cibles_non_purgees) +
+            " — fichier(s) Non_Lu/ correspondant(s) non nettoyé(s).",
+            "erreur",
+        )
+    if nb_echecs:
+        flash(f"⚠️ {nb_echecs} fichier(s) Non_Lu/ n'ont pas pu être supprimés après la purge.", "erreur")
 
 
 @app.route("/projet/<nom_projet>/supprimer-branche-recuperation", methods=["POST"])

@@ -294,12 +294,14 @@ header h1 { margin-bottom: 0.2rem; }
 .panneau-actions__options-rejet {
   flex-basis: 100%;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
   font-size: 0.8rem;
   color: #555;
 }
-.case-fermer-issue-rejet {
+.case-fermer-issue-rejet,
+.case-purger-rejet {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -311,6 +313,15 @@ header h1 { margin-bottom: 0.2rem; }
   border: 1px solid #c3d6f7;
   flex: 1 1 260px;
   min-width: 180px;
+}
+.avertissement-purge-rejet {
+  flex-basis: 100%;
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  background: #fdecea;
+  color: #a33;
+  border-radius: 5px;
+  font-size: 0.78rem;
 }
 
 .commit-actions {
