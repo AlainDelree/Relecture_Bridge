@@ -270,39 +270,36 @@
             class="bouton bouton--supprimer" id="bouton-merger-supprimer">Merger et supprimer</button>
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('rejeter_worktrees_route', nom_projet=projet.nom) }}"
             class="bouton bouton--supprimer" id="bouton-rejeter" title="Supprime le worktree et la branche SANS jamais les fusionner — pour un travail jamais destiné à être intégré (doublon, conflits inutiles).">Rejeter (sans fusionner)</button>
+    <details class="details-options-rejet" id="details-options-rejet">
+      <summary id="bouton-options-rejet">Options de rejet</summary>
+      <div class="panneau-actions__options-rejet">
+        <label class="case-purger-rejet">
+          <input type="checkbox" name="purger_commit_rejet" form="form-actions-branches" id="case-purger-rejet"
+                 data-commande-purge="{{ projet.commande_purge_rejet }}"
+                 data-nb-autres-orphelins="{{ projet.orphelins_non_securises_menaces|length }}">
+          Purger réellement le(s) commit(s) rejeté(s) (<code>git reflog expire</code> + <code>git gc --prune=now</code>)
+          — IRRÉVERSIBLE, affecte TOUT le dépôt (Rejeter)
+        </label>
+        <p class="avertissement-purge-rejet">
+          ⚠️ Sans cette case, le commit rejeté reste récupérable (orphelin, signalé
+          « ambigu » par le diagnostic ci-dessus) le temps du reflog ; avec elle, il est
+          réellement détruit. Mais ces deux commandes sont globales au dépôt, pas
+          ciblées sur ce seul commit :
+          {% if projet.orphelins_non_securises_menaces %}
+          {{ projet.orphelins_non_securises_menaces|length }} autre(s) commit(s) orphelin(s) non sécurisé(s) de ce
+          dépôt serai(en)t aussi perdu(s) définitivement, même sans rapport avec ce rejet —
+          {% for d in projet.orphelins_non_securises_menaces %}<code class="hash">{{ d.hash }}</code>{% if d.sujet %} ({{ d.sujet }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}.
+          Sécurisez-les d'abord (🔒 ci-dessus) si vous voulez les garder.
+          {% else %}
+          aucun autre commit orphelin non sécurisé n'est actuellement détecté dans ce dépôt.
+          {% endif %}
+        </p>
+      </div>
+    </details>
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('comparer_selection_route', nom_projet=projet.nom) }}"
             class="bouton bouton--comparer" id="bouton-comparer-selection">Comparer la sélection</button>
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('supprimer_branches_recuperation_route', nom_projet=projet.nom) }}"
             class="bouton bouton--supprimer" id="bouton-supprimer-branche-recuperation">Supprimer la/les branche(s) de récupération</button>
-  </div>
-  <div class="panneau-actions__options-rejet">
-    <label class="case-fermer-issue-rejet">
-      <input type="checkbox" name="fermer_issue_rejet" form="form-actions-branches" id="case-fermer-issue-rejet">
-      Fermer aussi l'issue GitHub correspondante si elle est encore ouverte (Rejeter)
-    </label>
-    <input type="text" name="raison_rejet" form="form-actions-branches" id="champ-raison-rejet"
-           placeholder="Raison du rejet (optionnel — commentaire de fermeture d'issue)">
-    <label class="case-purger-rejet">
-      <input type="checkbox" name="purger_commit_rejet" form="form-actions-branches" id="case-purger-rejet"
-             data-commande-purge="{{ projet.commande_purge_rejet }}"
-             data-nb-autres-orphelins="{{ projet.orphelins_non_securises_menaces|length }}">
-      Purger réellement le(s) commit(s) rejeté(s) (<code>git reflog expire</code> + <code>git gc --prune=now</code>)
-      — IRRÉVERSIBLE, affecte TOUT le dépôt (Rejeter)
-    </label>
-    <p class="avertissement-purge-rejet">
-      ⚠️ Sans cette case, le commit rejeté reste récupérable (orphelin, signalé
-      « ambigu » par le diagnostic ci-dessus) le temps du reflog ; avec elle, il est
-      réellement détruit. Mais ces deux commandes sont globales au dépôt, pas
-      ciblées sur ce seul commit :
-      {% if projet.orphelins_non_securises_menaces %}
-      {{ projet.orphelins_non_securises_menaces|length }} autre(s) commit(s) orphelin(s) non sécurisé(s) de ce
-      dépôt serai(en)t aussi perdu(s) définitivement, même sans rapport avec ce rejet —
-      {% for d in projet.orphelins_non_securises_menaces %}<code class="hash">{{ d.hash }}</code>{% if d.sujet %} ({{ d.sujet }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}.
-      Sécurisez-les d'abord (🔒 ci-dessus) si vous voulez les garder.
-      {% else %}
-      aucun autre commit orphelin non sécurisé n'est actuellement détecté dans ce dépôt.
-      {% endif %}
-    </p>
   </div>
 </div>
 
@@ -332,6 +329,25 @@
   var boutonSupprimerBranche = document.getElementById("bouton-supprimer-branche-recuperation");
   var selectCibleMerge = document.getElementById("select-cible-merge");
   var form = document.getElementById("form-actions-branches");
+
+  // Panneau repliable des options de rejet (issue #97) : replié par défaut,
+  // mais jamais au prix de perdre de vue une case cochée à l'intérieur — si
+  // la case « Purger » est cochée, le panneau se rouvre (ou refuse de se
+  // refermer) pour qu'elle reste visible.
+  var detailsOptionsRejet = document.getElementById("details-options-rejet");
+  var casePurgerRejet = document.getElementById("case-purger-rejet");
+  if (detailsOptionsRejet && casePurgerRejet) {
+    casePurgerRejet.addEventListener("change", function () {
+      if (casePurgerRejet.checked) {
+        detailsOptionsRejet.open = true;
+      }
+    });
+    detailsOptionsRejet.addEventListener("toggle", function () {
+      if (!detailsOptionsRejet.open && casePurgerRejet.checked) {
+        detailsOptionsRejet.open = true;
+      }
+    });
+  }
 
   function cochees() {
     return Array.prototype.filter.call(cases, function (c) { return c.checked; });

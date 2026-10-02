@@ -34,7 +34,6 @@ from git_info import (
     commit_existe,
     diagnostiquer_commits_orphelins,
     extraire_numero_issue,
-    fermer_issue_github,
     finaliser_commit_merge,
     fusionner_worktree,
     get_branches_contenant,
@@ -43,7 +42,6 @@ from git_info import (
     get_chaine_cherry,
     get_date_commit,
     get_diagnostic_doublons_branche,
-    get_etat_issue_github,
     get_fichiers_en_conflit,
     get_fichiers_resolus_merge,
     get_hashes_commits_non_fusionnes,
@@ -58,7 +56,6 @@ from git_info import (
     lire_conflits_fichier,
     lire_verrous_actifs,
     nom_branche_recuperation,
-    numero_issue_depuis_nom_branche,
     pousser_branche,
     purger_reflog_et_gc,
     resoudre_bloc_conflit,
@@ -1603,20 +1600,9 @@ def rejeter_worktrees_route(nom_projet):
     seule si le worktree a déjà été retiré), sans jamais tenter de merge au
     préalable.
 
-    Si la case « Fermer aussi l'issue GitHub correspondante » est cochée
-    (champ `fermer_issue_rejet`), tente en plus — pour chaque branche
-    effectivement rejetée — de fermer l'issue GitHub associée (numéro extrait
-    du nom de la branche `worktree-issue-<N>`, ou à défaut du sujet de son
-    dernier commit, voir `numero_issue_depuis_nom_branche`) avec un
-    commentaire reprenant la raison optionnelle saisie (`raison_rejet`) —
-    seulement si elle apparaît encore ouverte (`get_etat_issue_github`) ;
-    sans effet si elle est déjà fermée (cas normal : le watcher CCL la ferme
-    déjà lui-même dès la fin de son traitement, bien avant qu'Alain ne
-    décide de rejeter le worktree correspondant). Cette vérification/
-    fermeture reste volontairement isolée de la suppression du worktree
-    elle-même : un échec ici (gh absent, non authentifié, pas de remote
-    GitHub) n'annule jamais une suppression déjà effectuée, il est
-    seulement rapporté à part.
+    Pas de fermeture d'issue GitHub ici (retirée en #97) : en usage normal,
+    l'issue correspondante est déjà fermée par le watcher CCL dès la fin de
+    son traitement (label `done`), bien avant qu'un rejet n'intervienne.
 
     Si la case « Purger réellement » est cochée (champ `purger_commit_rejet`,
     issue #96) : `branch -D` seul ne fait que détacher la branche, le commit
@@ -1639,8 +1625,6 @@ def rejeter_worktrees_route(nom_projet):
         flash("❌ Aucune branche sélectionnée.", "erreur")
         return redirect(url_for("projet_route", nom_projet=nom_projet))
 
-    fermer_issue = request.form.get("fermer_issue_rejet") == "on"
-    raison = request.form.get("raison_rejet", "").strip()
     purger = request.form.get("purger_commit_rejet") == "on"
 
     branche_principale = projet["branche_principale"]
@@ -1707,29 +1691,6 @@ def rejeter_worktrees_route(nom_projet):
 
         if purger and hashes_branche:
             hashes_a_purger.update(hashes_branche)
-
-        if not fermer_issue:
-            continue
-
-        numero_issue = numero_issue_depuis_nom_branche(nom, branche["dernier_commit"]["sujet"])
-        if numero_issue is None:
-            continue
-        etat_issue = get_etat_issue_github(numero_issue, projet["depot"])
-        if etat_issue is None:
-            flash(
-                f"⚠️ Issue #{numero_issue} : état indéterminable (gh absent/non authentifié, ou pas de "
-                "remote GitHub) — fermeture non tentée.",
-                "erreur",
-            )
-            continue
-        if etat_issue != "open":
-            continue
-        commentaire = "Rejeté depuis relecture_web" + (f" : {raison}" if raison else "")
-        resultat_fermeture = fermer_issue_github(numero_issue, commentaire, projet["depot"])
-        if resultat_fermeture["ok"]:
-            flash(f"✅ Issue #{numero_issue} fermée avec commentaire.", "succes")
-        else:
-            flash(f"⚠️ Échec de la fermeture de l'issue #{numero_issue} : {resultat_fermeture['erreur']}", "erreur")
 
     if purger:
         if hashes_a_purger:
