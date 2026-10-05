@@ -775,6 +775,7 @@ pre.brut {
 .liste-gitignore { list-style: none; padding: 0; margin: 0 0 0.75rem 0; }
 .ligne-gitignore {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 0.5rem;
   padding: 0.15rem 0;
@@ -797,15 +798,30 @@ pre.brut {
 }
 .bouton-retirer-gitignore:hover { text-decoration: underline; }
 
+/* flex-basis: 100% force le passage à la ligne sous le motif, en pleine
+   largeur du panneau, au lieu de rester écrasé dans la rangée flex. */
 .avertissement-gitignore-suivi {
-  margin: 0.2rem 0 0.4rem 1.5rem;
+  flex-basis: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0.2rem 0 0.4rem 0;
   padding: 0.35rem 0.6rem;
   background: #fff4e5;
   color: #a35a00;
   border-radius: 5px;
   font-size: 0.78rem;
+  overflow-wrap: anywhere;
 }
-.gitignore-fichier-suivi { display: inline-flex; align-items: center; gap: 0.3rem; }
+.avertissement-gitignore-suivi__texte { margin: 0 0 0.35rem 0; }
+.liste-gitignore-fichiers-suivis { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.gitignore-fichier-suivi {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.gitignore-fichier-suivi .chemin-fichier { min-width: 0; overflow-wrap: anywhere; }
+.gitignore-fichier-suivi .bouton--ne-plus-suivre { flex-shrink: 0; }
 .form-ne-plus-suivre, .form-retirer-gitignore, .form-ignorer-rapide { display: inline; }
 .bouton--ne-plus-suivre { font-size: 0.72rem; padding: 0.1rem 0.4rem; }
 
@@ -828,9 +844,12 @@ pre.brut {
 .liste-gitignore-non-suivis li {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
   padding: 0.2rem 0;
 }
+.liste-gitignore-non-suivis li .chemin-fichier { min-width: 0; overflow-wrap: anywhere; }
+.liste-gitignore-non-suivis li form { flex-shrink: 0; }
 
 /* Page de connexion (issue #92) — page autonome, hors mise-en-page à barre
    latérale (base.html), affichée uniquement en mode --externe. */

@@ -65,20 +65,24 @@
           </form>
           {% endif %}
           {% if ligne.fichiers_suivis %}
-          <p class="avertissement-gitignore-suivi">
-            ⚠️ {{ ligne.fichiers_suivis|length }} fichier(s) déjà suivi(s) par git correspondent à ce motif — un
-            <code>.gitignore</code> n'arrête jamais de suivre un fichier déjà suivi :
-            {% for f in ligne.fichiers_suivis %}
-            <span class="gitignore-fichier-suivi">
-              <code class="chemin-fichier">{{ f.chemin }}</code>
-              <form method="post" action="{{ url_for('ne_plus_suivre_route', nom_projet=projet.nom) }}" class="form-ne-plus-suivre">
-                <input type="hidden" name="chemin" value="{{ f.chemin }}">
-                <button type="submit" class="bouton bouton--supprimer bouton--ne-plus-suivre"
-                        data-chemin="{{ f.chemin }}" data-commande="{{ f.commande }}">Ne plus suivre</button>
-              </form>
-            </span>{% if not loop.last %}, {% endif %}
-            {% endfor %}
-          </p>
+          <div class="avertissement-gitignore-suivi">
+            <p class="avertissement-gitignore-suivi__texte">
+              ⚠️ {{ ligne.fichiers_suivis|length }} fichier(s) déjà suivi(s) par git correspondent à ce motif — un
+              <code>.gitignore</code> n'arrête jamais de suivre un fichier déjà suivi :
+            </p>
+            <ul class="liste-gitignore-fichiers-suivis">
+              {% for f in ligne.fichiers_suivis %}
+              <li class="gitignore-fichier-suivi">
+                <code class="chemin-fichier">{{ f.chemin }}</code>
+                <form method="post" action="{{ url_for('ne_plus_suivre_route', nom_projet=projet.nom) }}" class="form-ne-plus-suivre">
+                  <input type="hidden" name="chemin" value="{{ f.chemin }}">
+                  <button type="submit" class="bouton bouton--supprimer bouton--ne-plus-suivre"
+                          data-chemin="{{ f.chemin }}" data-commande="{{ f.commande }}">Ne plus suivre</button>
+                </form>
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
           {% endif %}
         </li>
         {% endfor %}
