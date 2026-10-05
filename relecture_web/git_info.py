@@ -2278,13 +2278,40 @@ def retirer_du_suivi(repertoire, chemin):
     disque. Committe immédiatement, portée strictement limitée à `chemin`
     (même principe que `committer_gitignore` ci-dessus) — jamais lancé
     automatiquement, seulement sur action explicite confirmée côté
-    template."""
-    rm = _lancer_git(repertoire, "rm", "--cached", "--", chemin)
+    template.
+
+    Ne commit PAS avec `git commit -- <chemin>` (contrairement à
+    `committer_gitignore`) : une fois `chemin` redevenu non suivi par le
+    `rm --cached` ci-dessous, git le voit aussi comme un fichier ordinaire
+    du répertoire de travail (resté sur disque) et répond « rien à
+    valider » au lieu de committer la suppression pourtant déjà indexée
+    (vérifié sur git 2.43) — `--include`/`-i` contourne ce symptôme mais
+    committe en même temps tout AUTRE changement déjà indexé par un tiers,
+    ce que #74 interdit justement. Un commit sans pathspec est donc utilisé
+    à la place, mais seulement si l'index est déjà vide AVANT le `rm
+    --cached` (vérifié ici, pas après coup) : dans ce cas, le seul
+    changement indexé au moment du commit est forcément celui qu'on vient
+    de faire — refus (sans toucher à rien) si l'index contenait déjà
+    d'autres changements."""
     commande_rm = commande_affichee(repertoire, f"git -C {repertoire} rm --cached -- {chemin}")
+
+    diff_avant = _lancer_git(repertoire, "diff", "--cached", "--name-only")
+    chemins_deja_indexes = [ligne.strip() for ligne in diff_avant.stdout.splitlines() if ligne.strip()]
+    if chemins_deja_indexes:
+        return {
+            "ok": False,
+            "erreur": (
+                "d'autres modifications sont déjà indexées dans ce dépôt "
+                f"({', '.join(chemins_deja_indexes)}) — action refusée pour ne pas les embarquer."
+            ),
+            "commande": commande_rm,
+        }
+
+    rm = _lancer_git(repertoire, "rm", "--cached", "--", chemin)
     if rm.returncode != 0:
         return {"ok": False, "erreur": (rm.stderr or rm.stdout).strip(), "commande": commande_rm}
 
-    commit = _lancer_git(repertoire, "commit", "-m", f"chore: ne plus suivre {chemin}", "--", chemin)
+    commit = _lancer_git(repertoire, "commit", "-m", f"chore: ne plus suivre {chemin}")
     if commit.returncode != 0:
         return {
             "ok": False,

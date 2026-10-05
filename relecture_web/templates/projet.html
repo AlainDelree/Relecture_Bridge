@@ -42,6 +42,139 @@
   <p class="statut">🔌 PC fixe éteint ou injoignable — projet indisponible pour le moment.</p>
 {% else %}
 
+<details class="panneau-gitignore" id="details-gitignore">
+  <summary>📄 .gitignore</summary>
+  <div class="panneau-gitignore__corps">
+    {% if projet.gitignore_refus %}
+    <p class="statut">{{ projet.gitignore_refus }}</p>
+    {% else %}
+
+      {% if projet.gitignore_lignes is none %}
+      <p class="statut">Aucun .gitignore à la racine de ce projet — le premier ajout ci-dessous le créera.</p>
+      {% else %}
+      <ul class="liste-gitignore">
+        {% for ligne in projet.gitignore_lignes %}
+        <li class="ligne-gitignore ligne-gitignore--{{ ligne.type }}">
+          <code class="gitignore-texte">{{ ligne.texte if ligne.texte else " " }}</code>
+          {% if ligne.type == "motif" %}
+          <form method="post" action="{{ url_for('retirer_motif_gitignore_route', nom_projet=projet.nom) }}" class="form-retirer-gitignore">
+            <input type="hidden" name="index" value="{{ ligne.index }}">
+            <input type="hidden" name="texte" value="{{ ligne.texte }}">
+            <button type="submit" class="bouton-retirer-gitignore" title="Retirer ce motif du .gitignore"
+                    data-motif="{{ ligne.texte }}" data-commande="{{ ligne.commande_retrait }}">✕</button>
+          </form>
+          {% endif %}
+          {% if ligne.fichiers_suivis %}
+          <p class="avertissement-gitignore-suivi">
+            ⚠️ {{ ligne.fichiers_suivis|length }} fichier(s) déjà suivi(s) par git correspondent à ce motif — un
+            <code>.gitignore</code> n'arrête jamais de suivre un fichier déjà suivi :
+            {% for f in ligne.fichiers_suivis %}
+            <span class="gitignore-fichier-suivi">
+              <code class="chemin-fichier">{{ f.chemin }}</code>
+              <form method="post" action="{{ url_for('ne_plus_suivre_route', nom_projet=projet.nom) }}" class="form-ne-plus-suivre">
+                <input type="hidden" name="chemin" value="{{ f.chemin }}">
+                <button type="submit" class="bouton bouton--supprimer bouton--ne-plus-suivre"
+                        data-chemin="{{ f.chemin }}" data-commande="{{ f.commande }}">Ne plus suivre</button>
+              </form>
+            </span>{% if not loop.last %}, {% endif %}
+            {% endfor %}
+          </p>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('ajouter_motif_gitignore_route', nom_projet=projet.nom) }}" class="form-ajouter-gitignore">
+        <input type="text" name="motif" placeholder="ex. build/ ou *.log" autocomplete="off" required>
+        <button type="submit" class="bouton bouton--merger">Ajouter au .gitignore</button>
+      </form>
+
+      {% if projet.gitignore_non_suivis %}
+      <div class="gitignore-non-suivis">
+        <p class="sous-titre">Non suivis et non ignorés actuellement dans ce dépôt :</p>
+        <ul class="liste-gitignore-non-suivis">
+          {% for chemin in projet.gitignore_non_suivis %}
+          <li>
+            <code class="chemin-fichier">{{ chemin }}</code>
+            <form method="post" action="{{ url_for('ajouter_motif_gitignore_route', nom_projet=projet.nom) }}" class="form-ignorer-rapide">
+              <input type="hidden" name="motif" value="{{ chemin }}">
+              <button type="submit" class="bouton bouton--merger">Ignorer</button>
+            </form>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+    {% endif %}
+  </div>
+</details>
+
+<script>
+(function () {
+  var NOM_PROJET_GITIGNORE = {{ projet.nom|tojson }};
+  var COULEUR_PROJET_GITIGNORE = {{ projet.couleur|tojson }};
+  var COULEUR_TEXTE_PROJET_GITIGNORE = {{ projet.couleur_texte|tojson }};
+  var envoiForceGitignore = null;
+
+  // Suppression d'un motif (issue #98) : confirmation légère (niveau
+  // Merger, voir ouvrirConfirmation) — rappelle que les fichiers visés par
+  // ce motif redeviennent non suivis, avec le risque de les committer par
+  // erreur ensuite.
+  document.querySelectorAll(".form-retirer-gitignore").forEach(function (form) {
+    form.addEventListener("submit", function (evenement) {
+      if (envoiForceGitignore === form) {
+        envoiForceGitignore = null;
+        return;
+      }
+      evenement.preventDefault();
+      var bouton = form.querySelector(".bouton-retirer-gitignore");
+      var motif = bouton.dataset.motif;
+      ouvrirConfirmation({
+        variant: "legere",
+        message: "Retirer « " + motif + "» du .gitignore — " + NOM_PROJET_GITIGNORE,
+        avertissement: "Les fichiers correspondant à ce motif redeviennent non suivis — risque de les committer par erreur ensuite.",
+        commandes: [bouton.dataset.commande],
+        libelleBouton: "Retirer " + motif,
+        nomProjet: NOM_PROJET_GITIGNORE, couleurProjet: COULEUR_PROJET_GITIGNORE, couleurTexteProjet: COULEUR_TEXTE_PROJET_GITIGNORE,
+        onConfirmer: function () {
+          envoiForceGitignore = form;
+          form.requestSubmit();
+        },
+      });
+    });
+  });
+
+  // « Ne plus suivre » (issue #98) : confirmation forte — modifie l'index
+  // et crée un commit, jamais lancé automatiquement par un simple ajout de
+  // motif (voir get_fichiers_suivis_correspondant côté serveur).
+  document.querySelectorAll(".form-ne-plus-suivre").forEach(function (form) {
+    form.addEventListener("submit", function (evenement) {
+      if (envoiForceGitignore === form) {
+        envoiForceGitignore = null;
+        return;
+      }
+      evenement.preventDefault();
+      var bouton = form.querySelector(".bouton--ne-plus-suivre");
+      var chemin = bouton.dataset.chemin;
+      ouvrirConfirmation({
+        variant: "forte",
+        message: "Ne plus suivre « " + chemin + " » — " + NOM_PROJET_GITIGNORE,
+        avertissement: "Le fichier reste sur disque, mais git arrête de le suivre : modifie l'index et crée un commit immédiatement.",
+        commandes: [bouton.dataset.commande],
+        libelleBouton: "Ne plus suivre " + chemin,
+        nomProjet: NOM_PROJET_GITIGNORE, couleurProjet: COULEUR_PROJET_GITIGNORE, couleurTexteProjet: COULEUR_TEXTE_PROJET_GITIGNORE,
+        onConfirmer: function () {
+          envoiForceGitignore = form;
+          form.requestSubmit();
+        },
+      });
+    });
+  });
+})();
+</script>
+
 {% if projet.merge_en_cours %}
 <section class="conflits-fusion">
   {% if projet.fichiers_conflit %}

@@ -758,6 +758,80 @@ pre.brut {
 .bouton--confirmer-legere { background: #eef1f5; color: #1a4fb4; border-color: #c3d6f7; font-weight: 600; }
 .bouton--confirmer-legere:hover { background: #e2e7ee; }
 
+/* Panneau repliable « .gitignore » (issue #98), même principe que
+   .details-options-rejet de l'issue #97 mais en section autonome plutôt
+   qu'imbriqué dans le panneau d'actions des branches — fermé par défaut. */
+.panneau-gitignore {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.85rem;
+}
+.panneau-gitignore summary { cursor: pointer; font-weight: 600; color: #3a4550; }
+.panneau-gitignore__corps { margin-top: 0.75rem; }
+
+.liste-gitignore { list-style: none; padding: 0; margin: 0 0 0.75rem 0; }
+.ligne-gitignore {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+.ligne-gitignore .gitignore-texte {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  white-space: pre;
+}
+.ligne-gitignore--commentaire .gitignore-texte,
+.ligne-gitignore--vide .gitignore-texte { color: #999; }
+.ligne-gitignore--motif .gitignore-texte { color: #1a1a1a; }
+.bouton-retirer-gitignore {
+  border: none;
+  background: transparent;
+  color: #a33;
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0 0.3rem;
+}
+.bouton-retirer-gitignore:hover { text-decoration: underline; }
+
+.avertissement-gitignore-suivi {
+  margin: 0.2rem 0 0.4rem 1.5rem;
+  padding: 0.35rem 0.6rem;
+  background: #fff4e5;
+  color: #a35a00;
+  border-radius: 5px;
+  font-size: 0.78rem;
+}
+.gitignore-fichier-suivi { display: inline-flex; align-items: center; gap: 0.3rem; }
+.form-ne-plus-suivre, .form-retirer-gitignore, .form-ignorer-rapide { display: inline; }
+.bouton--ne-plus-suivre { font-size: 0.72rem; padding: 0.1rem 0.4rem; }
+
+.form-ajouter-gitignore {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+.form-ajouter-gitignore input[type="text"] {
+  flex: 1;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid #d7dde5;
+  border-radius: 5px;
+}
+
+.gitignore-non-suivis .sous-titre { margin: 0 0 0.3rem 0; font-size: 0.8rem; }
+.liste-gitignore-non-suivis { list-style: none; padding: 0; margin: 0; }
+.liste-gitignore-non-suivis li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+}
+
 /* Page de connexion (issue #92) — page autonome, hors mise-en-page à barre
    latérale (base.html), affichée uniquement en mode --externe. */
 .connexion {

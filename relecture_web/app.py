@@ -27,12 +27,17 @@ from flask import Flask, flash, g, redirect, render_template, request, session, 
 import auth
 from git_info import (
     ErreurRecuperationProjets,
+    ajouter_motif_gitignore,
+    classifier_ligne_gitignore,
     collect_etat_projets,
     commande_affichee,
     comparer_commit_doublon,
     commit_est_securise,
     commit_existe,
+    committer_gitignore,
     diagnostiquer_commits_orphelins,
+    ecrire_lignes_gitignore,
+    est_projet_distant,
     extraire_numero_issue,
     finaliser_commit_merge,
     fusionner_worktree,
@@ -43,7 +48,9 @@ from git_info import (
     get_date_commit,
     get_diagnostic_doublons_branche,
     get_fichiers_en_conflit,
+    get_fichiers_non_suivis,
     get_fichiers_resolus_merge,
+    get_fichiers_suivis_correspondant,
     get_hashes_commits_non_fusionnes,
     get_issue_deja_referencee,
     get_merge_en_cours,
@@ -52,14 +59,17 @@ from git_info import (
     get_rapport_cherry_brut,
     get_remote_defaut,
     get_sujet_commit,
+    gitignore_a_des_modifications_non_committees,
     hash_depuis_branche_recuperation,
     lire_conflits_fichier,
+    lire_lignes_gitignore,
     lire_verrous_actifs,
     nom_branche_recuperation,
     pousser_branche,
     purger_reflog_et_gc,
     resoudre_bloc_conflit,
     resoudre_tous_blocs_conflit,
+    retirer_du_suivi,
     retraiter_fichier_conflit,
     revert_commit,
     securiser_commit_orphelin,
@@ -160,6 +170,84 @@ def _verrous_actifs_projets(projets):
         (p["repertoire"] for p in projets if p["nom"] == "bridge_agent"), None
     )
     return lire_verrous_actifs(repertoire_bridge_agent)
+
+
+def _refus_modification_gitignore(projet):
+    """Raisons de refus communes aux trois actions du panneau .gitignore
+    (issue #98) — projet distant (lecture/écriture de fichier hors
+    périmètre git, #94), fusion en cours (MERGE_HEAD), badge « CCL travaille
+    ici » actif sur le worktree principal du projet, ou .gitignore déjà
+    modifié avant toute action de ce panneau (modification d'origine
+    extérieure à ne jamais embarquer silencieusement dans le commit
+    automatique). Retourne un message de refus (str), ou None si l'action
+    peut continuer."""
+    repertoire = projet["repertoire"]
+    if est_projet_distant(repertoire):
+        return "❌ Projet distant (PC fixe) — édition du .gitignore indisponible pour ce projet."
+    if get_merge_en_cours(repertoire):
+        return "❌ Fusion en cours sur ce projet — édition du .gitignore refusée tant qu'elle n'est pas finalisée."
+    projets, _erreur = _charger_projets()
+    verrous_actifs = _verrous_actifs_projets(projets)
+    if worktree_ccl_actif(repertoire, verrous_actifs):
+        return "❌ Un verrou Bridge_Agent actif signale CCL en train de travailler ici — édition du .gitignore refusée."
+    if gitignore_a_des_modifications_non_committees(repertoire):
+        return (
+            "❌ Le .gitignore contient déjà des modifications non committées d'origine extérieure "
+            "— vérifiez-les manuellement avant toute action depuis ce panneau."
+        )
+    return None
+
+
+def _construire_panneau_gitignore(projet):
+    """Données du panneau repliable « .gitignore » de la page projet (issue
+    #98) — accède directement au filesystem local, donc n'a de sens que
+    pour un projet local, ou si aucun autre garde-fou n'empêche déjà toute
+    modification (voir `_refus_modification_gitignore` : projet distant,
+    fusion en cours, badge « CCL travaille ici », .gitignore déjà modifié
+    d'origine extérieure) — dans ces cas, le panneau affiche juste le motif
+    du refus plutôt que de lire quoi que ce soit, même en lecture (évite un
+    accès filesystem qui n'a pas de sens pour un projet distant, #94).
+
+    Pour chaque ligne « motif » affichée, vérifie en plus si des fichiers
+    déjà suivis y correspondent (voir `get_fichiers_suivis_correspondant`)
+    — même piège git signalé après un ajout, ici affiché en permanence
+    pour rester visible même après un rafraîchissement de la page."""
+    projet["gitignore_refus"] = _refus_modification_gitignore(projet)
+    if projet["gitignore_refus"]:
+        projet["gitignore_lignes"] = None
+        projet["gitignore_non_suivis"] = []
+        return
+
+    repertoire = projet["repertoire"]
+    lignes_brutes = lire_lignes_gitignore(repertoire)
+    if lignes_brutes is None:
+        projet["gitignore_lignes"] = None
+    else:
+        lignes = []
+        for index, ligne_brute in enumerate(lignes_brutes):
+            type_ligne = classifier_ligne_gitignore(ligne_brute)
+            texte = ligne_brute.rstrip("\r\n")
+            fichiers_suivis = (
+                get_fichiers_suivis_correspondant(repertoire, texte) if type_ligne == "motif" else []
+            )
+            lignes.append({
+                "index": index,
+                "type": type_ligne,
+                "texte": texte,
+                "commande_retrait": (
+                    commande_affichee(repertoire, f"git -C {repertoire} commit -m \"chore: .gitignore — retire {texte}\" -- .gitignore")
+                    if type_ligne == "motif" else None
+                ),
+                "fichiers_suivis": [
+                    {
+                        "chemin": chemin,
+                        "commande": commande_affichee(repertoire, f"git -C {repertoire} rm --cached -- {chemin}"),
+                    }
+                    for chemin in fichiers_suivis
+                ],
+            })
+        projet["gitignore_lignes"] = lignes
+    projet["gitignore_non_suivis"] = get_fichiers_non_suivis(repertoire)
 
 
 def _diagnostiquer_orphelins(projet, resumes_orphelins):
@@ -787,6 +875,7 @@ def projet_route(nom_projet):
     resumes_par_branche = regrouper_resumes_par_branche(resumes, projet["repertoire"])
     projet["diagnostics_orphelins"] = _diagnostiquer_orphelins(projet, resumes_par_branche.get(None, []))
     projet["fichiers_conflit"] = get_fichiers_en_conflit(projet["repertoire"])
+    _construire_panneau_gitignore(projet)
 
     # Option « Purger réellement » du bouton Rejeter (issue #96) : commits
     # orphelins déjà connus du diagnostic ci-dessus, mais pas encore
@@ -1141,6 +1230,172 @@ def nettoyer_projet_route(nom_projet):
         flash(f"⚠️ {nb_supprimes} résumé(s) supprimé(s), {nb_echecs} échec(s) sur « {nom_projet} ».", "erreur")
     else:
         flash(f"✅ {nb_supprimes} résumé(s) déjà pushé(s) supprimé(s) sur « {nom_projet} ».", "succes")
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+
+@app.route("/projet/<nom_projet>/gitignore/ajouter", methods=["POST"])
+@login_requis
+def ajouter_motif_gitignore_route(nom_projet):
+    """Ajoute un motif au .gitignore de la racine du projet (panneau
+    repliable, issue #98) — champ texte libre, ou raccourci « Ignorer »
+    d'un fichier/dossier non suivi (même valeur envoyée directement comme
+    `motif`). Valide : une seule ligne, non vide, pas de doublon exact.
+    Complète automatiquement par un `/` final si l'entrée correspond à un
+    dossier existant du projet (signalé dans le message de retour plutôt
+    que de le forcer silencieusement sans explication)."""
+    motif_brut = request.form.get("motif", "")
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+
+    refus = _refus_modification_gitignore(projet)
+    if refus:
+        flash(refus, "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    if "\n" in motif_brut or "\r" in motif_brut:
+        flash("❌ Une seule ligne à la fois pour le .gitignore.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    motif = motif_brut.strip()
+    if not motif:
+        flash("❌ Motif vide.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    repertoire = projet["repertoire"]
+
+    # Motif désignant un dossier existant du projet : complète par un "/"
+    # final s'il manque — sans lui, le motif masquerait aussi un futur
+    # fichier de même nom à la racine du dossier parent, probablement pas
+    # l'intention en visant ce dossier précis.
+    motif_final = motif
+    dossier_detecte = False
+    if not motif.endswith("/") and os.path.isdir(os.path.join(repertoire, motif.lstrip("/"))):
+        motif_final = motif + "/"
+        dossier_detecte = True
+
+    lignes_existantes = lire_lignes_gitignore(repertoire) or []
+    motifs_existants = {
+        ligne.rstrip("\r\n") for ligne in lignes_existantes
+        if classifier_ligne_gitignore(ligne) == "motif"
+    }
+    if motif_final in motifs_existants:
+        flash(f"❌ « {motif_final} » est déjà présent dans le .gitignore.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    ajouter_motif_gitignore(repertoire, motif_final)
+    resultat = committer_gitignore(repertoire, f"chore: .gitignore — ajoute {motif_final}")
+    if not resultat["ok"]:
+        flash(
+            f"❌ .gitignore modifié sur disque mais commit impossible ({resultat['commande']}) : "
+            f"{resultat['erreur']}",
+            "erreur",
+        )
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    message = f"✅ « {motif_final} » ajouté au .gitignore"
+    if dossier_detecte:
+        message += " (dossier détecté, « / » ajouté automatiquement)"
+    message += f" — {resultat['commande']}"
+
+    fichiers_suivis = get_fichiers_suivis_correspondant(repertoire, motif_final)
+    if fichiers_suivis:
+        message += (
+            f" — ⚠️ piège gitignore : {len(fichiers_suivis)} fichier(s) déjà suivi(s) continuent "
+            "d'être suivis malgré ce motif (" + ", ".join(fichiers_suivis) + ") — "
+            "utilisez « Ne plus suivre » ci-dessous si c'est voulu."
+        )
+    flash(message, "succes")
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+
+@app.route("/projet/<nom_projet>/gitignore/retirer", methods=["POST"])
+@login_requis
+def retirer_motif_gitignore_route(nom_projet):
+    """Retire une ligne « motif » du .gitignore (bouton ✕, issue #98) —
+    jamais une ligne commentaire/vide (le template ne propose le bouton que
+    sur les motifs). `index` + `texte` (envoyés tous les deux, voir
+    projet.html) doivent correspondre exactement à la ligne actuellement en
+    place : un décalage (fichier modifié entre l'affichage et l'envoi du
+    formulaire) fait échouer l'action plutôt que de retirer la mauvaise
+    ligne."""
+    index_brut = request.form.get("index", "")
+    texte_attendu = request.form.get("texte", "")
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+
+    refus = _refus_modification_gitignore(projet)
+    if refus:
+        flash(refus, "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    try:
+        index = int(index_brut)
+    except ValueError:
+        flash("❌ Index de ligne invalide.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    repertoire = projet["repertoire"]
+    lignes = lire_lignes_gitignore(repertoire)
+    if (
+        lignes is None or not (0 <= index < len(lignes))
+        or classifier_ligne_gitignore(lignes[index]) != "motif"
+        or lignes[index].rstrip("\r\n") != texte_attendu
+    ):
+        flash("❌ Le .gitignore a changé depuis l'affichage de la page — rafraîchissez et réessayez.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    del lignes[index]
+    ecrire_lignes_gitignore(repertoire, lignes)
+    resultat = committer_gitignore(repertoire, f"chore: .gitignore — retire {texte_attendu}")
+    if not resultat["ok"]:
+        flash(
+            f"❌ .gitignore modifié sur disque mais commit impossible ({resultat['commande']}) : "
+            f"{resultat['erreur']}",
+            "erreur",
+        )
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    flash(
+        f"✅ « {texte_attendu} » retiré du .gitignore — les fichiers concernés peuvent réapparaître "
+        f"comme non suivis (risque de les committer par erreur) — {resultat['commande']}",
+        "succes",
+    )
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+
+@app.route("/projet/<nom_projet>/gitignore/ne-plus-suivre", methods=["POST"])
+@login_requis
+def ne_plus_suivre_route(nom_projet):
+    """`git rm --cached` sur un fichier déjà suivi qui correspond à un motif
+    du .gitignore (piège connu, issue #98) — jamais lancé automatiquement,
+    seulement sur ce bouton explicite après confirmation forte côté
+    template (modifie l'index et crée un commit)."""
+    chemin = request.form.get("chemin", "")
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+    if not chemin:
+        flash("❌ Chemin manquant.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    refus = _refus_modification_gitignore(projet)
+    if refus:
+        flash(refus, "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    resultat = retirer_du_suivi(projet["repertoire"], chemin)
+    if resultat["ok"]:
+        flash(
+            f"✅ « {chemin} » ne sera plus suivi par git (fichier conservé sur disque) — {resultat['commande']}",
+            "succes",
+        )
+    else:
+        flash(f"❌ Échec de « git rm --cached » sur « {chemin} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
     return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 
