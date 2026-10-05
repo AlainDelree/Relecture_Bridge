@@ -2152,5 +2152,168 @@ def collect_etat_projets():
     return resultat
 
 
+# --- Panneau « .gitignore » de la page projet (issue #98) ---------------
+#
+# Agit uniquement sur le .gitignore à la racine du worktree PRINCIPAL d'un
+# projet LOCAL (jamais sur ceux des worktrees de CCL, jamais sur un projet
+# distant CCW — #94, dont le filesystem n'est pas accessible directement
+# depuis ce process : `open()` ne peut viser qu'un chemin local). L'appelant
+# (app.py) est responsable d'écarter un projet distant avant d'appeler quoi
+# que ce soit ci-dessous.
+
+def chemin_gitignore(repertoire):
+    return os.path.join(repertoire, ".gitignore")
+
+
+def lire_lignes_gitignore(repertoire):
+    """Lignes brutes du .gitignore de `repertoire`, chacune avec sa
+    terminaison d'origine intacte (`\\n`, `\\r\\n`, ou aucune pour une
+    dernière ligne sans retour final) — nécessaire pour réécrire le fichier
+    sans en changer le format (ordre, commentaires, fins de ligne). None si
+    le fichier n'existe pas."""
+    try:
+        with open(chemin_gitignore(repertoire), "r", encoding="utf-8", newline="") as fichier:
+            contenu = fichier.read()
+    except OSError:
+        return None
+    return contenu.splitlines(keepends=True) if contenu else []
+
+
+def ecrire_lignes_gitignore(repertoire, lignes):
+    """Réécrit le .gitignore de `repertoire` avec exactement `lignes` (voir
+    `lire_lignes_gitignore`) — simple concaténation, aucune transformation."""
+    with open(chemin_gitignore(repertoire), "w", encoding="utf-8", newline="") as fichier:
+        fichier.write("".join(lignes))
+
+
+def classifier_ligne_gitignore(ligne):
+    """« motif » (un chemin à ignorer), « commentaire » (ligne commençant
+    par # une fois les espaces de tête retirés) ou « vide » — ces deux
+    derniers ne sont jamais proposés à la suppression individuelle (voir
+    projet.html)."""
+    texte = ligne.rstrip("\r\n").strip()
+    if not texte:
+        return "vide"
+    if texte.startswith("#"):
+        return "commentaire"
+    return "motif"
+
+
+def _terminaison_dominante(lignes):
+    for ligne in reversed(lignes):
+        if ligne.endswith("\r\n"):
+            return "\r\n"
+        if ligne.endswith("\n"):
+            return "\n"
+    return "\n"
+
+
+def ajouter_motif_gitignore(repertoire, motif):
+    """Ajoute `motif` en fin de .gitignore de `repertoire` (le crée s'il
+    n'existe pas encore), en gardant intactes les lignes déjà présentes. La
+    terminaison de la nouvelle ligne reprend celle déjà utilisée dans le
+    fichier (dernière ligne terminée), `\\n` par défaut pour un fichier
+    vide/nouveau. Ne valide rien (doublon, ligne unique, etc.) — à charge de
+    l'appelant (voir app.py)."""
+    lignes = lire_lignes_gitignore(repertoire) or []
+    terminaison = _terminaison_dominante(lignes)
+    if lignes and not lignes[-1].endswith(("\n", "\r\n")):
+        lignes[-1] = lignes[-1] + terminaison
+    lignes.append(motif + terminaison)
+    ecrire_lignes_gitignore(repertoire, lignes)
+
+
+def committer_gitignore(repertoire, message):
+    """Commit du .gitignore seul (`git add -- .gitignore` puis `git commit
+    -- .gitignore`), jamais `-a`/`-A` — même principe de portée que le
+    commit CHANGELOG de `fusionner_changelog_worktree` (issue #74) :
+    `repertoire` peut être le même dossier où un CCL travaille encore en
+    repli sur REP_TRAVAIL, un commit plus large embarquerait son travail
+    inachevé. Retourne {ok, erreur, commande}."""
+    ajout = _lancer_git(repertoire, "add", "--", ".gitignore")
+    commande_add = commande_affichee(repertoire, f"git -C {repertoire} add -- .gitignore")
+    if ajout.returncode != 0:
+        return {"ok": False, "erreur": (ajout.stderr or ajout.stdout).strip(), "commande": commande_add}
+
+    commit = _lancer_git(repertoire, "commit", "-m", message, "--", ".gitignore")
+    commande_commit = commande_affichee(
+        repertoire, f"git -C {repertoire} commit -m {json.dumps(message)} -- .gitignore"
+    )
+    if commit.returncode != 0:
+        return {"ok": False, "erreur": (commit.stderr or commit.stdout).strip(), "commande": commande_commit}
+    return {"ok": True, "erreur": None, "commande": commande_commit}
+
+
+def gitignore_a_des_modifications_non_committees(repertoire):
+    """True si le .gitignore de `repertoire` porte déjà une modification non
+    committée (`git status --porcelain=v1 -- .gitignore`) — garde-fou avant
+    toute action du panneau (issue #98) : une modification déjà présente
+    avant que ce panneau ne touche quoi que ce soit vient forcément d'une
+    autre source (édition manuelle en terminal, autre outil) et ne doit
+    jamais être embarquée dans le commit automatique sans qu'Alain le
+    sache."""
+    resultat = _lancer_git(repertoire, "status", "--porcelain=v1", "--", ".gitignore")
+    if resultat.returncode != 0:
+        return False
+    return bool(resultat.stdout.strip())
+
+
+def get_fichiers_suivis_correspondant(repertoire, motif):
+    """Fichiers déjà suivis par git qui correspondent à `motif` (piège connu
+    de gitignore, issue #98 : ajouter un motif n'arrête jamais de suivre un
+    fichier déjà suivi). `git ls-files -i -c --exclude=<motif>` simule
+    l'effet de ce seul motif avec le même moteur de correspondance que git
+    lui-même (gère `/` final, `**`, négation, etc.), sans réimplémentation
+    approximative ici. Retourne une liste de chemins (vide si aucun, ou en
+    cas d'erreur git)."""
+    resultat = _lancer_git(repertoire, "ls-files", "-i", "-c", f"--exclude={motif}")
+    if resultat.returncode != 0:
+        return []
+    return [ligne for ligne in resultat.stdout.splitlines() if ligne.strip()]
+
+
+def retirer_du_suivi(repertoire, chemin):
+    """`git rm --cached -- <chemin>` (bouton « Ne plus suivre », issue #98) :
+    retire uniquement l'entrée de l'index, le fichier reste intact sur
+    disque. Committe immédiatement, portée strictement limitée à `chemin`
+    (même principe que `committer_gitignore` ci-dessus) — jamais lancé
+    automatiquement, seulement sur action explicite confirmée côté
+    template."""
+    rm = _lancer_git(repertoire, "rm", "--cached", "--", chemin)
+    commande_rm = commande_affichee(repertoire, f"git -C {repertoire} rm --cached -- {chemin}")
+    if rm.returncode != 0:
+        return {"ok": False, "erreur": (rm.stderr or rm.stdout).strip(), "commande": commande_rm}
+
+    commit = _lancer_git(repertoire, "commit", "-m", f"chore: ne plus suivre {chemin}", "--", chemin)
+    if commit.returncode != 0:
+        return {
+            "ok": False,
+            "erreur": "git rm --cached fait, mais commit impossible : " + (commit.stderr or commit.stdout).strip(),
+            "commande": commande_rm,
+        }
+    return {"ok": True, "erreur": None, "commande": commande_rm}
+
+
+def get_fichiers_non_suivis(repertoire):
+    """Fichiers et dossiers non suivis et non ignorés de `repertoire` (même
+    source que `get_modifications_non_committees` : `git status
+    --porcelain=v1`, qui exclut déjà les chemins ignorés) — raccourci
+    pratique du panneau .gitignore (issue #98), limité au code `??` (un
+    fichier suivi modifié n'a pas sa place dans cette liste, contrairement
+    à `get_modifications_non_committees`)."""
+    resultat = _lancer_git(repertoire, "status", "--porcelain=v1")
+    if resultat.returncode != 0:
+        return []
+    chemins = []
+    for ligne in resultat.stdout.splitlines():
+        if len(ligne) < 4 or not ligne.startswith("??"):
+            continue
+        chemin = ligne[3:]
+        if chemin.startswith('"') and chemin.endswith('"'):
+            chemin = chemin[1:-1]
+        chemins.append(chemin)
+    return chemins
+
+
 if __name__ == "__main__":
     print(json.dumps(collect_etat_projets(), ensure_ascii=False, indent=2))
