@@ -1313,7 +1313,7 @@ def ajouter_motif_gitignore_route(nom_projet):
 @app.route("/projet/<nom_projet>/gitignore/retirer", methods=["POST"])
 @login_requis
 def retirer_motif_gitignore_route(nom_projet):
-    """Retire une ligne « motif » du .gitignore (bouton ✕, issue #98) —
+    """Retire une ligne « motif » du .gitignore (bouton « Retirer », issue #98) —
     jamais une ligne commentaire/vide (le template ne propose le bouton que
     sur les motifs). `index` + `texte` (envoyés tous les deux, voir
     projet.html) doivent correspondre exactement à la ligne actuellement en

@@ -789,14 +789,9 @@ pre.brut {
 .ligne-gitignore--vide .gitignore-texte { color: #999; }
 .ligne-gitignore--motif .gitignore-texte { color: #1a1a1a; }
 .bouton-retirer-gitignore {
-  border: none;
-  background: transparent;
-  color: #a33;
-  cursor: pointer;
-  font-size: 0.8rem;
-  padding: 0 0.3rem;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
-.bouton-retirer-gitignore:hover { text-decoration: underline; }
 
 /* flex-basis: 100% force le passage à la ligne sous le motif, en pleine
    largeur du panneau, au lieu de rester écrasé dans la rangée flex. */
@@ -823,7 +818,7 @@ pre.brut {
 .gitignore-fichier-suivi .chemin-fichier { min-width: 0; overflow-wrap: anywhere; }
 .gitignore-fichier-suivi .bouton--ne-plus-suivre { flex-shrink: 0; }
 .form-ne-plus-suivre, .form-retirer-gitignore, .form-ignorer-rapide { display: inline; }
-.bouton--ne-plus-suivre { font-size: 0.72rem; padding: 0.1rem 0.4rem; }
+.bouton--ne-plus-suivre { font-size: 0.72rem; padding: 0.1rem 0.4rem; white-space: nowrap; }
 
 .form-ajouter-gitignore {
   display: flex;
