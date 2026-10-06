@@ -315,14 +315,26 @@ header h1 { margin-bottom: 0.2rem; }
   align-items: center;
   gap: 0.35rem;
 }
-.avertissement-purge-rejet {
+.message-purge-rejet {
   margin: 0;
   padding: 0.4rem 0.6rem;
-  background: #fdecea;
-  color: #a33;
   border-radius: 5px;
   font-size: 0.78rem;
 }
+.message-purge-rejet--danger {
+  background: #fdecea;
+  color: #a33;
+}
+.message-purge-rejet--ok {
+  background: #eaf7ed;
+  color: #2a7a3b;
+}
+.details-pourquoi-purge {
+  font-size: 0.75rem;
+  color: #666;
+}
+.details-pourquoi-purge summary { cursor: pointer; }
+.details-pourquoi-purge p { margin: 0.4rem 0 0 0; }
 
 .commit-actions {
   margin-top: 0.6rem;
