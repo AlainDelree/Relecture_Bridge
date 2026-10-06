@@ -36,6 +36,7 @@ from git_info import (
     commit_existe,
     committer_gitignore,
     diagnostiquer_commits_orphelins,
+    diagnostiquer_echec_suppression_worktree,
     ecrire_lignes_gitignore,
     est_projet_distant,
     extraire_numero_issue,
@@ -76,6 +77,7 @@ from git_info import (
     supprimer_branche,
     supprimer_branche_recuperation,
     supprimer_worktree,
+    supprimer_worktree_force,
     verifier_finalisation_merge_apres_timeout,
     verifier_merge_apres_timeout,
     verifier_push_apres_timeout,
@@ -170,6 +172,38 @@ def _verrous_actifs_projets(projets):
         (p["repertoire"] for p in projets if p["nom"] == "bridge_agent"), None
     )
     return lire_verrous_actifs(repertoire_bridge_agent)
+
+
+def _diagnostiquer_echec_pour_forcage(projet, nom_branche, branche, resultat_worktree, verrous_actifs, purger=False):
+    """Construit l'entrée affichée par `echec_suppression_worktree.html`
+    pour une branche dont le `git worktree remove` non forcé vient
+    d'échouer — commun à `supprimer_worktrees_route`,
+    `merger_et_supprimer_route` et `rejeter_worktrees_route` (issue #103).
+    Retourne None si `diagnostiquer_echec_suppression_worktree` ne détecte
+    aucun fichier modifié/non suivi dans le worktree : l'échec vient alors
+    d'autre chose (verrou, chemin déjà supprimé à la main...) et doit rester
+    un simple message flash, sans bouton de forçage — à charge de
+    l'appelant de flasher `resultat_worktree['erreur']` tel quel dans ce
+    cas."""
+    diagnostic = diagnostiquer_echec_suppression_worktree(branche["chemin_worktree"])
+    if diagnostic is None:
+        return None
+    return {
+        "nom_branche": nom_branche,
+        "commande_echouee": resultat_worktree["commande"],
+        "erreur": resultat_worktree["erreur"],
+        "fichiers": diagnostic["fichiers"],
+        "fichiers_caches": diagnostic["fichiers_caches"],
+        "diff": diagnostic["diff"],
+        "diff_tronque": diagnostic["diff_tronque"],
+        "commande_force": commande_affichee(
+            projet["repertoire"],
+            f"git -C {projet['repertoire']} worktree remove --force {branche['chemin_worktree']}"
+            f" && git -C {projet['repertoire']} branch -D {nom_branche}",
+        ),
+        "verrou_ccl_actif": worktree_ccl_actif(branche["chemin_worktree"], verrous_actifs),
+        "purger": bool(purger),
+    }
 
 
 def _refus_modification_gitignore(projet):
@@ -1639,6 +1673,7 @@ def merger_et_supprimer_route(nom_projet):
     branches = _branches_par_nom(projet)
     projets, _erreur = _charger_projets()
     verrous_actifs = _verrous_actifs_projets(projets)
+    echecs_a_forcer = []
 
     for nom in noms_branches:
         branche = branches.get(nom)
@@ -1737,11 +1772,15 @@ def merger_et_supprimer_route(nom_projet):
         if branche["a_un_worktree"]:
             resultat_worktree = supprimer_worktree(projet["repertoire"], branche["chemin_worktree"])
             if not resultat_worktree["ok"]:
-                flash(
-                    f"⚠️ « {nom} » fusionnée, mais la suppression du worktree a échoué "
-                    f"({resultat_worktree['commande']}) : {resultat_worktree['erreur']}.",
-                    "erreur",
-                )
+                echec = _diagnostiquer_echec_pour_forcage(projet, nom, branche, resultat_worktree, verrous_actifs)
+                if echec:
+                    echecs_a_forcer.append(echec)
+                else:
+                    flash(
+                        f"⚠️ « {nom} » fusionnée, mais la suppression du worktree a échoué "
+                        f"({resultat_worktree['commande']}) : {resultat_worktree['erreur']}.",
+                        "erreur",
+                    )
                 continue
             resultat_branche = supprimer_branche(projet["repertoire"], nom)
             if resultat_branche["ok"]:
@@ -1767,6 +1806,11 @@ def merger_et_supprimer_route(nom_projet):
                     f"({resultat_branche['commande']}) : {resultat_branche['erreur']}.",
                     "erreur",
                 )
+    if echecs_a_forcer:
+        return render_template(
+            "echec_suppression_worktree.html", projet=projet, echecs=echecs_a_forcer,
+            action_force_route="supprimer_worktree_force_route",
+        )
     return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 
@@ -1795,6 +1839,9 @@ def supprimer_worktrees_route(nom_projet):
     branche_principale = projet["branche_principale"]
     branche_cible = projet["branche_cible_comparaison"]
     branches = _branches_par_nom(projet)
+    projets, _erreur = _charger_projets()
+    verrous_actifs = _verrous_actifs_projets(projets)
+    echecs_a_forcer = []
     for nom in noms_branches:
         branche = branches.get(nom)
         if not branche:
@@ -1813,11 +1860,15 @@ def supprimer_worktrees_route(nom_projet):
         if branche["a_un_worktree"]:
             resultat_worktree = supprimer_worktree(projet["repertoire"], branche["chemin_worktree"])
             if not resultat_worktree["ok"]:
-                flash(
-                    f"❌ Échec de la suppression de « {nom} » ({resultat_worktree['commande']}) : "
-                    f"{resultat_worktree['erreur']}",
-                    "erreur",
-                )
+                echec = _diagnostiquer_echec_pour_forcage(projet, nom, branche, resultat_worktree, verrous_actifs)
+                if echec:
+                    echecs_a_forcer.append(echec)
+                else:
+                    flash(
+                        f"❌ Échec de la suppression de « {nom} » ({resultat_worktree['commande']}) : "
+                        f"{resultat_worktree['erreur']}",
+                        "erreur",
+                    )
                 continue
             resultat_branche = supprimer_branche(projet["repertoire"], nom)
             if resultat_branche["ok"]:
@@ -1839,6 +1890,94 @@ def supprimer_worktrees_route(nom_projet):
             flash(f"✅ Branche « {nom} » supprimée — {resultat['commande']}", "succes")
         else:
             flash(f"❌ Échec de la suppression de « {nom} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
+    if echecs_a_forcer:
+        return render_template(
+            "echec_suppression_worktree.html", projet=projet, echecs=echecs_a_forcer,
+            action_force_route="supprimer_worktree_force_route",
+        )
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+
+@app.route("/projet/<nom_projet>/supprimer/forcer", methods=["POST"])
+@login_requis
+def supprimer_worktree_force_route(nom_projet):
+    """Suite de « Supprimer la/les branche(s) fusionnée(s) » et de « Merger
+    et supprimer » (`merger_et_supprimer_route`) quand `git worktree remove`
+    a échoué parce que le worktree contenait des fichiers modifiés ou non
+    suivis (issue #103) — n'est accessible qu'après avoir vu, sur
+    `echec_suppression_worktree.html`, la liste de ce qui serait perdu
+    (`diagnostiquer_echec_suppression_worktree`) et une confirmation forte
+    côté interface. Une seule branche à la fois (pas de sélection groupée
+    comme les autres actions) : le forçage reste volontairement un geste
+    isolé.
+
+    Mêmes garde-fous que « Supprimer » (branche pas principale, confirmée
+    fusionnée — toujours vrai pour « Merger et supprimer » puisque le merge
+    a déjà eu lieu dans la requête précédente, donc revérifié vrai ici par
+    un nouvel appel à `get_branches_locales`), PLUS le même garde-fou que
+    `rejeter_worktree_force_route` ci-dessous : refuse si le badge « ⚠ CCL
+    travaille ici » (#88) est actif sur ce worktree, pour ne jamais
+    l'arracher sous les pieds d'une tâche en cours."""
+    nom_branche = request.form.get("branche", "")
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+
+    branche_principale = projet["branche_principale"]
+    branche_cible = projet["branche_cible_comparaison"]
+    branches = _branches_par_nom(projet)
+    branche = branches.get(nom_branche)
+    if not branche:
+        flash(f"❌ Branche « {nom_branche} » introuvable.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+    if nom_branche == branche_principale:
+        flash(f"❌ « {nom_branche} » est la branche principale, suppression forcée refusée.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+    if not branche["mergee"]:
+        flash(
+            f"❌ Suppression forcée de « {nom_branche} » refusée : branche pas confirmée "
+            f"fusionnée dans « {branche_cible} ».",
+            "erreur",
+        )
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+    if not branche["a_un_worktree"]:
+        flash(f"❌ « {nom_branche} » n'a plus de worktree — rien à forcer.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    projets, _erreur = _charger_projets()
+    verrous_actifs = _verrous_actifs_projets(projets)
+    if worktree_ccl_actif(branche["chemin_worktree"], verrous_actifs):
+        flash(
+            f"❌ « {nom_branche} » : un verrou Bridge_Agent actif signale une tâche CCL toujours en cours "
+            "dans ce worktree — suppression forcée refusée (attendez la fin de la tâche, ou vérifiez "
+            "qu'il ne s'agit pas d'un verrou orphelin).",
+            "erreur",
+        )
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    resultat_worktree = supprimer_worktree_force(projet["repertoire"], branche["chemin_worktree"])
+    if not resultat_worktree["ok"]:
+        flash(
+            f"❌ Échec de la suppression forcée de « {nom_branche} » ({resultat_worktree['commande']}) : "
+            f"{resultat_worktree['erreur']}",
+            "erreur",
+        )
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    resultat_branche = supprimer_branche(projet["repertoire"], nom_branche)
+    if resultat_branche["ok"]:
+        flash(
+            f"✅ Worktree et branche « {nom_branche} » supprimés de force — "
+            f"{resultat_worktree['commande']} + {resultat_branche['commande']}",
+            "succes",
+        )
+    else:
+        flash(
+            f"⚠️ Worktree de « {nom_branche} » forcé à disparaître ({resultat_worktree['commande']}), mais la "
+            f"branche n'a pas pu être supprimée ({resultat_branche['commande']}) : {resultat_branche['erreur']}",
+            "erreur",
+        )
     return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 
@@ -1884,7 +2023,10 @@ def rejeter_worktrees_route(nom_projet):
 
     branche_principale = projet["branche_principale"]
     branches = _branches_par_nom(projet)
+    projets, _erreur = _charger_projets()
+    verrous_actifs = _verrous_actifs_projets(projets)
     hashes_a_purger = set()
+    echecs_a_forcer = []
     for nom in noms_branches:
         branche = branches.get(nom)
         if not branche:
@@ -1909,11 +2051,17 @@ def rejeter_worktrees_route(nom_projet):
         if branche["a_un_worktree"]:
             resultat_worktree = supprimer_worktree(projet["repertoire"], branche["chemin_worktree"])
             if not resultat_worktree["ok"]:
-                flash(
-                    f"❌ Échec du rejet de « {nom} » ({resultat_worktree['commande']}) : "
-                    f"{resultat_worktree['erreur']}",
-                    "erreur",
+                echec = _diagnostiquer_echec_pour_forcage(
+                    projet, nom, branche, resultat_worktree, verrous_actifs, purger=purger
                 )
+                if echec:
+                    echecs_a_forcer.append(echec)
+                else:
+                    flash(
+                        f"❌ Échec du rejet de « {nom} » ({resultat_worktree['commande']}) : "
+                        f"{resultat_worktree['erreur']}",
+                        "erreur",
+                    )
                 continue
             resultat_branche = supprimer_branche(projet["repertoire"], nom)
             if resultat_branche["ok"]:
@@ -1950,8 +2098,106 @@ def rejeter_worktrees_route(nom_projet):
     if purger:
         if hashes_a_purger:
             _purger_commits_rejetes(projet, hashes_a_purger)
-        else:
+        elif not echecs_a_forcer:
             flash("ℹ️ Purge demandée, mais aucun rejet n'a réussi — aucun commit à purger.", "erreur")
+    if echecs_a_forcer:
+        return render_template(
+            "echec_suppression_worktree.html", projet=projet, echecs=echecs_a_forcer,
+            action_force_route="rejeter_worktree_force_route",
+        )
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+
+@app.route("/projet/<nom_projet>/rejeter/forcer", methods=["POST"])
+@login_requis
+def rejeter_worktree_force_route(nom_projet):
+    """Suite de « Rejeter (sans fusionner) » quand `git worktree remove` a
+    échoué parce que le worktree contenait des fichiers modifiés ou non
+    suivis (issue #103) — n'est accessible qu'après avoir vu, sur
+    `echec_suppression_worktree.html`, la liste de ce qui serait perdu
+    (`diagnostiquer_echec_suppression_worktree`) et une confirmation forte
+    côté interface. Une seule branche à la fois, comme
+    `supprimer_worktree_force_route` ci-dessus.
+
+    Mêmes garde-fous que `rejeter_worktrees_route` (branche pas principale,
+    PAS confirmée fusionnée — garde-fou strictement inverse de
+    `supprimer_worktree_force_route`) PLUS le refus si le badge « ⚠ CCL
+    travaille ici » (#88) est actif sur ce worktree : forcer la suppression
+    sous les pieds d'une tâche en cours la romprait. Reprend aussi l'option
+    « Purger réellement » (issue #96) telle que cochée sur le formulaire
+    d'origine (champ caché `purger_commit_rejet`, voir
+    `echec_suppression_worktree.html`), via le même `_purger_commits_rejetes`
+    que `rejeter_worktrees_route` — appliquée ici à cette seule branche."""
+    nom_branche = request.form.get("branche", "")
+    purger = request.form.get("purger_commit_rejet") == "on"
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+
+    branche_principale = projet["branche_principale"]
+    branches = _branches_par_nom(projet)
+    branche = branches.get(nom_branche)
+    if not branche:
+        flash(f"❌ Branche « {nom_branche} » introuvable.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+    if nom_branche == branche_principale:
+        flash(f"❌ « {nom_branche} » est la branche principale, rejet forcé refusé.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+    if branche["mergee"]:
+        flash(
+            f"❌ Rejet de « {nom_branche} » refusé : branche confirmée fusionnée — utilisez « Supprimer la/les "
+            "branche(s) fusionnée(s) » à la place.",
+            "erreur",
+        )
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+    if not branche["a_un_worktree"]:
+        flash(f"❌ « {nom_branche} » n'a plus de worktree — rien à forcer.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    projets, _erreur = _charger_projets()
+    verrous_actifs = _verrous_actifs_projets(projets)
+    if worktree_ccl_actif(branche["chemin_worktree"], verrous_actifs):
+        flash(
+            f"❌ « {nom_branche} » : un verrou Bridge_Agent actif signale une tâche CCL toujours en cours "
+            "dans ce worktree — rejet forcé refusé (attendez la fin de la tâche, ou vérifiez qu'il ne "
+            "s'agit pas d'un verrou orphelin).",
+            "erreur",
+        )
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    hashes_branche = (
+        get_hashes_commits_non_fusionnes(projet["repertoire"], branche_principale, nom_branche) if purger else None
+    )
+
+    resultat_worktree = supprimer_worktree_force(projet["repertoire"], branche["chemin_worktree"])
+    if not resultat_worktree["ok"]:
+        flash(
+            f"❌ Échec du rejet forcé de « {nom_branche} » ({resultat_worktree['commande']}) : "
+            f"{resultat_worktree['erreur']}",
+            "erreur",
+        )
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    resultat_branche = supprimer_branche(projet["repertoire"], nom_branche)
+    if not resultat_branche["ok"]:
+        flash(
+            f"⚠️ Worktree de « {nom_branche} » forcé à disparaître ({resultat_worktree['commande']}), mais la "
+            f"branche n'a pas pu être supprimée ({resultat_branche['commande']}) : {resultat_branche['erreur']}",
+            "erreur",
+        )
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    flash(
+        f"✅ Worktree et branche « {nom_branche} » rejetés de force (jamais fusionnés) — "
+        f"{resultat_worktree['commande']} + {resultat_branche['commande']}",
+        "succes",
+    )
+    if purger:
+        if hashes_branche:
+            _purger_commits_rejetes(projet, hashes_branche)
+        else:
+            flash("ℹ️ Purge demandée, mais aucun commit à purger n'a été trouvé.", "erreur")
     return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 

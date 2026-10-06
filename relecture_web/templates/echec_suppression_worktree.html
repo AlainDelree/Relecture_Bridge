@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block body %}
+<a href="{{ url_for('projet_route', nom_projet=projet.nom) }}" class="bouton-precedent">◀ Précédent</a>
+
+<header>
+  <p class="fil-ariane">
+    <a href="{{ url_for('index') }}">Projets</a> /
+    <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}">{{ projet.nom }}</a> /
+    suppression refusée
+  </p>
+  <h1>Suppression refusée — {{ echecs|length }} worktree(s)</h1>
+  <p class="sous-titre">
+    <code>git worktree remove</code> n'est jamais appelé avec <code>--force</code> :
+    git a refusé de lui-même parce que le dossier contient des fichiers modifiés
+    ou non suivis (issue #103) — rien n'a été perdu. Voici ce que chaque
+    worktree concerné contient, avant de décider de le forcer ou non.
+  </p>
+</header>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+  <ul class="messages">
+    {% for categorie, message in messages %}
+    <li class="message message--{{ categorie }}">{{ message }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+{% endwith %}
+
+<ul class="liste-echecs-suppression">
+  {% for e in echecs %}
+  <li class="ligne-echec-suppression">
+    <div class="echec-suppression__entete">
+      <span class="nom-branche">{{ e.nom_branche }}</span>
+      {% if e.verrou_ccl_actif %}
+      <span class="badge badge--attention" title="Un verrou Bridge_Agent actif (logs/verrous/*.lock, pid vivant) désigne ce worktree comme occupé par une tâche CCL en cours.">⚠ CCL travaille ici</span>
+      {% endif %}
+    </div>
+    <p class="echec-suppression__erreur">❌ <code class="commande-equivalente">{{ e.commande_echouee }}</code> : {{ e.erreur }}</p>
+
+    <ul class="liste-fichiers-perdus">
+      {% for f in e.fichiers %}
+      <li class="ligne-fichier-perdu">
+        <code>{{ f.chemin }}</code>
+        <button type="button" class="bouton-copier" data-copier="{{ f.chemin }}" title="Copier le chemin du fichier">📋</button>
+        <span class="badge {{ 'badge--info' if f.statut == 'non_suivi' else 'badge--attention' }}">
+          {{ 'non suivi' if f.statut == 'non_suivi' else 'modifié' }}
+        </span>
+        {% if f.ajouts is not none %}
+        <span class="stats-diff-fichier">+{{ f.ajouts }} −{{ f.suppressions }}</span>
+        {% endif %}
+      </li>
+      {% endfor %}
+      {% if e.fichiers_caches %}
+      <li class="ligne-fichier-perdu ligne-fichier-perdu--repli">… et {{ e.fichiers_caches }} autre(s)</li>
+      {% endif %}
+    </ul>
+
+    {% if e.diff %}
+    <details class="details-diff-echec-suppression">
+      <summary>
+        Diff des fichiers suivis modifiés{% if e.diff_tronque %} (plafonné, incomplet){% endif %}
+        <button type="button" class="bouton-copier" data-copier="{{ e.diff }}" title="Copier le diff pour le transmettre avant de supprimer">📋 Copier le diff</button>
+      </summary>
+      <pre class="rapport-texte">{{ e.diff }}</pre>
+      {% if e.diff_tronque %}
+      <p class="statut">⚠️ Diff trop volumineux — affichage et copie plafonnés aux premières lignes seulement.</p>
+      {% endif %}
+    </details>
+    {% endif %}
+
+    {% if e.verrou_ccl_actif %}
+    <p class="message-purge-rejet message-purge-rejet--danger">
+      ⚠ Forçage refusé tant que ce badge est actif — attendez la fin de la tâche CCL en cours
+      dans ce worktree, ou vérifiez qu'il ne s'agit pas d'un verrou orphelin, avant de réessayer.
+    </p>
+    {% else %}
+    <form method="post" action="{{ url_for(action_force_route, nom_projet=projet.nom) }}"
+          class="form-forcer-suppression"
+          data-nom-branche="{{ e.nom_branche }}"
+          data-nb-fichiers="{{ (e.fichiers|length) + e.fichiers_caches }}"
+          data-commande-force="{{ e.commande_force }}">
+      <input type="hidden" name="branche" value="{{ e.nom_branche }}">
+      {% if e.purger %}
+      <input type="hidden" name="purger_commit_rejet" value="on">
+      {% endif %}
+      <button type="submit" class="bouton bouton--danger bouton-forcer-suppression">Forcer la suppression</button>
+    </form>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+
+<script>
+(function () {
+  var NOM_PROJET = {{ projet.nom|tojson }};
+  var COULEUR_PROJET = {{ projet.couleur|tojson }};
+  var COULEUR_TEXTE_PROJET = {{ projet.couleur_texte|tojson }};
+
+  // Un formulaire de forçage par worktree concerné (issue #103) — jamais de
+  // sélection groupée ici, le forçage reste un geste isolé par worktree.
+  // Même mécanique de confirmation forte que les autres actions
+  // difficiles à défaire (voir projet.html) : bouton nommé avec la portée
+  // réelle, focus par défaut sur Annuler, commande git affichée avec
+  // --force.
+  Array.prototype.forEach.call(document.querySelectorAll(".form-forcer-suppression"), function (formulaire) {
+    var envoiForce = false;
+    formulaire.addEventListener("submit", function (evenement) {
+      if (envoiForce) {
+        envoiForce = false;
+        return;
+      }
+      evenement.preventDefault();
+
+      var nomBranche = formulaire.dataset.nomBranche;
+      var nbFichiers = parseInt(formulaire.dataset.nbFichiers, 10) || 0;
+      var libelleBouton = "Supprimer " + nomBranche + " et " + (
+        nbFichiers === 1 ? "son 1 fichier concerné" : "ses " + nbFichiers + " fichiers concernés"
+      );
+
+      ouvrirConfirmation({
+        variant: "forte",
+        message: libelleBouton + " — " + NOM_PROJET,
+        avertissement: "🔴 Ces fichiers ne sont committés nulle part : ils seront perdus définitivement. "
+          + "Copiez le diff ci-dessus avant de confirmer si vous voulez le garder.",
+        commandes: [formulaire.dataset.commandeForce],
+        libelleBouton: libelleBouton,
+        nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
+        onConfirmer: function () {
+          envoiForce = true;
+          formulaire.requestSubmit();
+        },
+      });
+    });
+  });
+})();
+</script>
+{% endblock %}

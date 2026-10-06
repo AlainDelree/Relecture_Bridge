@@ -36,6 +36,14 @@ TIMEOUT_GIT = 10
 # ait réellement échoué (issue #39).
 TIMEOUT_GIT_LONG = 120
 MAX_COMMITS_AFFICHES = 30
+# Diagnostic affiché quand `git worktree remove` échoue parce que le
+# worktree contient des fichiers modifiés ou non suivis (issue #103) :
+# plafonds distincts pour la liste des fichiers (lisibilité) et pour le
+# diff copiable (taille raisonnable à coller dans un chat), sans rapport
+# entre eux — un dossier avec 3 fichiers modifiés mais un très gros diff
+# (ou l'inverse) reste possible.
+MAX_FICHIERS_AFFICHES_ECHEC_SUPPRESSION = 20
+MAX_LIGNES_DIFF_ECHEC_SUPPRESSION = 2000
 
 # Config par projet, à éditer à la main (voir charger_branches_cibles) —
 # dans relecture_bridge, pas dans configs/ de bridge_agent (hors périmètre).
@@ -1492,6 +1500,107 @@ def supprimer_worktree(repertoire, chemin_worktree):
     Retourne {ok, erreur, commande} pour affichage transparent."""
     commande = ["git", "-C", repertoire, "worktree", "remove", chemin_worktree]
     resultat = _lancer_git(repertoire, "worktree", "remove", chemin_worktree)
+    return {
+        "ok": resultat.returncode == 0,
+        "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
+        "commande": commande_affichee(repertoire, " ".join(commande)),
+    }
+
+
+def diagnostiquer_echec_suppression_worktree(chemin_worktree):
+    """Diagnostique un échec de `supprimer_worktree` SANS dépendre du texte
+    (traduit selon la langue de git) du message d'erreur renvoyé par `git
+    worktree remove` — interroge directement l'état du dossier via `git
+    status --porcelain=v1` exécuté dans `chemin_worktree` lui-même (jamais
+    `repertoire`, qui désigne un autre worktree). Une sortie non vide
+    confirme le cas « fichiers modifiés ou non suivis » (les fichiers
+    ignorés par .gitignore n'apparaissent jamais ici, exactement comme git
+    ne les considère pas pour ce refus) ; retourne alors le détail de ce qui
+    serait perdu (issue #103). Un dossier propre, ou une commande `git
+    status` elle-même en échec (chemin introuvable, permissions...), signale
+    que l'échec vient d'autre chose (verrou, chemin déjà supprimé à la
+    main...) — retourne None dans ce cas, pour que l'appelant affiche
+    l'erreur de git telle quelle, sans proposer de forçage.
+
+    Retourne {fichiers, fichiers_caches, diff, diff_tronque} : `fichiers`
+    est une liste de {chemin, statut, ajouts, suppressions} (statut
+    'modifie' ou 'non_suivi' ; ajouts/suppressions — via `git diff HEAD
+    --numstat` — uniquement pour les fichiers suivis modifiés, None sinon,
+    y compris pour un diff binaire où git ne les connaît pas), plafonnée à
+    MAX_FICHIERS_AFFICHES_ECHEC_SUPPRESSION entrées ; `fichiers_caches` est
+    le nombre d'entrées au-delà de ce plafond ; `diff` est le diff (`git
+    diff HEAD`) des seuls fichiers suivis modifiés — plafonné en lignes
+    (MAX_LIGNES_DIFF_ECHEC_SUPPRESSION) indépendamment du plafond sur la
+    liste des fichiers, qui ne porte que sur l'affichage — vide si aucun
+    fichier suivi modifié (que des fichiers non suivis) ; `diff_tronque`
+    signale ce plafonnage."""
+    statut = _lancer_git(chemin_worktree, "status", "--porcelain=v1")
+    if statut.returncode != 0:
+        return None
+
+    tous = []
+    chemins_modifies = []
+    for ligne in statut.stdout.splitlines():
+        if not ligne.strip():
+            continue
+        code, chemin = ligne[:2], ligne[3:].strip()
+        if code == "??":
+            tous.append({"chemin": chemin, "statut": "non_suivi", "ajouts": None, "suppressions": None})
+            continue
+        tous.append({"chemin": chemin, "statut": "modifie", "ajouts": None, "suppressions": None})
+        # Une ligne de renommage ("R  ancien -> nouveau") n'est pas un
+        # pathspec valide pour `git diff`/`git diff --numstat` : seul le
+        # chemin nouveau l'est. Les ajouts/suppressions de ce fichier
+        # restent None si ce découpage ne suffit pas à le faire
+        # correspondre (comportement permissif, pas une erreur).
+        chemins_modifies.append(chemin.split(" -> ", 1)[-1] if " -> " in chemin else chemin)
+
+    if not tous:
+        return None
+
+    diff = ""
+    diff_tronque = False
+    if chemins_modifies:
+        numstat = _lancer_git(chemin_worktree, "diff", "HEAD", "--numstat", "--", *chemins_modifies)
+        if numstat.returncode == 0:
+            stats = {}
+            for ligne_numstat in numstat.stdout.splitlines():
+                parties = ligne_numstat.split("\t", 2)
+                if len(parties) == 3 and parties[0] != "-" and parties[1] != "-":
+                    stats[parties[2]] = (int(parties[0]), int(parties[1]))
+            for fichier in tous:
+                cle = fichier["chemin"].split(" -> ", 1)[-1] if " -> " in fichier["chemin"] else fichier["chemin"]
+                if cle in stats:
+                    fichier["ajouts"], fichier["suppressions"] = stats[cle]
+
+        resultat_diff = _lancer_git(chemin_worktree, "diff", "HEAD", "--", *chemins_modifies)
+        if resultat_diff.returncode == 0 and resultat_diff.stdout:
+            lignes_diff = resultat_diff.stdout.splitlines()
+            diff_tronque = len(lignes_diff) > MAX_LIGNES_DIFF_ECHEC_SUPPRESSION
+            diff = "\n".join(lignes_diff[:MAX_LIGNES_DIFF_ECHEC_SUPPRESSION])
+
+    return {
+        "fichiers": tous[:MAX_FICHIERS_AFFICHES_ECHEC_SUPPRESSION],
+        "fichiers_caches": max(0, len(tous) - MAX_FICHIERS_AFFICHES_ECHEC_SUPPRESSION),
+        "diff": diff,
+        "diff_tronque": diff_tronque,
+    }
+
+
+def supprimer_worktree_force(repertoire, chemin_worktree):
+    """Variante forcée de `supprimer_worktree` (`git worktree remove
+    --force`) — jamais appelée depuis la sélection de branches habituelle :
+    uniquement après qu'un premier appel à `supprimer_worktree` a échoué, que
+    `diagnostiquer_echec_suppression_worktree` a confirmé le cas « fichiers
+    modifiés ou non suivis », et qu'une confirmation forte explicite a été
+    validée côté interface (issue #103). Si le worktree est en plus
+    verrouillé (`git worktree lock`), git exige alors deux `--force`
+    consécutifs pour le retirer malgré tout — ce cas n'est volontairement
+    pas retenté automatiquement ici avec un second `--force` : l'erreur brute
+    de git est retournée telle quelle, à charge d'Alain de verrouiller/
+    déverrouiller lui-même si besoin. Retourne {ok, erreur, commande}."""
+    commande = ["git", "-C", repertoire, "worktree", "remove", "--force", chemin_worktree]
+    resultat = _lancer_git(repertoire, "worktree", "remove", "--force", chemin_worktree)
     return {
         "ok": resultat.returncode == 0,
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
