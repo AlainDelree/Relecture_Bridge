@@ -9,14 +9,20 @@ issues mode_write tournent en parallèle dans des worktrees distincts. Ce
 script fusionne ces fichiers dans `CHANGELOG.md` avant le push d'Alain.
 
 Fonctionnement : chaque `CHANGELOG-<N>.md` trouvé à la racine du dépôt est
-inséré tel quel (contenu repris sans modification) en tête de `CHANGELOG.md`,
-juste après l'en-tête fixe du fichier (jusqu'à la ligne vide qui suit
-« Convention d'ajout : ... »), triés par N décroissant — cohérent avec la
-convention « plus récente en tête » de `CHANGELOG.md` (issue #252). Les
-fichiers `CHANGELOG-<N>.md` traités sont ensuite supprimés. Aucun fichier
-trouvé : message et sortie propre (code 0), `CHANGELOG.md` inchangé —
-propriété qui rend une seconde exécution sans nouveaux fichiers idempotente,
-puisque les fichiers sources du premier passage ont déjà été supprimés.
+inséré en tête de `CHANGELOG.md`, juste après l'en-tête fixe du fichier
+(jusqu'à la ligne vide qui suit « Convention d'ajout : ... »), triés par N
+décroissant — cohérent avec la convention « plus récente en tête » de
+`CHANGELOG.md` (issue #252). Le contenu de chaque fichier est repris sans
+modification, à une exception près (issue #104) : si le fichier commence
+(lignes vides tolérées avant) par la ligne de titre d'échange « # CHANGELOG-N
+— à fusionner dans CHANGELOG.md » (tiret cadratin ou simple, N quelconque),
+cette ligne et la ou les lignes vides qui la suivent directement sont
+retirées avant insertion — elle ne décrit que le fichier temporaire, pas
+l'entrée de changelog elle-même. Absente, rien n'est retiré. Les fichiers
+`CHANGELOG-<N>.md` traités sont ensuite supprimés. Aucun fichier trouvé :
+message et sortie propre (code 0), `CHANGELOG.md` inchangé — propriété qui
+rend une seconde exécution sans nouveaux fichiers idempotente, puisque les
+fichiers sources du premier passage ont déjà été supprimés.
 
 Ce script n'est pas appelé par watcher.py (qui ne connaît rien au système de
 worktrees) mais par `fusionner_changelog_worktree` dans relecture_web/git_info.py
@@ -49,6 +55,9 @@ import sys
 from pathlib import Path
 
 MOTIF_FICHIER = re.compile(r"^CHANGELOG-(\d+)\.md$")
+MOTIF_ENTETE_ECHANGE = re.compile(
+    r"^#\s*CHANGELOG-\d+\s*[—-]\s*.*\bà fusionner\b", re.IGNORECASE
+)
 
 
 def _trouver_fichiers(repo: Path) -> list:
@@ -96,6 +105,26 @@ def _point_insertion_repli(lignes: list) -> int:
     return 0
 
 
+def _retirer_entete_echange(texte: str) -> str:
+    """Retire, si présente, la ligne de titre d'échange « # CHANGELOG-N —
+    à fusionner dans CHANGELOG.md » en tout début de fichier (lignes vides
+    tolérées avant elle), ainsi que la ou les lignes vides qui la suivent
+    directement — pour ne pas laisser de trou dans le résultat. Cette ligne
+    ne décrit que le fichier d'échange temporaire, pas l'entrée de
+    changelog elle-même (issue #104). Si elle est absente, le texte est
+    retourné inchangé : jamais de perte d'une vraie entrée."""
+    lignes = texte.splitlines(keepends=True)
+    i = 0
+    while i < len(lignes) and lignes[i].strip() == "":
+        i += 1
+    if i >= len(lignes) or not MOTIF_ENTETE_ECHANGE.match(lignes[i].strip()):
+        return texte
+    i += 1
+    while i < len(lignes) and lignes[i].strip() == "":
+        i += 1
+    return "".join(lignes[i:])
+
+
 def fusionner(repo: Path) -> dict:
     """Exécute la fusion. Retourne un rapport structuré (utilisé aussi bien
     pour l'affichage console que pour des tests)."""
@@ -118,7 +147,7 @@ def fusionner(repo: Path) -> dict:
 
     blocs = []
     for n, chemin in fichiers:
-        texte = chemin.read_text(encoding="utf-8").strip("\n")
+        texte = _retirer_entete_echange(chemin.read_text(encoding="utf-8")).strip("\n")
         blocs.append(texte + "\n\n")
 
     nouveau_contenu = "".join(lignes[:idx]) + "".join(blocs) + "".join(lignes[idx:])
