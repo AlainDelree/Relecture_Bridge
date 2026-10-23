@@ -1816,7 +1816,7 @@ def _trouver_blocs_conflit(lignes):
             continue
 
         debut = i
-        entete_ours = ligne.rstrip("\n")
+        entete_ours = ligne.rstrip("\r\n")
         i += 1
         ours = []
         while i < n and not lignes[i].startswith(_MARQUEUR_SEPARATEUR) and not lignes[i].startswith(_MARQUEUR_BASE):
@@ -1835,7 +1835,7 @@ def _trouver_blocs_conflit(lignes):
             i += 1
         if i >= n:
             break
-        entete_theirs = lignes[i].rstrip("\n")
+        entete_theirs = lignes[i].rstrip("\r\n")
         i += 1
 
         blocs.append({
