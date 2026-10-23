@@ -648,6 +648,33 @@ clair — **le push reste un geste manuel**, volontairement non
 automatisé. Tant qu'il reste des blocs, la page se recharge sur le
 même fichier (le bloc suivant apparaît naturellement en premier).
 
+**Préservation des fins de ligne (issue #107, suite de l'issue #105)** :
+la lecture et la réécriture du fichier (`lire_conflits_fichier`,
+`resoudre_bloc_conflit`, `resoudre_tous_blocs_conflit`) se font avec
+`newline=""` — Python ne traduit donc jamais `\r\n` en `\n` à la lecture
+ni l'inverse à l'écriture. Un fichier entièrement en CRLF reste
+entièrement en CRLF après résolution d'un ou plusieurs blocs, un fichier
+LF reste en LF, et un fichier mixte garde chaque ligne de contexte (y
+compris un bloc non traité) avec exactement sa terminaison d'origine —
+seul le texte du bloc réellement remplacé change.
+
+Le texte validé (contenu du `<textarea>` soumis, quelle que soit la
+façon dont il a été composé — saisi à la main, copié via une flèche
+« ours »/« theirs », « garder les deux », ou vidé) est, lui, normalisé
+avant insertion vers la fin de ligne **dominante du fichier cible** :
+la plus fréquente entre CRLF et LF dans le fichier, LF par défaut en cas
+d'égalité ou d'absence de toute fin de ligne. Cette normalisation est
+nécessaire parce qu'un navigateur convertit les retours à la ligne d'un
+`<textarea>` en CRLF au moment de la soumission d'un formulaire HTML,
+quelle que soit leur forme dans le DOM — y compris pour un texte
+composé par une flèche de copie, pas seulement pour du texte tapé à la
+main. Sans cette normalisation, un fichier LF recevrait du CRLF à
+l'endroit de chaque bloc traité, aboutissant à des fins de ligne
+mélangées au sein d'un même fichier. Le texte précalculé pour le bouton
+« Copier ce bloc » (`_texte_affiche_bloc`) est quant à lui toujours
+rendu en `\n`, qu'il provienne d'un bloc CRLF ou non : destiné au
+presse-papiers, il ne doit jamais exposer de caractère `\r` à Alain.
+
 **Traiter tous les blocs (issue #69)** : pour éviter de recliquer
 « Traiter ce bloc » un par un (ce qui recharge la page à chaque fois),
 un bouton « Traiter tous les blocs » applique en une seule opération
@@ -671,6 +698,13 @@ donc chaque texte final est garanti appliqué au bon bloc.
   précèdent, donc traiter dans l'ordre inverse garantit que chaque
   remplacement utilise encore des index valides pour les blocs restant
   à traiter.
+- **Fin de ligne unique pour tous les blocs (issue #107)** : la fin de
+  ligne dominante du fichier est calculée une seule fois, sur le contenu
+  d'origine avant tout remplacement, puis appliquée à chaque texte final
+  soumis — un fichier résolu en une seule fois ressort donc avec une
+  convention unique même si ses blocs ont été composés par des chemins
+  différents (ex. un bloc tapé à la main, un autre via « Garder les
+  deux », chacun arrivé en CRLF côté formulaire).
 - **Confirmation JS** avant soumission, qui liste explicitement les
   blocs dont le `<textarea>` est vide — un résultat vide est légitime
   (suppression pure et simple du bloc) mais facile à soumettre par

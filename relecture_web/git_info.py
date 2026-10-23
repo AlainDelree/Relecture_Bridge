@@ -1853,11 +1853,18 @@ def _texte_affiche_bloc(bloc):
     HEAD, son contenu, l'en-tête de la branche entrante puis son contenu,
     dans l'ordre où `conflit.html` les empile visuellement (chaque saut de
     ligne entre eux n'est ajouté que si le texte qui précède n'en a pas déjà
-    un en fin, pour ne jamais dupliquer une ligne vide)."""
+    un en fin, pour ne jamais dupliquer une ligne vide).
+
+    Toujours en `\\n` (issue #107), même si `texte_ours`/`texte_theirs`
+    viennent d'un fichier CRLF : ce texte est destiné au bouton « Copier ce
+    bloc » (presse-papiers), jamais réécrit dans le fichier — il ne doit
+    jamais exposer de `\\r` à Alain, qui coller ce texte ailleurs (éditeur,
+    message...) sans s'attendre à des retours chariot invisibles."""
     partie_ours = bloc["entete_ours"] + "\n" + bloc["texte_ours"]
     if not partie_ours.endswith("\n"):
         partie_ours += "\n"
-    return partie_ours + bloc["entete_theirs"] + "\n" + bloc["texte_theirs"]
+    texte = partie_ours + bloc["entete_theirs"] + "\n" + bloc["texte_theirs"]
+    return texte.replace("\r\n", "\n")
 
 
 def _extraire_blocs_conflit(contenu):
@@ -2003,6 +2010,33 @@ def retraiter_fichier_conflit(repertoire, chemin_relatif):
     }
 
 
+def _fin_de_ligne_dominante_fichier(contenu):
+    """Fin de ligne dominante de `contenu` (issue #107) : la plus fréquente
+    entre `\\r\\n` (CRLF) et `\\n` isolé (LF), par simple comptage — `\\n`
+    par défaut en cas d'égalité ou d'absence totale de fin de ligne (fichier
+    vide ou sur une seule ligne sans terminateur). Cette fin de ligne est
+    celle que le texte validé d'un bloc (quelle que soit son origine : saisi,
+    ours, theirs, garder les deux, vider) doit prendre avant d'être inséré
+    dans le fichier — voir `_normaliser_fin_de_ligne_texte`, appelée par
+    `resoudre_bloc_conflit`/`resoudre_tous_blocs_conflit` — pour qu'un
+    fichier entièrement CRLF (ou LF) le reste après résolution, même si le
+    texte soumis par le formulaire est arrivé dans l'autre convention."""
+    nb_crlf = contenu.count("\r\n")
+    nb_lf_isole = contenu.count("\n") - nb_crlf
+    return "\r\n" if nb_crlf > nb_lf_isole else "\n"
+
+
+def _normaliser_fin_de_ligne_texte(texte, fin_de_ligne):
+    """Normalise toutes les fins de ligne de `texte` vers `fin_de_ligne`
+    (`\\n` ou `\\r\\n`), quelle que soit leur forme d'origine dans `texte`
+    (`\\r\\n`, `\\n`, ou un mélange des deux — issue #107) : on commence
+    toujours par tout ramener à `\\n` avant d'étendre vers `fin_de_ligne`,
+    pour que le résultat soit cohérent même si `texte` mélangeait déjà les
+    deux conventions (ex. une partie saisie à la main, une autre collée
+    depuis un bouton)."""
+    return texte.replace("\r\n", "\n").replace("\n", fin_de_ligne)
+
+
 def lire_conflits_fichier(repertoire, chemin_relatif):
     """Lit un fichier en conflit et le découpe en segments contexte/conflit
     (issue #55) — lecture seule stricte, aucune écriture. `chemin_relatif`
@@ -2014,10 +2048,17 @@ def lire_conflits_fichier(repertoire, chemin_relatif):
     `empreinte` (sha256 du contenu brut, None si erreur) permet à
     `resoudre_tous_blocs_conflit` (issue #69, bouton « Traiter tous les
     blocs ») de vérifier que le fichier n'a pas changé depuis cet affichage
-    avant d'appliquer tous les blocs d'un coup."""
+    avant d'appliquer tous les blocs d'un coup.
+
+    Lu avec `newline=""` (issue #107) : sans ça, Python traduit silencieusement
+    tout `\\r\\n`/`\\r` en `\\n` à la lecture (mode texte universel, activé par
+    défaut) — un fichier CRLF afficherait alors des blocs déjà aplatis en LF,
+    et l'empreinte sha256 porterait sur un contenu différent de celui que
+    `resoudre_tous_blocs_conflit` relit ensuite (qui doit faire le même choix
+    pour que les deux empreintes restent comparables)."""
     chemin_absolu = os.path.join(repertoire, chemin_relatif)
     try:
-        with open(chemin_absolu, encoding="utf-8", errors="replace") as fichier:
+        with open(chemin_absolu, encoding="utf-8", errors="replace", newline="") as fichier:
             contenu = fichier.read()
     except OSError as exc:
         return {"segments": [], "nb_blocs": 0, "empreinte": None, "erreur": str(exc)}
@@ -2050,12 +2091,24 @@ def resoudre_bloc_conflit(repertoire, chemin_relatif, index_bloc, texte_final):
     déjà traité, fichier modifié en dehors de relecture_web...), retourne
     une erreur plutôt que d'écrire à l'aveugle sur le mauvais bloc.
 
+    Lu et réécrit avec `newline=""` (issue #107) : sans ça, Python
+    traduirait tout `\\r\\n`/`\\r` en `\\n` à la lecture (mode texte
+    universel) puis perdrait la différence pour de bon à l'écriture — un
+    fichier entièrement CRLF se retrouverait aplati en LF dès la résolution
+    d'un seul bloc, y compris sur le texte de contexte que cette fonction ne
+    touche pourtant pas. `texte_final` est normalisé vers la fin de ligne
+    dominante du fichier (voir `_fin_de_ligne_dominante_fichier`) avant
+    d'être inséré, quelle que soit sa provenance (saisi à la main, ours,
+    theirs, garder les deux, vider) — un texte arrivé en CRLF dans un
+    fichier LF (ou l'inverse) ne doit jamais introduire l'autre convention
+    à côté du reste du fichier.
+
     Retourne {ok, erreur, nb_blocs_restants, fichier_resolu, git_add} —
     `git_add` est None si `git add` n'a pas été nécessaire (blocs
     restants), sinon {ok, erreur} de la commande elle-même."""
     chemin_absolu = os.path.join(repertoire, chemin_relatif)
     try:
-        with open(chemin_absolu, encoding="utf-8") as fichier:
+        with open(chemin_absolu, encoding="utf-8", newline="") as fichier:
             contenu = fichier.read()
     except (OSError, UnicodeDecodeError) as exc:
         return {
@@ -2076,13 +2129,16 @@ def resoudre_bloc_conflit(repertoire, chemin_relatif, index_bloc, texte_final):
             "nb_blocs_restants": len(blocs), "fichier_resolu": False, "git_add": None,
         }
 
+    fin_de_ligne = _fin_de_ligne_dominante_fichier(contenu)
     bloc = blocs[index_bloc]
-    if texte_final and not texte_final.endswith("\n"):
-        texte_final += "\n"
+    if texte_final:
+        texte_final = _normaliser_fin_de_ligne_texte(texte_final, fin_de_ligne)
+        if not texte_final.endswith(fin_de_ligne):
+            texte_final += fin_de_ligne
     nouvelles_lignes = lignes[:bloc["debut"]] + ([texte_final] if texte_final else []) + lignes[bloc["fin"]:]
 
     try:
-        with open(chemin_absolu, "w", encoding="utf-8") as fichier:
+        with open(chemin_absolu, "w", encoding="utf-8", newline="") as fichier:
             fichier.write("".join(nouvelles_lignes))
     except OSError as exc:
         return {
@@ -2133,10 +2189,19 @@ def resoudre_tous_blocs_conflit(repertoire, chemin_relatif, textes_finaux, empre
     détecté a nécessairement un texte correspondant en entrée) — le commit
     et le push restent des gestes manuels d'Alain.
 
+    Lu et réécrit avec `newline=""`, et chaque `texte_final` normalisé vers
+    la fin de ligne dominante du fichier avant insertion — même principe et
+    même raison que `resoudre_bloc_conflit` (issue #107) ; la fin de ligne
+    dominante est calculée une seule fois sur le contenu d'origine (avant
+    tout remplacement) et appliquée uniformément à tous les blocs, pour
+    qu'un fichier résolu en une seule fois ressorte avec une convention
+    unique même si ses blocs ont été composés par des chemins différents
+    (ex. un bloc tapé à la main, un autre via « Garder les deux »).
+
     Retourne {ok, erreur, git_add}."""
     chemin_absolu = os.path.join(repertoire, chemin_relatif)
     try:
-        with open(chemin_absolu, encoding="utf-8") as fichier:
+        with open(chemin_absolu, encoding="utf-8", newline="") as fichier:
             contenu = fichier.read()
     except (OSError, UnicodeDecodeError) as exc:
         return {"ok": False, "erreur": str(exc), "git_add": None}
@@ -2156,15 +2221,18 @@ def resoudre_tous_blocs_conflit(repertoire, chemin_relatif, textes_finaux, empre
             "git_add": None,
         }
 
+    fin_de_ligne = _fin_de_ligne_dominante_fichier(contenu)
     for index_bloc in range(len(blocs) - 1, -1, -1):
         bloc = blocs[index_bloc]
         texte_final = textes_finaux[index_bloc]
-        if texte_final and not texte_final.endswith("\n"):
-            texte_final += "\n"
+        if texte_final:
+            texte_final = _normaliser_fin_de_ligne_texte(texte_final, fin_de_ligne)
+            if not texte_final.endswith(fin_de_ligne):
+                texte_final += fin_de_ligne
         lignes = lignes[:bloc["debut"]] + ([texte_final] if texte_final else []) + lignes[bloc["fin"]:]
 
     try:
-        with open(chemin_absolu, "w", encoding="utf-8") as fichier:
+        with open(chemin_absolu, "w", encoding="utf-8", newline="") as fichier:
             fichier.write("".join(lignes))
     except OSError as exc:
         return {"ok": False, "erreur": str(exc), "git_add": None}
