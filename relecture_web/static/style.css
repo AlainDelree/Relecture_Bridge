@@ -799,6 +799,13 @@ pre.brut {
 .bouton--confirmer-legere { background: #eef1f5; color: #1a4fb4; border-color: #c3d6f7; font-weight: 600; }
 .bouton--confirmer-legere:hover { background: #e2e7ee; }
 
+/* Zone d'action des pages de confirmation dédiées (issue #113) : Annuler
+   toujours en premier (à gauche), même taille que le bouton de danger
+   à côté, pour que la sortie sans suppression soit aussi visible que la
+   suppression elle-même. */
+.zone-actions-confirmation { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.6rem; }
+.zone-actions-confirmation .bouton { font-size: 0.9rem; padding: 0.5rem 1rem; }
+
 /* Panneau repliable « .gitignore » (issue #98), même principe que
    .details-options-rejet de l'issue #97 mais en section autonome plutôt
    qu'imbriqué dans le panneau d'actions des branches — fermé par défaut. */

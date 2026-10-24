@@ -28,6 +28,7 @@
 {% endwith %}
 
 <ul class="liste-echecs-suppression">
+  {% set ns_annuler = namespace(premier=true) %}
   {% for e in echecs %}
   <li class="ligne-echec-suppression">
     <div class="echec-suppression__entete">
@@ -93,17 +94,21 @@
       dans ce worktree, ou vérifiez qu'il ne s'agit pas d'un verrou orphelin, avant de réessayer.
     </p>
     {% else %}
-    <form method="post" action="{{ url_for(action_force_route, nom_projet=projet.nom) }}"
-          class="form-forcer-suppression"
-          data-nom-branche="{{ e.nom_branche }}"
-          data-nb-fichiers="{{ (e.fichiers|length) + e.fichiers_caches + (e.fichiers_ignores|length) }}"
-          data-commande-force="{{ e.commande_force }}">
-      <input type="hidden" name="branche" value="{{ e.nom_branche }}">
-      {% if e.purger %}
-      <input type="hidden" name="purger_commit_rejet" value="on">
-      {% endif %}
-      <button type="submit" class="bouton bouton--danger bouton-forcer-suppression">Forcer la suppression</button>
-    </form>
+    <div class="zone-actions-confirmation">
+      <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}" class="bouton bouton--annuler lien-bouton"{% if ns_annuler.premier %} autofocus{% endif %}>Annuler</a>
+      <form method="post" action="{{ url_for(action_force_route, nom_projet=projet.nom) }}"
+            class="form-forcer-suppression"
+            data-nom-branche="{{ e.nom_branche }}"
+            data-nb-fichiers="{{ (e.fichiers|length) + e.fichiers_caches + (e.fichiers_ignores|length) }}"
+            data-commande-force="{{ e.commande_force }}">
+        <input type="hidden" name="branche" value="{{ e.nom_branche }}">
+        {% if e.purger %}
+        <input type="hidden" name="purger_commit_rejet" value="on">
+        {% endif %}
+        <button type="submit" class="bouton bouton--danger bouton-forcer-suppression">Forcer la suppression</button>
+      </form>
+    </div>
+    {% set ns_annuler.premier = false %}
     {% endif %}
   </li>
   {% endfor %}
