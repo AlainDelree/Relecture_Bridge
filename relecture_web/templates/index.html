@@ -26,6 +26,9 @@
 
 <ul class="liste-projets">
   {% for projet in projets %}
+  {% if projet.premier_distant %}
+  <li class="separateur-groupe">PC fixe (Windows)</li>
+  {% endif %}
   <li class="ligne-projet ligne-projet--{{ projet.statut }}">
     {% if projet.statut == "ok" %}
     <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}" class="lien-projet">
@@ -35,6 +38,12 @@
       {% if projet.nb_worktrees_secondaires %}
       <span class="badge badge--info">🌿 {{ projet.nb_worktrees_secondaires }} worktree{{ "s" if projet.nb_worktrees_secondaires > 1 else "" }}</span>
       {% endif %}
+    </a>
+    {% elif projet.statut == "distant_a_charger" %}
+    <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}" class="lien-projet">
+      <span class="nom-projet">{{ projet.nom }}</span>
+      <span class="depot">{{ projet.depot }}</span>
+      <span class="compteur compteur--distant">PC fixe, chargé à l'ouverture</span>
     </a>
     {% else %}
     <span class="lien-projet lien-projet--desactive">

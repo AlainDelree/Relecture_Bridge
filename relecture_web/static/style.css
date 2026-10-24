@@ -49,6 +49,20 @@ body {
   font-weight: 600;
 }
 
+/* Séparateur entre projets locaux et projets distants du PC fixe (issue
+   #109, partie B1) — même traitement discret que `.barre-laterale__titre`,
+   pas une nouvelle charte. */
+.barre-laterale__separateur {
+  margin: 0.8rem 0 0.3rem 0;
+  padding: 0 0.5rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #999;
+  border-top: 1px solid #eee;
+  padding-top: 0.5rem;
+}
+
 /* Pastille de couleur d'accent du projet (issue #73), pour ne pas confondre
    deux projets aux noms proches (bridge_agent / relecture_bridge...) —
    couleur fournie en ligne par le template (`p.couleur`, tableau externe),
@@ -135,6 +149,21 @@ header h1 { margin-bottom: 0.2rem; }
   margin-bottom: 0.6rem;
 }
 .ligne-projet--introuvable, .ligne-projet--pas_un_depot_git { opacity: 0.6; }
+
+/* Séparateur entre projets locaux et projets distants du PC fixe, même
+   principe que `.barre-laterale__separateur` (issue #109, partie B1). */
+.separateur-groupe {
+  background: none;
+  border: none;
+  margin: 1rem 0 0.4rem 0;
+  padding: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #999;
+}
+
+.compteur--distant { font-style: italic; }
 
 .lien-projet, .lien-branche {
   display: flex;

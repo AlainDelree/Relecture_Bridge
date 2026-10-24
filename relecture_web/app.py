@@ -28,8 +28,9 @@ import auth
 from git_info import (
     ErreurRecuperationProjets,
     ajouter_motif_gitignore,
+    charger_etat_projet,
     classifier_ligne_gitignore,
-    collect_etat_projets,
+    collect_etat_projets_legers,
     commande_affichee,
     comparer_commit_doublon,
     commit_est_securise,
@@ -122,25 +123,76 @@ def login_requis(f):
 def _charger_projets():
     """Mémoïse le résultat dans `g` (durée d'une seule requête HTTP) : la
     barre latérale (issue #44) a besoin de la même liste de projets que la
-    route en cours, et `collect_etat_projets()` déclenche un appel réseau
-    vers BRIDGE_AGENT_DOC.md (voir `fetch_projets`) — sans ce cache, ce
-    serait un deuxième appel réseau par page, le coût déjà corrigé une fois
-    en page d'accueil (issue #17/#19) se répétant alors sur toutes les
-    pages."""
+    route en cours, et `collect_etat_projets_legers()` déclenche un appel
+    réseau vers BRIDGE_AGENT_DOC.md (voir `fetch_projets`) — sans ce cache,
+    ce serait un deuxième appel réseau par page, le coût déjà corrigé une
+    fois en page d'accueil (issue #17/#19) se répétant alors sur toutes les
+    pages.
+
+    `collect_etat_projets_legers()` (issue #109) ne contacte jamais le PC
+    fixe CCW : un projet distant y figure avec le statut
+    "distant_a_charger", sans worktrees ni test de connectivité SSH — voir
+    `_charger_projet_complet` pour le chargement à la demande d'UN SEUL
+    projet distant (page de ce projet, ou action qui le concerne)."""
     if not hasattr(g, "_projets_charges"):
         try:
-            g._projets_charges = (collect_etat_projets(), None)
+            g._projets_charges = (collect_etat_projets_legers(), None)
         except ErreurRecuperationProjets as exc:
             g._projets_charges = ([], str(exc))
     return g._projets_charges
 
 
+def _charger_projet_complet(nom_projet):
+    """Résout `nom_projet` en son état COMPLET (issue #109) : pour un
+    projet local, l'entrée de `_charger_projets()` est déjà chargée en
+    entier (voir `collect_etat_projets_legers`), donc renvoyée telle quelle
+    ; pour un projet distant (PC fixe CCW) encore au statut
+    "distant_a_charger", déclenche son chargement complet via
+    `charger_etat_projet` — SEUL point de cette fonction qui contacte
+    jamais le PC fixe, et seulement pour CE projet, jamais pour les autres.
+
+    Mémoïsé dans `g` par nom de projet (durée d'une requête HTTP) : la page
+    d'un projet distant n'y fait ainsi jamais plus d'un test de
+    connectivité SSH, même si plusieurs fonctions de la même requête
+    (route + barre latérale + panneau .gitignore...) ont besoin de ce
+    projet."""
+    if not hasattr(g, "_projets_complets_charges"):
+        g._projets_complets_charges = {}
+    if nom_projet in g._projets_complets_charges:
+        return g._projets_complets_charges[nom_projet]
+
+    projets_legers, erreur = _charger_projets()
+    projet_leger = next((p for p in projets_legers if p["nom"] == nom_projet), None)
+    if projet_leger is None or projet_leger["statut"] != "distant_a_charger":
+        resultat = (projet_leger, erreur)
+    else:
+        repertoire_bridge_agent = next(
+            (p["repertoire"] for p in projets_legers if p["nom"] == "bridge_agent"), None
+        )
+        resultat = (charger_etat_projet(projet_leger, repertoire_bridge_agent), erreur)
+
+    g._projets_complets_charges[nom_projet] = resultat
+    return resultat
+
+
 def _trouver_projet(nom_projet):
-    projets, erreur = _charger_projets()
-    for projet in projets:
-        if projet["nom"] == nom_projet:
-            return projet, erreur
-    return None, erreur
+    return _charger_projet_complet(nom_projet)
+
+
+def _grouper_locaux_puis_distants(projets):
+    """Réordonne `projets` (dans l'ordre du tableau BRIDGE_AGENT_DOC.md) en
+    projets locaux d'abord, projets distants du PC fixe CCW ensuite — ordre
+    inchangé à l'intérieur de chaque groupe (issue #109, partie B1).
+    Marque `premier_distant=True` sur la première entrée distante
+    seulement (absent/faux sinon) : les templates (accueil, barre latérale)
+    s'en servent comme unique point d'insertion du séparateur visuel « PC
+    fixe (Windows) », qui ne doit apparaître que s'il existe au moins un
+    projet distant."""
+    locaux = [p for p in projets if not p.get("distant")]
+    distants = [p for p in projets if p.get("distant")]
+    if distants:
+        distants[0] = dict(distants[0], premier_distant=True)
+    return locaux + distants
 
 
 def _projet_pret(nom_projet):
@@ -407,11 +459,22 @@ def injecter_barre_laterale():
     de `nom_projet` dans l'URL courante, absent sur les pages qui n'en ont
     pas comme l'accueil) pour le mettre en évidence. Réutilise
     `_charger_projets()`, déjà mémoïsé par requête (voir plus haut) : aucun
-    appel réseau supplémentaire par page."""
+    appel réseau supplémentaire par page, et jamais de contact du PC fixe
+    CCW pour cette seule barre latérale (issue #109).
+
+    Projets locaux puis distants, séparateur visuel entre les deux groupes
+    (issue #109, partie B1, voir `_grouper_locaux_puis_distants`)."""
     projets, _erreur = _charger_projets()
+    projets = _grouper_locaux_puis_distants(projets)
     return {
         "projets_sidebar": [
-            {"nom": projet["nom"], "couleur": projet.get("couleur"), "couleur_texte": projet.get("couleur_texte")}
+            {
+                "nom": projet["nom"],
+                "couleur": projet.get("couleur"),
+                "couleur_texte": projet.get("couleur_texte"),
+                "distant": projet.get("distant", False),
+                "premier_distant": projet.get("premier_distant", False),
+            }
             for projet in projets
         ],
         "nom_projet_actif": (request.view_args or {}).get("nom_projet"),
@@ -893,8 +956,16 @@ def index():
     résumés déjà pushés n'est plus précalculé ici (issue #19, ralentissait le
     chargement sur les projets à nombreux fichiers en attente) : il n'est
     annoncé qu'après coup, dans le message flash du bouton « Nettoyer tous
-    les projets »."""
+    les projets ».
+
+    Projets locaux puis distants, séparateur visuel entre les deux groupes
+    (issue #109, partie B1, voir `_grouper_locaux_puis_distants`) — jamais
+    de contact du PC fixe CCW ici (`_charger_projets()` ne charge aucun
+    projet distant en entier, voir `collect_etat_projets_legers`) : un
+    projet distant reste au statut "distant_a_charger", sans décompte de
+    résumés (issue #109, partie A6)."""
     projets, erreur = _charger_projets()
+    projets = _grouper_locaux_puis_distants(projets)
 
     for projet in projets:
         if projet["statut"] == "ok":
@@ -915,9 +986,11 @@ def projet_route(nom_projet):
     de résumés en attente et une case à cocher pour la sélection multiple
     (issue #12) — le panneau d'actions (push/merger/supprimer) qui apparaît
     pour la sélection agit sur ces branches, plus jamais par worktree affiché
-    individuellement."""
-    projets, erreur = _charger_projets()
-    projet = next((p for p in projets if p["nom"] == nom_projet), None)
+    individuellement. Charge le projet affiché en entier (issue #109, voir
+    `_charger_projet_complet`) — seule route qui déclenche le test de
+    connectivité SSH d'un projet distant (PC fixe CCW) en dehors d'une
+    action le concernant."""
+    projet, erreur = _charger_projet_complet(nom_projet)
     if not projet:
         flash(f"❌ Projet « {nom_projet} » introuvable.", "erreur")
         return redirect(url_for("index"))
@@ -981,8 +1054,11 @@ def projet_route(nom_projet):
     # dont le `rep=` correspond au worktree d'une branche signale qu'une
     # tâche mode_write y travaille peut-être encore (reprise après
     # redémarrage, cf. l'incident #73/#609 côté Bridge_Agent) — simple signal
-    # visuel avant toute action, voir `worktree_ccl_actif` plus bas.
-    verrous_actifs = _verrous_actifs_projets(projets)
+    # visuel avant toute action, voir `worktree_ccl_actif` plus bas. Repose
+    # sur la liste légère (issue #109) : seul le répertoire local de
+    # "bridge_agent" (jamais distant) est utile ici.
+    projets_legers, _erreur = _charger_projets()
+    verrous_actifs = _verrous_actifs_projets(projets_legers)
 
     # Issue #52 : un projet à plusieurs cibles configurées (ex. `scrabble`,
     # `master` ou `feature/moteur-strategique`) n'a pas de cible évidente à
@@ -1235,7 +1311,13 @@ def nettoyer_tous_les_projets_route():
     résumés déjà pushés (issue #17, remplace le bouton par-projet de l'issue
     #16) — réutilise `lister_fichiers_resumes_pushes`/`get_commit_est_pushe`
     projet par projet ; l'échec d'un projet (dossier introuvable, pas de
-    remote, etc.) est rapporté à part sans bloquer les autres."""
+    remote, etc.) est rapporté à part sans bloquer les autres.
+
+    Ne contacte jamais le PC fixe CCW (issue #109, partie A4) : `_charger_projets()`
+    renvoie les projets distants au statut "distant_a_charger" (jamais "ok"
+    sans chargement complet), donc ignorés par le `continue` ci-dessous
+    exactement comme un projet local introuvable — sans même avoir besoin
+    d'un `est_projet_distant` explicite ici."""
     projets, erreur = _charger_projets()
     if erreur:
         flash(erreur, "erreur")
@@ -1274,11 +1356,29 @@ def nettoyer_projet_route(nom_projet):
     même critère de sécurité que `nettoyer_tous_les_projets_route` (issue
     #17, `lister_fichiers_resumes_pushes`/`get_commit_est_pushe`), mais sans
     repasser par la liste des projets pour ne nettoyer que celui qu'on vient
-    de traiter depuis la page « branches d'un projet »."""
+    de traiter depuis la page « branches d'un projet ».
+
+    Refusée pour un projet distant (PC fixe CCW, issue #109, partie A4) :
+    cette action travaille sur les résumés `Non_Lu/` LOCAUX du dossier
+    `Relecture_Bridge/<dossier_relecture>/`, qui n'existent jamais pour un
+    clone Windows (aucun hook post-commit n'y est installé, voir
+    `installer.sh`) — avant cette issue, le bouton restait silencieusement
+    sans effet (0 résumé supprimé, faute de dossier local), ce qui pouvait
+    laisser croire à un nettoyage effectif. Refusée explicitement ici
+    plutôt que de tenter une lecture/écriture sur un chemin local inventé à
+    partir du nom du clone Windows ; le bouton lui-même est aussi masqué
+    côté template (voir projet.html)."""
     projet, message_erreur = _projet_pret(nom_projet)
     if not projet:
         flash(message_erreur, "erreur")
         return redirect(url_for("index"))
+    if projet.get("distant"):
+        flash(
+            f"❌ « {nom_projet} » est un projet distant (PC fixe) — aucun résumé local à nettoyer pour ce "
+            "projet (pas de hook post-commit sur le clone Windows).",
+            "erreur",
+        )
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
 
     try:
         fichiers = lister_fichiers_resumes_pushes(projet["dossier_relecture"], projet["repertoire"])

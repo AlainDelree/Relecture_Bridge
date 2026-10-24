@@ -86,11 +86,18 @@ exposition LAN/externe réelle ; le host d'écoute par défaut ne change pas.
 
 ### Source de la liste des projets
 
-Au démarrage, `relecture_web` récupère la liste des projets actifs
-directement depuis le tableau public de `BRIDGE_AGENT_DOC.md`
-(`raw.githubusercontent.com`), pas d'une config locale codée en dur —
-si un projet est ajouté ou retiré de ce tableau, `relecture_web` le
-reflète automatiquement au prochain chargement.
+`relecture_web` récupère la liste des projets actifs directement depuis
+le tableau public de `BRIDGE_AGENT_DOC.md` (`raw.githubusercontent.com`),
+pas d'une config locale codée en dur — et non pas une seule fois « au
+démarrage » comme une version antérieure de cette section l'affirmait à
+tort (issue #109) : en réalité, `fetch_projets()` retélécharge et
+reparse ce tableau à **chaque chargement de page**, mémoïsé seulement le
+temps d'une requête HTTP (`_charger_projets()`, `app.py` — voir aussi la
+barre latérale ci-dessous). Si un projet est ajouté ou retiré de ce
+tableau, `relecture_web` le reflète donc dès le prochain chargement de
+page — avec un délai possible côté GitHub : `raw.githubusercontent.com`
+met en cache le fichier brut environ cinq minutes, une ligne nouvellement
+publiée peut donc mettre jusqu'à ce délai avant d'apparaître.
 
 Une colonne **Couleur** optionnelle, en dernière position de ce même
 tableau (hexadécimal, ex. `#1a4fb4`), est lue au passage lors de ce même
@@ -117,7 +124,12 @@ L'interface est organisée en trois niveaux, chacun avec sa page :
    en attente de relecture entre parenthèses, et un badge `🌿 N
    worktree(s)` s'il y a des worktrees secondaires actifs. Un projet
    dont le dossier est introuvable ou n'est pas un dépôt git est affiché
-   grisé, sans lien cliquable.
+   grisé, sans lien cliquable. Les projets locaux sont listés d'abord
+   (ordre du tableau), puis les projets distants du PC fixe CCW
+   (eux-mêmes dans l'ordre du tableau), séparés par un intitulé « PC fixe
+   (Windows) » qui n'apparaît que s'il en existe au moins un (issue #109)
+   — voir section 11 pour leur statut particulier et le chargement à la
+   demande de leur état complet.
 2. **Branches d'un projet** (`/projet/<nom_projet>`) — une branche par
    ligne, avec son dernier commit, son nombre de résumés en attente, et
    des badges d'état (voir section 4). C'est aussi sur cette page
@@ -147,7 +159,10 @@ réseau vers `BRIDGE_AGENT_DOC.md` sur chaque page — le coût déjà corrigé
 une fois côté page d'accueil (section suivante, issue #17/#19) ne devait
 pas être réintroduit ailleurs (issue #44). Quand un projet a une couleur
 configurée (voir section précédente), une petite pastille de cette
-couleur apparaît devant son nom dans cette liste (issue #73).
+couleur apparaît devant son nom dans cette liste (issue #73) — y compris
+pour un projet distant, qui garde sa couleur propre. Même regroupement
+« locaux puis distants » avec le même séparateur « PC fixe (Windows) »
+que la page d'accueil (issue #109).
 
 La même couleur, quand elle est configurée, apparaît aussi en évidence à
 deux autres endroits pour ne jamais confondre deux projets aux noms
@@ -912,18 +927,88 @@ sécurisation, finalisation de merge...) : Alain voit donc explicitement
 qu'une action passera par le réseau avant de la confirmer, jamais
 seulement la commande git nue comme s'il s'agissait d'un projet local.
 
-**Statut « injoignable »** — `collect_etat_projets` teste la
-connectivité SSH (`tester_connectivite_ccw`, même `ConnectTimeout` court)
-avant toute tentative de commande git sur un projet distant, sur le
-modèle du test `os.path.isdir` déjà en place pour les projets locaux. Un
-échec donne un statut `"injoignable"`, distinct de `"introuvable"` (qui
-reste réservé aux projets locaux dont le dossier n'existe pas) :
-`index.html` et `projet.html` affichent alors « 🔌 PC fixe éteint ou
+**Statut « injoignable »** — `charger_etat_projet` (voir le paragraphe
+suivant) teste la connectivité SSH (`tester_connectivite_ccw`, même
+`ConnectTimeout` court) avant toute tentative de commande git sur un
+projet distant, sur le modèle du test `os.path.isdir` déjà en place pour
+les projets locaux. Un échec donne un statut `"injoignable"`, distinct
+de `"introuvable"` (qui reste réservé aux projets locaux dont le dossier
+n'existe pas) : `projet.html` affiche alors « 🔌 PC fixe éteint ou
 injoignable — projet indisponible pour le moment » à la place du contenu
 habituel, et `_projet_pret` (`app.py`) refuse toute action sur ce projet
 avec le même message flash — même comportement dégradé que l'existant
 (branches/diagnostics/conflits indisponibles), sans jamais faire planter
-la page.
+la page. Ce statut n'apparaît jamais sur la page d'accueil ni dans la
+barre latérale (voir ci-dessous) : tant que la page du projet distant
+n'a pas été ouverte, son statut y reste `"distant_a_charger"`, jamais
+testé.
+
+### Chargement à la demande d'un projet distant (issue #109)
+
+Avant cette issue, **chaque chargement de page** (accueil, barre
+latérale, page d'un autre projet, actions diverses) appelait
+`collect_etat_projets()`, qui chargeait TOUS les projets du tableau en
+entier — y compris un test de connectivité SSH et des commandes git
+distantes pour chaque ligne distante (section précédente, issue #94).
+Avec l'apparition d'une ligne `<nom>_ccw` dans le tableau (issue #108),
+cela ralentissait sensiblement *toutes* les pages de `relecture_web`,
+même celles qui ne concernent aucun projet distant.
+
+**`collect_etat_projets_legers()`** (`git_info.py`) remplace cet appel
+pour toutes les pages qui n'ont pas besoin de l'état complet d'un projet
+distant précis : les projets locaux sont chargés en entier (coût
+purement local, déjà négligeable), les projets distants sont renvoyés
+avec seulement leurs champs de base (nom/dépôt/répertoire/couleur,
+champ `distant=True`) et le statut `"distant_a_charger"` — **aucun**
+test de connectivité SSH, **aucune** commande git. C'est la fonction
+que `_charger_projets()` (`app.py`) appelle désormais.
+
+**`charger_etat_projet(projet, ...)`** (`git_info.py`) est le point
+d'entrée unique qui charge un seul projet en entier, y compris le test
+de connectivité SSH et les commandes git distantes s'il est distant —
+réutilisé en interne par `collect_etat_projets_legers()` pour les
+projets locaux (où il ne contacte jamais le réseau) et, côté `app.py`,
+par `_charger_projet_complet(nom_projet)` pour charger à la demande
+UN SEUL projet distant précis.
+
+**Deux situations déclenchent ce chargement complet d'un projet
+distant**, jamais plus :
+
+1. L'ouverture de sa propre page (`projet_route`, `/projet/<nom_projet>`,
+   qui appelle directement `_charger_projet_complet`).
+2. Une action qui le concerne — toute route qui passe par
+   `_trouver_projet`/`_projet_pret` (push, merge, suppression,
+   sécurisation, revert...) résout désormais le projet visé via
+   `_charger_projet_complet`, qui déclenche ce même chargement complet
+   si ce projet est encore au statut `"distant_a_charger"`.
+
+`_charger_projet_complet` mémoïse son résultat dans `g` par nom de
+projet (durée d'une requête HTTP) : une même page ne déclenche ainsi
+jamais plus d'un test de connectivité SSH, même si plusieurs morceaux de
+cette page (route + panneau .gitignore + verrous actifs...) ont besoin
+du même projet.
+
+**`nettoyer_tous_les_projets_route`** (bouton « Nettoyer tous les
+projets », issue #17) ignore déjà, sans code dédié, tout projet distant
+: elle n'agit que sur les projets au statut `"ok"`, et un projet distant
+reste au statut `"distant_a_charger"` tant que sa page n'a pas été
+ouverte — donc jamais de contact SSH depuis ce bouton.
+
+**« Nettoyer ce projet » sur un projet distant** (`nettoyer_projet_route`,
+issue #68) est en revanche explicitement refusé (message flash clair),
+et le bouton masqué côté template (`projet.html`) : cette action
+nettoie les résumés déjà pushés dans `Relecture_Bridge/<dossier>/Non_Lu/`
+— un dossier purement **local** au ThinkPad qui n'existe jamais pour un
+clone Windows (aucun hook post-commit n'y est installé, voir
+`installer.sh`). Avant l'issue #109, cette action restait silencieusement
+sans effet sur un projet distant joignable (0 résumé supprimé, faute de
+dossier local) plutôt que de signaler clairement qu'elle n'a pas de sens
+ici.
+
+**Page d'un projet distant** (`projet.html`) affiche désormais, en tête
+de page, une indication discrète — « Projet du PC fixe (Windows), chemin
+`C:\CCW\...`, accès par SSH » — qui explique pourquoi cette page
+spécifique est plus lente à charger que les autres.
 
 **Hors périmètre de cette issue** (suivi à prévoir) : la résolution de
 conflit sur un fichier distant (`lire_conflits_fichier`,

@@ -11,7 +11,7 @@
   <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}" class="bouton bouton--rafraichir lien-bouton">
     🔄 Rafraîchir
   </a>
-  {% if projet.statut == "ok" %}
+  {% if projet.statut == "ok" and not projet.distant %}
   <form method="post" action="{{ url_for('nettoyer_projet_route', nom_projet=projet.nom) }}" id="form-nettoyer-ce-projet">
     <button type="submit" class="bouton bouton--nettoyer">
       🧹 Nettoyer ce projet
@@ -19,6 +19,13 @@
   </form>
   {% endif %}
 </header>
+
+{% if projet.distant %}
+<p class="statut statut--distant">
+  💻 Projet du PC fixe (Windows) — chemin <code>{{ projet.repertoire }}</code>, accès par SSH
+  (cette page est plus lente que les autres pour cette raison).
+</p>
+{% endif %}
 
 {% if erreur %}
 <p class="erreur">❌ {{ erreur }}</p>

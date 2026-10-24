@@ -2319,9 +2319,131 @@ def resoudre_tous_blocs_conflit(repertoire, chemin_relatif, textes_finaux, empre
     return {"ok": True, "erreur": None, "git_add": git_add}
 
 
-def collect_etat_projets():
-    """Assemble, pour chaque projet de BRIDGE_AGENT_DOC.md, ses worktrees et
-    leurs commits en attente de push."""
+def _construire_entree_legere(projet):
+    """Entrée de base (nom/dépôt/répertoire/couleur du tableau, plus le
+    dossier de relecture et le marqueur `distant`) commune aux deux niveaux
+    de chargement (issue #109) — sans aucune commande git ni test réseau,
+    donc toujours sûre à construire pour TOUS les projets, y compris ceux du
+    PC fixe CCW qu'on ne veut pas encore avoir contactés."""
+    entree = dict(projet, worktrees=[])
+    repertoire = projet["repertoire"]
+    entree["distant"] = est_projet_distant(repertoire)
+
+    # Nom du dossier de relecture (Relecture_Bridge/<dossier>/Non_Lu) : le
+    # même calcul que le hook post-commit (basename du répertoire de
+    # travail), PAS le champ "nom" du tableau, qui peut différer (ex.
+    # "alchess" pour le dossier "NicLink" — voir post-commit).
+    # Chemin Windows (projet distant, issue #108) : `os.path.basename`/
+    # `os.path.normpath` ne reconnaissent que `/` comme séparateur sur ce
+    # process Linux et renverraient le chemin Windows entier tel quel
+    # plutôt que son dernier segment — sans effet pratique aujourd'hui
+    # (aucun hook post-commit n'est installé sur un clone Windows, voir
+    # installer.sh, donc ce dossier de relecture n'existe jamais), mais
+    # faux dans l'absolu, donc corrigé par cohérence.
+    entree["dossier_relecture"] = (
+        nom_dossier_chemin_windows(repertoire) if entree["distant"]
+        else os.path.basename(os.path.normpath(repertoire))
+    )
+    return entree
+
+
+def charger_etat_projet(projet, repertoire_bridge_agent=None, branches_cibles=None):
+    """Charge l'état COMPLET d'UN SEUL projet — ses worktrees et leurs
+    commits en attente de push, y compris le test de connectivité SSH puis
+    les commandes git distantes si c'est un projet distant (PC fixe CCW,
+    voir `est_projet_distant`) (issue #109). Point d'entrée unique réutilisé
+    aussi bien par le chargement local de `collect_etat_projets_legers`
+    (jamais de réseau, ce projet-là est local) que par le chargement à la
+    demande d'un projet distant côté app.py (page du projet, ou action qui
+    le concerne) — pour qu'il n'existe qu'un seul endroit qui sache
+    effectivement interroger un projet en entier.
+
+    `repertoire_bridge_agent`/`branches_cibles` sont calculés une seule fois
+    par l'appelant quand il charge plusieurs projets à la suite (évite de
+    retélécharger BRIDGE_AGENT_DOC.md ou de relire branches_cibles.conf à
+    chaque projet) ; recalculés ici si omis (cas d'un appel isolé, un seul
+    projet à la demande)."""
+    if branches_cibles is None:
+        branches_cibles = charger_branches_cibles()
+
+    entree = _construire_entree_legere(projet)
+    repertoire = projet["repertoire"]
+    projet_distant = entree["distant"]
+
+    if projet_distant:
+        # Projet distant (PC fixe CCW, issue #94) : le test `os.path.isdir`
+        # ci-dessous ne peut pas s'appliquer (chemin Windows, pas de
+        # filesystem partagé) — pendant distant du même garde-fou, un
+        # test de connectivité SSH borné (ConnectTimeout court, voir
+        # tester_connectivite_ccw) avant toute tentative de commande git,
+        # pour qu'un PC fixe éteint ne bloque jamais le serveur Flask de
+        # développement (mono-thread) ni ne fasse attendre la page
+        # indéfiniment.
+        if not tester_connectivite_ccw():
+            entree["statut"] = "injoignable"
+            return entree
+    elif not os.path.isdir(repertoire):
+        entree["statut"] = "introuvable"
+        return entree
+    elif not os.path.exists(os.path.join(repertoire, ".git")):
+        entree["statut"] = "pas_un_depot_git"
+        return entree
+
+    entree["statut"] = "ok"
+    branche_principale = get_branche_courante(repertoire)
+    entree["branche_principale"] = branche_principale
+    entree["branche_cible_comparaison"] = get_branche_cible_comparaison(
+        projet["nom"], branche_principale, branches_cibles
+    )
+    lignes_deja_pris = _lignes_deja_pris_watcher(projet["nom"], repertoire_bridge_agent)
+    for worktree in get_worktrees(repertoire):
+        worktree.update(get_commits_en_attente(worktree["path"]))
+        worktree["branche_principale"] = branche_principale
+        worktree["est_worktree_principal"] = worktree_est_principal(
+            repertoire, worktree["path"], projet_distant
+        )
+        worktree["orphelin_signale"] = (
+            not worktree["est_worktree_principal"]
+            and worktree_orphelin_signale(worktree["path"], lignes_deja_pris)
+        )
+
+        peut_agir = (
+            branche_principale
+            and worktree["branch"]
+            and not worktree["est_worktree_principal"]
+        )
+        if peut_agir:
+            worktree["merge_ok"] = est_branche_mergee(
+                repertoire, entree["branche_cible_comparaison"], worktree["branch"]
+            )
+            worktree["commande_merge"] = f"git -C {repertoire} merge {worktree['branch']}"
+            worktree["commande_suppression"] = (
+                f"git -C {repertoire} worktree remove {worktree['path']}"
+            )
+        else:
+            worktree["merge_ok"] = False
+            worktree["commande_merge"] = None
+            worktree["commande_suppression"] = None
+
+        entree["worktrees"].append(worktree)
+
+    return entree
+
+
+def collect_etat_projets_legers():
+    """Assemble la liste de TOUS les projets de BRIDGE_AGENT_DOC.md SANS
+    jamais contacter le PC fixe CCW (issue #109, partie A) : les projets
+    locaux sont chargés en entier (voir `charger_etat_projet`), un coût
+    purement local donc déjà négligeable ; les projets distants sont
+    renvoyés avec seulement leurs champs de base (nom/dépôt/répertoire/
+    couleur/dossier de relecture) et le statut "distant_a_charger" — ni
+    test de connectivité SSH, ni commande git. Utilisée par toutes les
+    pages qui affichent la liste des projets sans agir sur un projet
+    distant précis (accueil, barre latérale, page d'un AUTRE projet,
+    « Nettoyer tous les projets ») ; le chargement complet d'un projet
+    distant se fait à la demande, voir `charger_etat_projet`, appelé
+    côté app.py uniquement pour la page de CE projet ou une action qui le
+    concerne."""
     projets = fetch_projets()
     branches_cibles = charger_branches_cibles()
     repertoire_bridge_agent = next(
@@ -2329,88 +2451,29 @@ def collect_etat_projets():
     )
     resultat = []
     for projet in projets:
-        entree = dict(projet, worktrees=[])
-        repertoire = projet["repertoire"]
-
-        # Nom du dossier de relecture (Relecture_Bridge/<dossier>/Non_Lu) : le
-        # même calcul que le hook post-commit (basename du répertoire de
-        # travail), PAS le champ "nom" du tableau, qui peut différer (ex.
-        # "alchess" pour le dossier "NicLink" — voir post-commit).
-        # Chemin Windows (projet distant, issue #108) : `os.path.basename`/
-        # `os.path.normpath` ne reconnaissent que `/` comme séparateur sur ce
-        # process Linux et renverraient le chemin Windows entier tel quel
-        # plutôt que son dernier segment — sans effet pratique aujourd'hui
-        # (aucun hook post-commit n'est installé sur un clone Windows, voir
-        # installer.sh, donc ce dossier de relecture n'existe jamais), mais
-        # faux dans l'absolu, donc corrigé par cohérence.
-        entree["dossier_relecture"] = (
-            nom_dossier_chemin_windows(repertoire) if est_projet_distant(repertoire)
-            else os.path.basename(os.path.normpath(repertoire))
-        )
-
-        if est_projet_distant(repertoire):
-            # Projet distant (PC fixe CCW, issue #94) : le test `os.path.isdir`
-            # ci-dessous ne peut pas s'appliquer (chemin Windows, pas de
-            # filesystem partagé) — pendant distant du même garde-fou, un
-            # test de connectivité SSH borné (ConnectTimeout court, voir
-            # tester_connectivite_ccw) avant toute tentative de commande git,
-            # pour qu'un PC fixe éteint ne bloque jamais le serveur Flask de
-            # développement (mono-thread) ni ne fasse attendre la page
-            # indéfiniment.
-            if not tester_connectivite_ccw():
-                entree["statut"] = "injoignable"
-                resultat.append(entree)
-                continue
-        elif not os.path.isdir(repertoire):
-            entree["statut"] = "introuvable"
+        if est_projet_distant(projet["repertoire"]):
+            entree = _construire_entree_legere(projet)
+            entree["statut"] = "distant_a_charger"
             resultat.append(entree)
-            continue
-        elif not os.path.exists(os.path.join(repertoire, ".git")):
-            entree["statut"] = "pas_un_depot_git"
-            resultat.append(entree)
-            continue
-
-        entree["statut"] = "ok"
-        branche_principale = get_branche_courante(repertoire)
-        entree["branche_principale"] = branche_principale
-        entree["branche_cible_comparaison"] = get_branche_cible_comparaison(
-            projet["nom"], branche_principale, branches_cibles
-        )
-        projet_distant = est_projet_distant(repertoire)
-        lignes_deja_pris = _lignes_deja_pris_watcher(projet["nom"], repertoire_bridge_agent)
-        for worktree in get_worktrees(repertoire):
-            worktree.update(get_commits_en_attente(worktree["path"]))
-            worktree["branche_principale"] = branche_principale
-            worktree["est_worktree_principal"] = worktree_est_principal(
-                repertoire, worktree["path"], projet_distant
-            )
-            worktree["orphelin_signale"] = (
-                not worktree["est_worktree_principal"]
-                and worktree_orphelin_signale(worktree["path"], lignes_deja_pris)
-            )
-
-            peut_agir = (
-                branche_principale
-                and worktree["branch"]
-                and not worktree["est_worktree_principal"]
-            )
-            if peut_agir:
-                worktree["merge_ok"] = est_branche_mergee(
-                    repertoire, entree["branche_cible_comparaison"], worktree["branch"]
-                )
-                worktree["commande_merge"] = f"git -C {repertoire} merge {worktree['branch']}"
-                worktree["commande_suppression"] = (
-                    f"git -C {repertoire} worktree remove {worktree['path']}"
-                )
-            else:
-                worktree["merge_ok"] = False
-                worktree["commande_merge"] = None
-                worktree["commande_suppression"] = None
-
-            entree["worktrees"].append(worktree)
-        resultat.append(entree)
-
+        else:
+            resultat.append(charger_etat_projet(projet, repertoire_bridge_agent, branches_cibles))
     return resultat
+
+
+def collect_etat_projets():
+    """Variante de `collect_etat_projets_legers` qui charge TOUS les
+    projets en entier, y compris les projets distants (donc avec test de
+    connectivité SSH et commandes git distantes pour chacun d'eux) — plus
+    utilisée par aucune page de relecture_web depuis l'issue #109 (qui évite
+    justement de contacter le PC fixe CCW pour chaque chargement de page),
+    conservée uniquement pour l'usage manuel en ligne de commande de ce
+    module (voir le bloc `if __name__ == "__main__"` en bas de fichier)."""
+    projets = fetch_projets()
+    branches_cibles = charger_branches_cibles()
+    repertoire_bridge_agent = next(
+        (p["repertoire"] for p in projets if p["nom"] == "bridge_agent"), None
+    )
+    return [charger_etat_projet(projet, repertoire_bridge_agent, branches_cibles) for projet in projets]
 
 
 # --- Panneau « .gitignore » de la page projet (issue #98) ---------------

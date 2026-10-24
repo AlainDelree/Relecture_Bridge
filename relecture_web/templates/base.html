@@ -13,6 +13,9 @@
     <p class="barre-laterale__titre">Projets</p>
     <ul class="barre-laterale__liste">
       {% for p in projets_sidebar %}
+      {% if p.premier_distant %}
+      <li class="barre-laterale__separateur">PC fixe (Windows)</li>
+      {% endif %}
       <li>
         <a href="{{ url_for('projet_route', nom_projet=p.nom) }}"
            class="barre-laterale__lien{{ ' barre-laterale__lien--actif' if p.nom == nom_projet_actif else '' }}">
