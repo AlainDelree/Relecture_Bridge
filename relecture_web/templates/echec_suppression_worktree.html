@@ -69,6 +69,24 @@
     </details>
     {% endif %}
 
+    {% if e.fichiers_ignores %}
+    <div class="section-fichiers-ignores">
+      <p class="section-fichiers-ignores__titre">
+        ⚠ En plus, ignorés par git (jamais committés nulle part, issue #112) :
+      </p>
+      <ul class="liste-fichiers-perdus">
+        {% for f in e.fichiers_ignores %}
+        <li class="ligne-fichier-perdu">
+          <code>{{ f.chemin }}</code>
+          <button type="button" class="bouton-copier" data-copier="{{ f.chemin }}" title="Copier le chemin">📋</button>
+          <span class="badge badge--info">ignoré par git</span>
+          <span class="stats-diff-fichier">{{ f.taille_affichee }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
     {% if e.verrou_ccl_actif %}
     <p class="message-purge-rejet message-purge-rejet--danger">
       ⚠ Forçage refusé tant que ce badge est actif — attendez la fin de la tâche CCL en cours
@@ -78,7 +96,7 @@
     <form method="post" action="{{ url_for(action_force_route, nom_projet=projet.nom) }}"
           class="form-forcer-suppression"
           data-nom-branche="{{ e.nom_branche }}"
-          data-nb-fichiers="{{ (e.fichiers|length) + e.fichiers_caches }}"
+          data-nb-fichiers="{{ (e.fichiers|length) + e.fichiers_caches + (e.fichiers_ignores|length) }}"
           data-commande-force="{{ e.commande_force }}">
       <input type="hidden" name="branche" value="{{ e.nom_branche }}">
       {% if e.purger %}

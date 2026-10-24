@@ -66,6 +66,7 @@ from git_info import (
     lire_conflits_fichier,
     lire_lignes_gitignore,
     lire_verrous_actifs,
+    lister_fichiers_ignores_worktree,
     nom_branche_recuperation,
     pousser_branche,
     purger_reflog_et_gc,
@@ -238,6 +239,35 @@ def _verrous_actifs_projets(projets):
     return lire_verrous_actifs(repertoire_bridge_agent)
 
 
+def _worktrees_avec_fichiers_ignores(noms_branches, branches):
+    """Pour chaque nom de `noms_branches` qui correspond encore à un
+    worktree actif dans `branches` (voir `_branches_par_nom`), liste ses
+    fichiers/dossiers ignorés par git non filtrés comme bruit (voir
+    `lister_fichiers_ignores_worktree`) — `git worktree remove`, même non
+    forcé, les supprime SANS AUCUN AVERTISSEMENT (issue #112), contrairement
+    aux fichiers modifiés/non suivis que git refuse de lui-même. À appeler
+    AVANT toute tentative de suppression/fusion, par les trois actions qui
+    suppriment un worktree sur sélection groupée (`merger_et_supprimer_route`,
+    `supprimer_worktrees_route`, `rejeter_worktrees_route`) — pas par les
+    variantes forcées, qui affichent déjà ces mêmes fichiers dans la section
+    dédiée de `echec_suppression_worktree.html` (voir
+    `_diagnostiquer_echec_pour_forcage`) avant leur propre confirmation
+    forte.
+
+    Retourne une liste de {nom_branche, fichiers}, vide si aucun worktree
+    sélectionné n'en contient — l'appelant doit alors continuer normalement,
+    sans étape supplémentaire."""
+    resultat = []
+    for nom in noms_branches:
+        branche = branches.get(nom)
+        if not branche or not branche["a_un_worktree"]:
+            continue
+        fichiers = lister_fichiers_ignores_worktree(branche["chemin_worktree"])
+        if fichiers:
+            resultat.append({"nom_branche": nom, "fichiers": fichiers})
+    return resultat
+
+
 def _diagnostiquer_echec_pour_forcage(projet, nom_branche, branche, resultat_worktree, verrous_actifs, purger=False):
     """Construit l'entrée affichée par `echec_suppression_worktree.html`
     pour une branche dont le `git worktree remove` non forcé vient
@@ -260,6 +290,12 @@ def _diagnostiquer_echec_pour_forcage(projet, nom_branche, branche, resultat_wor
         "fichiers_caches": diagnostic["fichiers_caches"],
         "diff": diagnostic["diff"],
         "diff_tronque": diagnostic["diff_tronque"],
+        # Section distincte (issue #112) : ces fichiers-ci seraient perdus
+        # EN PLUS de ceux ci-dessus, même si l'utilisateur les a déjà vus
+        # sur une éventuelle page de confirmation précédente (voir
+        # `_worktrees_avec_fichiers_ignores`) — la confirmation forte de
+        # cette page porte sur l'ensemble de ce qui sera réellement perdu.
+        "fichiers_ignores": lister_fichiers_ignores_worktree(branche["chemin_worktree"]),
         "commande_force": commande_affichee(
             projet["repertoire"],
             f"git -C {projet['repertoire']} worktree remove --force {branche['chemin_worktree']}"
@@ -1810,6 +1846,13 @@ def merger_et_supprimer_route(nom_projet):
         branche_cible = cible_configuree
 
     branches = _branches_par_nom(projet)
+    if request.form.get("ignorer_avertissement_fichiers_ignores") != "on":
+        worktrees_concernes = _worktrees_avec_fichiers_ignores(noms_branches, branches)
+        if worktrees_concernes:
+            return render_template(
+                "confirmation_fichiers_ignores_worktree.html",
+                projet=projet, worktrees=worktrees_concernes, formulaire_origine=request.form,
+            )
     projets, _erreur = _charger_projets()
     verrous_actifs = _verrous_actifs_projets(projets)
     echecs_a_forcer = []
@@ -1978,6 +2021,13 @@ def supprimer_worktrees_route(nom_projet):
     branche_principale = projet["branche_principale"]
     branche_cible = projet["branche_cible_comparaison"]
     branches = _branches_par_nom(projet)
+    if request.form.get("ignorer_avertissement_fichiers_ignores") != "on":
+        worktrees_concernes = _worktrees_avec_fichiers_ignores(noms_branches, branches)
+        if worktrees_concernes:
+            return render_template(
+                "confirmation_fichiers_ignores_worktree.html",
+                projet=projet, worktrees=worktrees_concernes, formulaire_origine=request.form,
+            )
     projets, _erreur = _charger_projets()
     verrous_actifs = _verrous_actifs_projets(projets)
     echecs_a_forcer = []
@@ -2162,6 +2212,13 @@ def rejeter_worktrees_route(nom_projet):
 
     branche_principale = projet["branche_principale"]
     branches = _branches_par_nom(projet)
+    if request.form.get("ignorer_avertissement_fichiers_ignores") != "on":
+        worktrees_concernes = _worktrees_avec_fichiers_ignores(noms_branches, branches)
+        if worktrees_concernes:
+            return render_template(
+                "confirmation_fichiers_ignores_worktree.html",
+                projet=projet, worktrees=worktrees_concernes, formulaire_origine=request.form,
+            )
     projets, _erreur = _charger_projets()
     verrous_actifs = _verrous_actifs_projets(projets)
     hashes_a_purger = set()

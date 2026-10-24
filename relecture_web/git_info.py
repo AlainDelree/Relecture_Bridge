@@ -16,6 +16,7 @@ import os
 import re
 import socket
 import subprocess
+import time
 import urllib.request
 
 DOC_URL = "https://raw.githubusercontent.com/AlainDelree/Bridge_Agent/master/BRIDGE_AGENT_DOC.md"
@@ -44,6 +45,29 @@ MAX_COMMITS_AFFICHES = 30
 # (ou l'inverse) reste possible.
 MAX_FICHIERS_AFFICHES_ECHEC_SUPPRESSION = 20
 MAX_LIGNES_DIFF_ECHEC_SUPPRESSION = 2000
+
+# Fichiers/dossiers ignorés par .gitignore avant suppression d'un worktree
+# (issue #112) : contrairement aux fichiers modifiés/non suivis ci-dessus,
+# `git status` (sans --ignored) et donc `git worktree remove` — MÊME SANS
+# --force — ne les voient jamais : ils disparaissent silencieusement avec
+# le dossier. Seul endroit à éditer pour exclure un motif de bruit
+# supplémentaire (voir `_entree_ignoree_est_bruit`) ; les dossiers
+# d'environnement/dépendances (venv, node_modules...) sont volontairement
+# PAS dans cette liste — ils peuvent représenter un travail d'installation
+# long à refaire, voire un outil installé à la main, donc restent affichés
+# plutôt que silencieusement masqués.
+DOSSIERS_IGNORES_SANS_VALEUR = ("__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache")
+SUFFIXES_IGNORES_SANS_VALEUR = (".pyc",)
+NOMS_FICHIERS_IGNORES_SANS_VALEUR = (".DS_Store", "Thumbs.db", "desktop.ini")
+
+# Calcul de taille des fichiers/dossiers ignorés (projet local uniquement,
+# voir `lister_fichiers_ignores_worktree`) : plafonds partagés entre toutes
+# les entrées d'un même appel, pour qu'un dossier de build volumineux (ou
+# plusieurs) ne bloque jamais la page — un dépassement fait simplement
+# retomber les entrées restantes sur "taille non calculée", jamais une
+# erreur.
+LIMITE_SECONDES_TAILLE_FICHIERS_IGNORES = 2.0
+LIMITE_FICHIERS_TAILLE_FICHIERS_IGNORES = 20000
 
 # Config par projet, à éditer à la main (voir charger_branches_cibles) —
 # dans relecture_bridge, pas dans configs/ de bridge_agent (hors périmètre).
@@ -1583,6 +1607,121 @@ def supprimer_worktree(repertoire, chemin_worktree):
         "erreur": (resultat.stderr or resultat.stdout).strip() if resultat.returncode != 0 else None,
         "commande": commande_affichee(repertoire, " ".join(commande)),
     }
+
+
+def _entree_ignoree_est_bruit(chemin_relatif):
+    """True si `chemin_relatif` (une entrée `!!` de `git status --ignored`,
+    donc un fichier ou un dossier ignoré, potentiellement déjà réduit par
+    git lui-même au premier niveau de sa propre arborescence ignorée) est
+    du bruit sans valeur à exclure de l'avertissement avant suppression
+    d'un worktree (issue #112) — voir DOSSIERS_IGNORES_SANS_VALEUR et les
+    constantes voisines, seul endroit à éditer pour en exclure davantage."""
+    segments = chemin_relatif.rstrip("/").split("/")
+    nom = segments[-1]
+    if any(segment in DOSSIERS_IGNORES_SANS_VALEUR for segment in segments):
+        return True
+    if nom in NOMS_FICHIERS_IGNORES_SANS_VALEUR:
+        return True
+    return nom.endswith(SUFFIXES_IGNORES_SANS_VALEUR)
+
+
+def formater_taille_octets(taille_octets):
+    """Taille lisible (octets/Ko/Mo/Go) à partir d'un nombre d'octets —
+    affichage uniquement (voir `lister_fichiers_ignores_worktree`), jamais
+    utilisée pour un calcul exact ailleurs."""
+    taille = float(taille_octets)
+    for unite in ("octets", "Ko", "Mo"):
+        if taille < 1024:
+            return f"{taille:.0f} {unite}" if unite == "octets" else f"{taille:.1f} {unite}"
+        taille /= 1024
+    return f"{taille:.1f} Go"
+
+
+def _taille_locale_plafonnee(chemin_absolu, etat):
+    """Taille en octets de `chemin_absolu` (fichier, lien, ou dossier
+    parcouru récursivement), ou None si le calcul a été interrompu par le
+    plafond partagé `etat` (voir LIMITE_SECONDES_TAILLE_FICHIERS_IGNORES/
+    LIMITE_FICHIERS_TAILLE_FICHIERS_IGNORES) ou en cas d'erreur filesystem
+    — un échec ou un plafond atteint ne doit jamais faire échouer
+    l'affichage de la liste ni bloquer la suppression confirmée, juste
+    afficher « taille non calculée » pour l'entrée concernée (issue #112)."""
+    try:
+        if os.path.islink(chemin_absolu) or not os.path.isdir(chemin_absolu):
+            return os.path.getsize(chemin_absolu)
+    except OSError:
+        return None
+
+    total = 0
+    for racine, _dossiers, fichiers in os.walk(chemin_absolu):
+        if etat["depassement"]:
+            return None
+        for nom_fichier in fichiers:
+            etat["fichiers_comptes"] += 1
+            if (etat["fichiers_comptes"] > LIMITE_FICHIERS_TAILLE_FICHIERS_IGNORES
+                    or time.monotonic() > etat["echeance"]):
+                etat["depassement"] = True
+                return None
+            try:
+                total += os.path.getsize(os.path.join(racine, nom_fichier))
+            except OSError:
+                continue
+    return total
+
+
+def lister_fichiers_ignores_worktree(chemin_worktree):
+    """Fichiers/dossiers ignorés par .gitignore présents dans
+    `chemin_worktree`, hors bruit sans valeur (voir
+    `_entree_ignoree_est_bruit`) — c'est précisément ce que `git worktree
+    remove` supprime SANS AUCUN AVERTISSEMENT, même sans --force, puisque
+    `git status` (sans --ignored) — et donc `diagnostiquer_echec_
+    suppression_worktree` ci-dessous, qui ne regarde que cette sortie — ne
+    les voit jamais (issue #112). À appeler AVANT toute tentative de
+    suppression, pas seulement après un échec.
+
+    `git status --porcelain=v1 --ignored` (sans `=matching`) réduit déjà de
+    lui-même un dossier entièrement ignoré/non suivi à son seul nom plutôt
+    que de descendre dedans — exactement le niveau « premier niveau de
+    l'arborescence ignorée » voulu ici pour ne pas noyer l'information,
+    sans logique de regroupement supplémentaire à écrire.
+
+    Retourne une liste de {chemin, taille, taille_affichee} (vide si
+    `git status` échoue — un échec de détection ne doit jamais bloquer la
+    suite, à charge de la commande de suppression normale, inchangée, de
+    refléter l'état réel du dossier). Pour un projet local, `taille` est
+    calculée en octets (None si échec/plafond, voir
+    `_taille_locale_plafonnee`) et `taille_affichee` est alors sa forme
+    lisible ou "taille non calculée". Pour un projet distant (PC fixe CCW,
+    voir `est_projet_distant`), aucun calcul coûteux par SSH n'est tenté
+    (issue #109) : `taille` reste toujours None, `taille_affichee` vaut
+    toujours "taille non calculée"."""
+    resultat = _lancer_git(chemin_worktree, "status", "--porcelain=v1", "--ignored")
+    if resultat.returncode != 0:
+        return []
+
+    entrees = []
+    for ligne in resultat.stdout.splitlines():
+        if not ligne.startswith("!! "):
+            continue
+        chemin_relatif = ligne[3:].strip()
+        if chemin_relatif and not _entree_ignoree_est_bruit(chemin_relatif):
+            entrees.append({"chemin": chemin_relatif, "taille": None, "taille_affichee": "taille non calculée"})
+
+    if not entrees or est_projet_distant(chemin_worktree):
+        return entrees
+
+    etat = {
+        "fichiers_comptes": 0,
+        "depassement": False,
+        "echeance": time.monotonic() + LIMITE_SECONDES_TAILLE_FICHIERS_IGNORES,
+    }
+    for entree in entrees:
+        if etat["depassement"]:
+            continue
+        taille = _taille_locale_plafonnee(os.path.join(chemin_worktree, entree["chemin"].rstrip("/")), etat)
+        if taille is not None:
+            entree["taille"] = taille
+            entree["taille_affichee"] = formater_taille_octets(taille)
+    return entrees
 
 
 def diagnostiquer_echec_suppression_worktree(chemin_worktree):

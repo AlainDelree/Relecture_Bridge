@@ -948,3 +948,10 @@ pre.brut {
   flex-wrap: wrap;
 }
 .details-diff-echec-suppression pre.rapport-texte { margin-top: 0.5rem; max-height: 400px; overflow-y: auto; }
+
+/* Section « fichiers ignorés » avant suppression de worktree (issue #112) —
+   sur la page de confirmation dédiée (confirmation_fichiers_ignores_worktree.html,
+   reprend .liste-echecs-suppression/.liste-fichiers-perdus ci-dessus) et dans
+   la section ajoutée à la page de suppression refusée existante. */
+.section-fichiers-ignores { margin-top: 0.5rem; }
+.section-fichiers-ignores__titre { font-size: 0.82rem; color: #a35a00; margin: 0 0 0.2rem 0; font-weight: 600; }
