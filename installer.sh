@@ -70,8 +70,17 @@ done <<< "$REPERTOIRES"
 echo "  ${#PROJETS[@]} projet(s) trouvé(s) dans la doc."
 echo ""
 
+# Chemin Windows (ex. C:\CCW\rummikub) : lettre de lecteur, deux-points,
+# barre oblique inverse — forme des lignes <nom>_ccw du tableau (issue
+# #108), le clone du PC fixe sur lequel ce script, exécuté depuis le
+# ThinkPad, n'a aucun accès filesystem direct. Même motif que
+# MOTIF_CHEMIN_WINDOWS côté relecture_web/git_info.py (issue #94).
+MOTIF_CHEMIN_WINDOWS='^[A-Za-z]:\\'
+
 for projet in "${PROJETS[@]}"; do
-    if [ -d "$projet/.git" ]; then
+    if [[ "$projet" =~ $MOTIF_CHEMIN_WINDOWS ]]; then
+        echo "ℹ Clone Windows distant (PC fixe CCW) — pas de hook installé par ce script : $projet"
+    elif [ -d "$projet/.git" ]; then
         cp "$HOOK_SOURCE" "$projet/.git/hooks/post-commit"
         chmod +x "$projet/.git/hooks/post-commit"
         echo "✓ Hook installé sur $projet"

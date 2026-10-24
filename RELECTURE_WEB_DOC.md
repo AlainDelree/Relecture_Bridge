@@ -938,6 +938,78 @@ ci-dessus, issue #92) n'est pas non plus concerné par cette issue : elle
 ne change rien à qui peut accéder à `relecture_web`, seulement à ce qu'il
 peut atteindre une fois qu'on y accède.
 
+### Lignes `<nom>_ccw` du tableau §2 (issue #108)
+
+Côté Bridge_Agent, le tableau §2 de `BRIDGE_AGENT_DOC.md` peut contenir,
+pour un projet buildé à la fois en local et pour Windows, une ligne
+supplémentaire `<nom>_ccw` (premier cas : `rummikub_ccw`) dont la colonne
+« Répertoire de travail CCL » contient le chemin Windows du clone sur le
+PC fixe (`C:\CCW\<nom>`) — par opposition à la ligne `<nom>` ordinaire, qui
+reste le clone local (ThinkPad, chemin POSIX). Ces lignes sont réservées à
+la **relecture** de ce qui se passe sur le clone Windows (worktrees,
+commits en attente, branches...) via le routage SSH de la section
+ci-dessus : il n'y a ni watcher ni issue GitHub pour elles côté
+Bridge_Agent, et `installer.sh` n'y installe pas de hook post-commit (voir
+plus bas) — `relecture_web` les traite comme n'importe quel autre projet
+distant, `fetch_projets`/`est_projet_distant` ne distinguant pas une ligne
+`<nom>_ccw` d'une ligne `<nom>` ordinaire qui serait elle-même distante.
+
+**Reconnaissance du worktree principal d'un projet distant**
+(`worktree_est_principal`, `chemins_windows_egaux`) — comparer le chemin
+du tableau (`C:\CCW\rummikub`, barres obliques inverses) à celui renvoyé
+par `git worktree list` sur le PC fixe (`C:/CCW/rummikub`, barres obliques
+normales, casse potentiellement différente) via `os.path.realpath` (comme
+pour un projet local) les aurait jugés différents : le dossier principal
+du clone Windows se serait alors affiché comme un worktree ordinaire, avec
+des actions de fusion/suppression proposées là où elles n'ont aucun sens.
+`worktree_est_principal(repertoire, chemin_worktree, projet_distant)`
+bascule donc, pour un projet distant, sur une comparaison dédiée
+(`chemins_windows_egaux`) qui ignore barres obliques (inverse vs normale),
+casse, et une éventuelle barre finale — sans rien changer à la comparaison
+`os.path.realpath` existante pour un projet local. Un autre worktree du
+même clone (ex. un worktree dédié CCL) reste bien distingué du dossier
+principal : la comparaison porte sur le chemin normalisé dans son
+intégralité, jamais sur un simple préfixe.
+
+**Résolution de conflit sur un projet distant : refus explicite** — reste
+hors périmètre (voir paragraphe ci-dessus), mais la page Conflit
+(`conflit_fichier_route`) et les deux actions de résolution
+(`traiter_bloc_conflit_route`, `traiter_tous_blocs_conflit_route`) le
+détectent maintenant explicitement (`est_projet_distant`) et affichent
+« ❌ Résolution de conflit non disponible pour un projet distant (PC fixe
+CCW). » avant toute tentative de lecture/écriture — plutôt que de laisser
+`lire_conflits_fichier`/`resoudre_bloc_conflit` tenter d'ouvrir un chemin
+local inventé (résultat d'un `os.path.join` sur un chemin Windows, sans
+rapport avec le fichier réel du PC fixe) et n'afficher qu'un message
+d'erreur système confus. `retraiter_fichier_conflit_route` n'a pas besoin
+de ce garde-fou : elle ne fait qu'un `git checkout --conflict=merge`,
+déjà correctement routé par `_lancer_git`.
+
+**Fusion du changelog sur un projet distant : refus explicite** —
+`fusionner_worktree` (bouton « Fusionner ») reste utilisable sur un
+worktree distant (le `git merge` lui-même est routé par `_lancer_git`),
+mais l'étape suivante, `fusionner_changelog_worktree`, lit et écrit
+directement le filesystem LOCAL (`os.listdir`, `subprocess.run` du script
+`scripts/fusionner_changelog.py`) : sur un chemin Windows, elle échouait
+silencieusement à trouver un dossier local inexistant et concluait à tort
+qu'aucun `CHANGELOG-<N>.md` n'attendait de fusion. Elle détecte maintenant
+`est_projet_distant(repertoire)` en entrée et retourne directement
+`{"ok": False, "erreur": "fusion automatique du changelog non disponible
+pour un projet distant...", ...}`, affiché par la même case `⚠️` que tout
+autre échec de fusion du changelog — Alain sait qu'il doit vérifier
+manuellement sur le PC fixe plutôt que de croire, à tort, qu'il n'y avait
+rien à fusionner.
+
+**`installer.sh` et les chemins Windows** — pour une ligne dont le
+répertoire est un chemin Windows (même motif que `MOTIF_CHEMIN_WINDOWS`
+côté `git_info.py`), le script affiche désormais « ℹ Clone Windows
+distant (PC fixe CCW) — pas de hook installé par ce script : ... »,
+distinct du message « ⚠ Ignoré (pas un dépôt git) : ... » réservé à un
+vrai dossier local sans `.git` — ce n'est pas un dépôt cassé, mais un
+clone volontairement hors du champ de ce script (qui n'a aucun accès
+filesystem au PC fixe). Comportement inchangé pour toute ligne à chemin
+Linux.
+
 ## 12. Comment interpréter une capture ou un export de `relecture_web`
 
 Si Alain montre une capture d'écran ou un texte copié depuis

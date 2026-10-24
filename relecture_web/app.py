@@ -500,6 +500,21 @@ def comparer_commit_route(nom_projet, hash_commit):
     )
 
 
+# Résolution de conflit sur un projet distant (PC fixe CCW, issue #94) :
+# hors périmètre (issue #108, comme le panneau .gitignore, voir
+# `_refus_modification_gitignore`) — `lire_conflits_fichier`,
+# `resoudre_bloc_conflit` et `resoudre_tous_blocs_conflit` lisent/écrivent le
+# fichier directement sur le filesystem LOCAL de ce process (jamais routées
+# via SSH comme les commandes git du module, voir `_lancer_git`) : sur un
+# chemin Windows, elles tenteraient de lire/écrire un chemin local inventé
+# (résultat d'un `os.path.join` sur un chemin Windows, sans rapport avec le
+# fichier réel sur le PC fixe) plutôt que d'échouer clairement. Les trois
+# routes ci-dessous refusent donc explicitement avant d'y toucher.
+_MESSAGE_CONFLIT_PROJET_DISTANT = (
+    "❌ Résolution de conflit non disponible pour un projet distant (PC fixe CCW)."
+)
+
+
 @app.route("/projet/<nom_projet>/conflit/<path:chemin_relatif>")
 @login_requis
 def conflit_fichier_route(nom_projet, chemin_relatif):
@@ -522,6 +537,10 @@ def conflit_fichier_route(nom_projet, chemin_relatif):
     if not projet:
         flash(message_erreur, "erreur")
         return redirect(url_for("index"))
+
+    if est_projet_distant(projet["repertoire"]):
+        flash(_MESSAGE_CONFLIT_PROJET_DISTANT, "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
 
     fichiers_conflit = get_fichiers_en_conflit(projet["repertoire"])
     fichier = next((f for f in fichiers_conflit if f["chemin"] == chemin_relatif), None)
@@ -559,6 +578,10 @@ def traiter_bloc_conflit_route(nom_projet, chemin_relatif):
     if not projet:
         flash(message_erreur, "erreur")
         return redirect(url_for("index"))
+
+    if est_projet_distant(projet["repertoire"]):
+        flash(_MESSAGE_CONFLIT_PROJET_DISTANT, "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
 
     fichiers_conflit = get_fichiers_en_conflit(projet["repertoire"])
     fichier = next((f for f in fichiers_conflit if f["chemin"] == chemin_relatif), None)
@@ -627,6 +650,10 @@ def traiter_tous_blocs_conflit_route(nom_projet, chemin_relatif):
     if not projet:
         flash(message_erreur, "erreur")
         return redirect(url_for("index"))
+
+    if est_projet_distant(projet["repertoire"]):
+        flash(_MESSAGE_CONFLIT_PROJET_DISTANT, "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
 
     fichiers_conflit = get_fichiers_en_conflit(projet["repertoire"])
     fichier = next((f for f in fichiers_conflit if f["chemin"] == chemin_relatif), None)

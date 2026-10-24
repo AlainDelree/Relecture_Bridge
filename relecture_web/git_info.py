@@ -192,6 +192,59 @@ def est_projet_distant(repertoire):
     return bool(MOTIF_CHEMIN_WINDOWS.match(repertoire or ""))
 
 
+def _normaliser_chemin_windows(chemin):
+    """Forme canonique d'un chemin Windows pour comparaison (issue #108) :
+    barres obliques inverses ramenées à des barres obliques normales,
+    minuscules (Windows ne distingue pas la casse de ses chemins de
+    fichiers), barre finale retirée. `os.path.realpath`/`os.path.normpath`
+    (déjà utilisés ailleurs dans ce module pour les chemins locaux) ne
+    conviennent pas ici : exécutés sur ce process Linux, ils traitent un
+    chemin Windows comme un bloc opaque sans séparateur reconnu plutôt que
+    de le normaliser."""
+    return (chemin or "").replace("\\", "/").rstrip("/").lower()
+
+
+def chemins_windows_egaux(chemin_a, chemin_b):
+    """True si `chemin_a` et `chemin_b` désignent le même chemin Windows une
+    fois ramenés à leur forme canonique (voir `_normaliser_chemin_windows`)
+    — par exemple le chemin du tableau BRIDGE_AGENT_DOC.md (barres obliques
+    inverses, `C:\\CCW\\rummikub`) contre celui renvoyé par `git worktree
+    list` sur le PC fixe (barres obliques normales, casse potentiellement
+    différente, `C:/CCW/rummikub`)."""
+    return _normaliser_chemin_windows(chemin_a) == _normaliser_chemin_windows(chemin_b)
+
+
+def nom_dossier_chemin_windows(chemin):
+    """Dernier segment d'un chemin Windows (après la dernière barre oblique,
+    inverse ou normale) — pendant distant de `os.path.basename` (issue
+    #108), qui ne reconnaît que `/` comme séparateur sur ce process Linux et
+    renverrait donc le chemin Windows entier tel quel plutôt que son dernier
+    segment."""
+    return (chemin or "").replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+
+
+def worktree_est_principal(repertoire, chemin_worktree, projet_distant):
+    """True si `chemin_worktree` (un des chemins renvoyés par
+    `get_worktrees(repertoire)`) est le worktree PRINCIPAL du projet, c'est
+    à dire `repertoire` lui-même — fonction isolée (issue #108) pour rester
+    testable sans dépendre du filesystem ni d'une connexion SSH réelle.
+
+    Comparaison par chemin Windows normalisé (voir `chemins_windows_egaux`)
+    si `projet_distant` (le PC fixe CCW, issue #94) : `os.path.realpath`
+    traiterait sinon le chemin renvoyé par git (barres obliques normales,
+    casse potentiellement différente de celui du tableau) comme différent
+    du chemin configuré, alors qu'ils désignent le même dossier — le dossier
+    principal du clone Windows serait alors traité comme un worktree
+    ordinaire, avec des actions (fusion, suppression) proposées là où elles
+    n'ont aucun sens.
+
+    Comparaison par chemin réel (`os.path.realpath`) sinon, comportement
+    inchangé pour un projet local."""
+    if projet_distant:
+        return chemins_windows_egaux(chemin_worktree, repertoire)
+    return os.path.realpath(chemin_worktree) == os.path.realpath(repertoire)
+
+
 def charger_config_ccw():
     """Lit `ccw_host.conf` (issue #94, même convention que
     `charger_branches_cibles` : `cle = valeur`, une entrée par ligne, `#`
@@ -1282,7 +1335,28 @@ def fusionner_changelog_worktree(repertoire, nom_projet=None):
     d'échec silencieux même si le script est absent. Chaque tentative
     réellement lancée (script trouvé ou non) est aussi journalisée dans
     CHEMIN_JOURNAL_FUSION_CHANGELOG, indépendamment du message flash
-    (issue #62)."""
+    (issue #62).
+
+    Refuse explicitement pour un projet distant (PC fixe CCW, issue #94) :
+    `os.listdir(repertoire)` et le `subprocess.run` ci-dessous visent tous
+    deux le filesystem LOCAL de ce process, jamais routés via SSH comme les
+    commandes git du module (voir `_lancer_git`) — sur un chemin Windows,
+    `os.listdir` échouerait silencieusement (dossier local inexistant,
+    capturé par l'except ci-dessous) et laisserait croire à tort qu'aucun
+    `CHANGELOG-<N>.md` n'attend de fusion, alors que l'état réel du clone
+    distant n'a jamais été consulté. Fusion automatique du changelog sur un
+    projet distant hors périmètre de cette issue (comme la résolution de
+    conflit, voir `conflit_fichier_route`) — ce refus explicite remplace ce
+    faux-négatif silencieux par un message clair."""
+    if est_projet_distant(repertoire):
+        erreur = (
+            "fusion automatique du changelog non disponible pour un projet distant "
+            "(PC fixe CCW) — à vérifier/fusionner manuellement sur place si besoin."
+        )
+        commande_str = "non applicable (projet distant)"
+        _journaliser_fusion_changelog(nom_projet or repertoire, commande_str, False, erreur)
+        return {"ok": False, "erreur": erreur, "commande": commande_str}
+
     try:
         fichiers_changelog = sorted(
             nom for nom in os.listdir(repertoire) if MOTIF_CHANGELOG_WORKTREE.match(nom)
@@ -2262,7 +2336,17 @@ def collect_etat_projets():
         # même calcul que le hook post-commit (basename du répertoire de
         # travail), PAS le champ "nom" du tableau, qui peut différer (ex.
         # "alchess" pour le dossier "NicLink" — voir post-commit).
-        entree["dossier_relecture"] = os.path.basename(os.path.normpath(repertoire))
+        # Chemin Windows (projet distant, issue #108) : `os.path.basename`/
+        # `os.path.normpath` ne reconnaissent que `/` comme séparateur sur ce
+        # process Linux et renverraient le chemin Windows entier tel quel
+        # plutôt que son dernier segment — sans effet pratique aujourd'hui
+        # (aucun hook post-commit n'est installé sur un clone Windows, voir
+        # installer.sh, donc ce dossier de relecture n'existe jamais), mais
+        # faux dans l'absolu, donc corrigé par cohérence.
+        entree["dossier_relecture"] = (
+            nom_dossier_chemin_windows(repertoire) if est_projet_distant(repertoire)
+            else os.path.basename(os.path.normpath(repertoire))
+        )
 
         if est_projet_distant(repertoire):
             # Projet distant (PC fixe CCW, issue #94) : le test `os.path.isdir`
@@ -2292,13 +2376,13 @@ def collect_etat_projets():
         entree["branche_cible_comparaison"] = get_branche_cible_comparaison(
             projet["nom"], branche_principale, branches_cibles
         )
-        chemin_principal = os.path.realpath(repertoire)
+        projet_distant = est_projet_distant(repertoire)
         lignes_deja_pris = _lignes_deja_pris_watcher(projet["nom"], repertoire_bridge_agent)
         for worktree in get_worktrees(repertoire):
             worktree.update(get_commits_en_attente(worktree["path"]))
             worktree["branche_principale"] = branche_principale
-            worktree["est_worktree_principal"] = (
-                os.path.realpath(worktree["path"]) == chemin_principal
+            worktree["est_worktree_principal"] = worktree_est_principal(
+                repertoire, worktree["path"], projet_distant
             )
             worktree["orphelin_signale"] = (
                 not worktree["est_worktree_principal"]
