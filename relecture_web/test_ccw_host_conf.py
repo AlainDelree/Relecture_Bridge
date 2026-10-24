@@ -69,7 +69,12 @@ class ChargerConfigCcwTestCase(unittest.TestCase):
     def test_fichier_absent_pas_de_plantage_tester_connectivite(self):
         # `tester_connectivite_ccw` ne doit jamais tenter de connexion SSH
         # (donc jamais lever/bloquer) quand l'hôte n'est pas configuré.
-        self.assertFalse(git_info.tester_connectivite_ccw())
+        # Renvoie (ok, categorie, message) depuis l'issue #111 — categorie
+        # et message restent None, aucune connexion n'ayant été tentée.
+        ok, categorie, message = git_info.tester_connectivite_ccw()
+        self.assertFalse(ok)
+        self.assertIsNone(categorie)
+        self.assertIsNone(message)
 
     def test_fichier_present_ccw_host_renseigne(self):
         self._ecrire_config("ccw_host = utilisateur@192.0.2.1\n")

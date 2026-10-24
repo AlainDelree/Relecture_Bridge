@@ -957,15 +957,53 @@ suivant) teste la connectivité SSH (`tester_connectivite_ccw`, même
 projet distant, sur le modèle du test `os.path.isdir` déjà en place pour
 les projets locaux. Un échec donne un statut `"injoignable"`, distinct
 de `"introuvable"` (qui reste réservé aux projets locaux dont le dossier
-n'existe pas) : `projet.html` affiche alors « 🔌 PC fixe éteint ou
-injoignable — projet indisponible pour le moment » à la place du contenu
-habituel, et `_projet_pret` (`app.py`) refuse toute action sur ce projet
-avec le même message flash — même comportement dégradé que l'existant
-(branches/diagnostics/conflits indisponibles), sans jamais faire planter
-la page. Ce statut n'apparaît jamais sur la page d'accueil ni dans la
-barre latérale (voir ci-dessous) : tant que la page du projet distant
-n'a pas été ouverte, son statut y reste `"distant_a_charger"`, jamais
-testé.
+n'existe pas) : `projet.html` affiche alors un message à la place du
+contenu habituel, et `_projet_pret` (`app.py`) refuse toute action sur ce
+projet avec le même message flash — même comportement dégradé que
+l'existant (branches/diagnostics/conflits indisponibles), sans jamais
+faire planter la page. Ce statut n'apparaît jamais sur la page d'accueil
+ni dans la barre latérale (voir ci-dessous) : tant que la page du projet
+distant n'a pas été ouverte, son statut y reste `"distant_a_charger"`,
+jamais testé.
+
+**Causes distinguées du statut « injoignable » (issue #111)** — un échec
+de connexion SSH renvoie toujours le même code de sortie (255) quelle que
+soit la cause : seul le texte d'erreur de `ssh` (en anglais, même sur un
+système en français — vérifié pour « Connection refused », les autres
+messages viennent du même programme) permet de distinguer les cas.
+`tester_connectivite_ccw()` capture ce texte et le classe
+(`_classer_echec_ssh_ccw`) en une des cinq catégories suivantes, dont les
+libellés sont **alignés avec la procédure de réinstallation Windows du
+PC fixe documentée par Bridge_Agent** (étape 3) — à ne renommer qu'après
+accord avec Bridge_Agent :
+
+| Libellé (`CCW_LIBELLES`) | Texte ssh reconnu | Message affiché |
+|---|---|---|
+| clé d'hôte modifiée | `Host key verification failed` | identité SSH changée (réinstallation probable) + commande `ssh-keygen -R <adresse>` à lancer sur le ThinkPad, `<adresse>` tirée de `ccw_host.conf` (jamais écrite en dur) |
+| clé refusée | `Permission denied` + `publickey` | clé publique du ThinkPad non autorisée sur le PC fixe — à réinstaller selon la procédure CCW de Bridge_Agent |
+| connexion refusée | `Connection refused` | serveur SSH du PC fixe non démarré ou n'écoutant pas |
+| PC éteint ou adresse introuvable | `Connection timed out`, `No route to host`, `Network is unreachable`, `Could not resolve hostname`/`Temporary failure in name resolution`, ou dépassement du propre délai du test (`TimeoutExpired`) | message proche de l'ancien texte générique |
+| cause non reconnue | tout le reste | message générique complété par la première ligne du texte d'erreur ssh, pour rester diagnosticable |
+
+Premier contact avec un hôte jamais vu (clé d'hôte inconnue) : avec
+`StrictHostKeyChecking=accept-new` (voir plus haut), ce cas est accepté
+silencieusement par `ssh`, sans erreur — il ne se distingue donc jamais
+en pratique d'une connexion réussie, et ne peut donc pas être confondu
+avec « clé d'hôte modifiée » (qui, elle, suppose un hôte déjà connu dont
+la clé a changé). La distinction demandée entre les deux n'avait donc pas
+lieu d'être avec ces options.
+
+`charger_etat_projet` stocke la catégorie et le message dans
+`entree["ccw_categorie"]`/`entree["ccw_message"]` (absents si le projet
+n'est pas au statut `"injoignable"`) ; `projet.html`, `index.html` et
+`_projet_pret` (`app.py`, refus d'action) affichent ce message détaillé à
+la place de l'ancien texte générique unique, avec repli sur ce dernier si
+jamais absent. Une commande git distante qui échoue EN COURS D'ACTION
+(pas seulement au chargement de la page) avec le même code de sortie 255
+(donc un échec ssh, jamais git) est classée de la même façon par
+`_lancer_git_distant`, qui préfixe alors le message de diagnostic au
+texte brut de `ssh` (conservé pour le détail) avant de le renvoyer à
+l'appelant.
 
 **Statut « ccw_non_configure » (issue #110)** — `charger_etat_projet`
 teste `charger_config_ccw()` AVANT `tester_connectivite_ccw()` : si

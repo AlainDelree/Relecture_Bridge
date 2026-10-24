@@ -120,9 +120,18 @@ class BaseChargementADemandeTestCase(unittest.TestCase):
 
         def _faux_tester_connectivite_ccw():
             # Jamais de vrai `ssh` lancé dans ces tests — seul le COMPTAGE
-            # des appels nous intéresse.
+            # des appels nous intéresse. Renvoie (ok, categorie, message)
+            # depuis l'issue #111 ; catégorie « PC inaccessible » simulée
+            # par défaut quand CONNECTIVITE_CCW est faux (PC fixe éteint,
+            # scénario le plus courant), sans rapport avec le contenu
+            # testé ici (seul le comptage des appels l'est).
             self.compteur_ssh["n"] += 1
-            return self.CONNECTIVITE_CCW
+            if self.CONNECTIVITE_CCW:
+                return True, None, None
+            return (
+                False, git_info.CCW_HOTE_INACCESSIBLE,
+                "🔌 PC fixe éteint ou injoignable — projet indisponible pour le moment.",
+            )
 
         self._original_fetch_projets = git_info.fetch_projets
         self._original_charger_config_ccw = git_info.charger_config_ccw

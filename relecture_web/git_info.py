@@ -61,6 +61,27 @@ CLE_SSH_CCW_DEFAUT = os.path.expanduser("~/.ssh/ccl_ccw")
 # développement, mono-thread (issue #94).
 TIMEOUT_SSH_CONNECT = 6
 
+# Catégories de cause d'échec d'une connexion SSH vers le PC fixe CCW
+# (issue #111, suite de #110) : un échec SSH renvoie toujours le même code
+# de sortie (255) quelle que soit la cause — seul le texte d'erreur permet
+# de distinguer les cas (voir `_classer_echec_ssh_ccw`). Libellés fixés
+# côté documentation Bridge_Agent (procédure de réinstallation Windows,
+# étape 3, voir RELECTURE_WEB_DOC.md §11) : à ne renommer qu'après accord
+# avec Bridge_Agent, qui les reprend dans sa propre documentation.
+CCW_CLE_HOTE_MODIFIEE = "cle_hote_modifiee"
+CCW_CLE_REFUSEE = "cle_refusee"
+CCW_CONNEXION_REFUSEE = "connexion_refusee"
+CCW_HOTE_INACCESSIBLE = "hote_inaccessible"
+CCW_CAUSE_INCONNUE = "cause_inconnue"
+
+CCW_LIBELLES = {
+    CCW_CLE_HOTE_MODIFIEE: "clé d'hôte modifiée",
+    CCW_CLE_REFUSEE: "clé refusée",
+    CCW_CONNEXION_REFUSEE: "connexion refusée",
+    CCW_HOTE_INACCESSIBLE: "PC éteint ou adresse introuvable",
+    CCW_CAUSE_INCONNUE: "cause non reconnue",
+}
+
 # Un projet est « distant » si son `repertoire` (tel que retourné par
 # fetch_projets) a la forme d'un chemin Windows (`C:\...`) — heuristique
 # gratuite validée par le diagnostic de l'issue #91 : le PC fixe CCW est
@@ -345,29 +366,127 @@ def _lancer_git_distant(repertoire, args, timeout, entree):
 
     commande_git = " ".join(_quoter_argument_distant(a) for a in ("git", "-C", repertoire, *args))
     commande_ssh = _commande_ssh_ccw(config, commande_git)
-    return subprocess.run(commande_ssh, input=entree, capture_output=True, text=True, timeout=timeout)
+    resultat = subprocess.run(commande_ssh, input=entree, capture_output=True, text=True, timeout=timeout)
+    if resultat.returncode == 255:
+        # Code de sortie propre à ssh lui-même, jamais à git (issue #111) :
+        # une commande git en cours d'action peut échouer pour la même
+        # raison que `tester_connectivite_ccw` (connexion coupée entre le
+        # chargement de la page et l'action, clé d'hôte changée pendant ce
+        # délai...) — même classement, même message, ajouté devant le
+        # texte brut de ssh plutôt que de le remplacer (conservé pour le
+        # diagnostic).
+        categorie = _classer_echec_ssh_ccw(resultat.stderr)
+        message = _message_echec_ssh_ccw(categorie, config, resultat.stderr)
+        resultat = subprocess.CompletedProcess(
+            args=resultat.args, returncode=resultat.returncode,
+            stdout=resultat.stdout, stderr=f"{message}\n\n{resultat.stderr}",
+        )
+    return resultat
+
+
+def _adresse_ccw(config):
+    """Partie après l'arobase de `config["host"]` (ex. `192.0.2.1` pour
+    `utilisateur@192.0.2.1`) — jamais une adresse écrite en dur dans le
+    code ou la documentation, toujours tirée de la configuration réelle
+    (issue #111)."""
+    return config["host"].rsplit("@", 1)[-1]
+
+
+def _classer_echec_ssh_ccw(texte_erreur):
+    """Classe `texte_erreur` (stderr d'une commande ssh en échec — code de
+    sortie 255 dans tous les cas, voir `tester_connectivite_ccw`) en une
+    des cinq catégories CCW_* (issue #111). Au moindre doute entre
+    plusieurs catégories, retombe sur `CCW_CAUSE_INCONNUE` plutôt que
+    d'afficher un message faux.
+
+    Avec `StrictHostKeyChecking=accept-new` (voir `_commande_ssh_ccw`), un
+    hôte jamais vu est accepté silencieusement, sans erreur : seule une
+    clé d'hôte CHANGÉE (réinstallation du PC fixe) produit l'erreur "Host
+    key verification failed". La distinction entre « jamais vu » et
+    « modifiée » demandée par l'issue ne se présente donc jamais en
+    pratique avec ces options — les deux cas sont donc, de fait, déjà
+    traités ensemble dans `CCW_CLE_HOTE_MODIFIEE`."""
+    if "Host key verification failed" in texte_erreur:
+        return CCW_CLE_HOTE_MODIFIEE
+    if "Permission denied" in texte_erreur and "publickey" in texte_erreur:
+        return CCW_CLE_REFUSEE
+    if "Connection refused" in texte_erreur:
+        return CCW_CONNEXION_REFUSEE
+    if any(motif in texte_erreur for motif in (
+        "Connection timed out",
+        "No route to host",
+        "Network is unreachable",
+        "Could not resolve hostname",
+        "Temporary failure in name resolution",
+    )):
+        return CCW_HOTE_INACCESSIBLE
+    return CCW_CAUSE_INCONNUE
+
+
+def _message_echec_ssh_ccw(categorie, config, texte_erreur):
+    """Message affichable à Alain pour `categorie` (une des CCW_*), avec
+    son libellé repris à l'identique (issue #111). `config` fournit
+    l'adresse réelle du PC fixe (voir `_adresse_ccw`, jamais écrite en dur)
+    pour la commande à lancer en cas de clé d'hôte modifiée."""
+    libelle = CCW_LIBELLES[categorie]
+    if categorie == CCW_CLE_HOTE_MODIFIEE:
+        return (
+            f"🔑 {libelle} — l'identité SSH du PC fixe a changé (probablement "
+            "une réinstallation Windows). Sur le ThinkPad, lancez : "
+            f"ssh-keygen -R {_adresse_ccw(config)}"
+        )
+    if categorie == CCW_CLE_REFUSEE:
+        return (
+            f"🔑 {libelle} — la clé publique du ThinkPad n'est pas (ou plus) "
+            "autorisée sur le PC fixe. Réinstallez-la selon la procédure de "
+            "réinstallation CCW de Bridge_Agent."
+        )
+    if categorie == CCW_CONNEXION_REFUSEE:
+        return f"🔌 {libelle} — le serveur SSH du PC fixe n'est pas démarré ou n'écoute pas."
+    if categorie == CCW_HOTE_INACCESSIBLE:
+        return f"🔌 {libelle} — projet indisponible pour le moment."
+    premiere_ligne = texte_erreur.strip().splitlines()[0] if texte_erreur.strip() else "aucun détail disponible"
+    return (
+        "🔌 PC fixe éteint ou injoignable — projet indisponible pour le moment "
+        f"({libelle} : {premiere_ligne})."
+    )
 
 
 def tester_connectivite_ccw():
-    """True si le PC fixe CCW configuré (voir `charger_config_ccw`) répond
-    actuellement via SSH, False sinon (hôte non configuré, PC éteint,
-    mauvais hôte/port, timeout) — précondition testée par
-    `collect_etat_projets` avant toute tentative de commande git sur un
-    projet distant (issue #94), sur le modèle du test `os.path.isdir` déjà
-    en place pour les projets locaux. `ConnectTimeout` court
-    (TIMEOUT_SSH_CONNECT) : un PC fixe éteint ne doit jamais faire attendre
-    indéfiniment, le serveur Flask de développement étant mono-thread."""
+    """(ok, categorie, message) — `ok` True si le PC fixe CCW configuré
+    (voir `charger_config_ccw`) répond actuellement via SSH, False sinon
+    (hôte non configuré, PC éteint, mauvais hôte/port, timeout) —
+    précondition testée par `collect_etat_projets` avant toute tentative
+    de commande git sur un projet distant (issue #94), sur le modèle du
+    test `os.path.isdir` déjà en place pour les projets locaux.
+    `ConnectTimeout` court (TIMEOUT_SSH_CONNECT) : un PC fixe éteint ne
+    doit jamais faire attendre indéfiniment, le serveur Flask de
+    développement étant mono-thread.
+
+    `categorie`/`message` (issue #111) : None/None en cas de succès, ou si
+    l'hôte n'est pas configuré (aucune connexion tentée — voir le statut
+    dédié "ccw_non_configure") ; sinon une des cinq catégories CCW_* (voir
+    `_classer_echec_ssh_ccw`) et le message prêt à afficher (voir
+    `_message_echec_ssh_ccw`). Seul point d'entrée qui lance réellement
+    `ssh` : adapté ici avec TOUS ses appelants (production et tests)
+    plutôt que dupliqué dans une fonction parallèle."""
     config = charger_config_ccw()
     if not config:
-        return False
+        return False, None, None
     commande = _commande_ssh_ccw(config, "exit 0")
     try:
         resultat = subprocess.run(
             commande, capture_output=True, text=True, timeout=TIMEOUT_SSH_CONNECT + 3,
         )
-    except (subprocess.TimeoutExpired, OSError):
-        return False
-    return resultat.returncode == 0
+    except subprocess.TimeoutExpired:
+        return False, CCW_HOTE_INACCESSIBLE, _message_echec_ssh_ccw(CCW_HOTE_INACCESSIBLE, config, "")
+    except OSError as exc:
+        categorie = CCW_CAUSE_INCONNUE
+        return False, categorie, _message_echec_ssh_ccw(categorie, config, str(exc))
+    if resultat.returncode == 0:
+        return True, None, None
+    categorie = _classer_echec_ssh_ccw(resultat.stderr)
+    return False, categorie, _message_echec_ssh_ccw(categorie, config, resultat.stderr)
 
 
 def commande_affichee(repertoire, commande_git):
@@ -2393,8 +2512,11 @@ def charger_etat_projet(projet, repertoire_bridge_agent=None, branches_cibles=No
         # commande git, pour qu'un PC fixe éteint ne bloque jamais le serveur
         # Flask de développement (mono-thread) ni ne fasse attendre la page
         # indéfiniment.
-        if not tester_connectivite_ccw():
+        ok, categorie, message = tester_connectivite_ccw()
+        if not ok:
             entree["statut"] = "injoignable"
+            entree["ccw_categorie"] = categorie
+            entree["ccw_message"] = message or "🔌 PC fixe éteint ou injoignable — projet indisponible pour le moment."
             return entree
     elif not os.path.isdir(repertoire):
         entree["statut"] = "introuvable"

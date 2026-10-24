@@ -211,7 +211,7 @@ def _projet_pret(nom_projet):
     Retourne (projet, None) si prêt, sinon (None, message_erreur)."""
     projet, _erreur = _trouver_projet(nom_projet)
     if projet and projet["statut"] == "injoignable":
-        return None, "🔌 PC fixe éteint ou injoignable — projet indisponible pour le moment."
+        return None, projet.get("ccw_message") or "🔌 PC fixe éteint ou injoignable — projet indisponible pour le moment."
     if projet and projet["statut"] == "ccw_non_configure":
         return None, _MESSAGE_CCW_NON_CONFIGURE
     if not projet or projet["statut"] != "ok":

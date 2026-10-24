@@ -46,7 +46,7 @@
 {% elif projet.statut == "pas_un_depot_git" %}
   <p class="statut">Pas un dépôt git : {{ projet.repertoire }}</p>
 {% elif projet.statut == "injoignable" %}
-  <p class="statut">🔌 PC fixe éteint ou injoignable — projet indisponible pour le moment.</p>
+  <p class="statut">{{ projet.ccw_message or "🔌 PC fixe éteint ou injoignable — projet indisponible pour le moment." }}</p>
 {% elif projet.statut == "ccw_non_configure" %}
   <p class="statut">⚙️ PC fixe (CCW) non configuré — copiez <code>relecture_web/ccw_host.conf.example</code> vers <code>relecture_web/ccw_host.conf</code> puis renseignez-y la ligne <code>ccw_host</code>.</p>
 {% else %}
