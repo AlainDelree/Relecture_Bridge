@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block body %}
+<a href="{{ url_for('projet_route', nom_projet=projet.nom) }}" class="bouton-precedent">◀ Précédent</a>
+
+<header>
+  <p class="fil-ariane">
+    <a href="{{ url_for('index') }}">Projets</a> /
+    <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}">{{ projet.nom }}</a> /
+    fichiers ignorés menacés
+  </p>
+  <h1>Fichiers ignorés par git — {{ worktrees|length }} worktree(s) concerné(s)</h1>
+  <p class="sous-titre">
+    Ces fichiers et dossiers sont ignorés par <code>.gitignore</code> : ils ne sont
+    dans AUCUN commit, et <code>git worktree remove</code> les supprime SANS JAMAIS
+    le signaler, même sans forçage (issue #112) — rien n'a encore été supprimé.
+    Copiez ce qui doit être gardé avant de continuer.
+  </p>
+</header>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+  <ul class="messages">
+    {% for categorie, message in messages %}
+    <li class="message message--{{ categorie }}">{{ message }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+{% endwith %}
+
+<ul class="liste-echecs-suppression">
+  {% for w in worktrees %}
+  <li class="ligne-echec-suppression">
+    <div class="echec-suppression__entete">
+      <span class="nom-branche">{{ w.nom_branche }}</span>
+    </div>
+    <ul class="liste-fichiers-perdus">
+      {% for f in w.fichiers %}
+      <li class="ligne-fichier-perdu">
+        <code>{{ f.chemin }}</code>
+        <button type="button" class="bouton-copier" data-copier="{{ f.chemin }}" title="Copier le chemin">📋</button>
+        <span class="badge badge--info">ignoré par git</span>
+        <span class="stats-diff-fichier">{{ f.taille_affichee }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </li>
+  {% endfor %}
+</ul>
+
+<form method="post" action="{{ url_for(request.endpoint, nom_projet=projet.nom) }}" class="form-confirmer-fichiers-ignores">
+  {% for cle, valeur in formulaire_origine.items(multi=True) %}
+  <input type="hidden" name="{{ cle }}" value="{{ valeur }}">
+  {% endfor %}
+  <input type="hidden" name="ignorer_avertissement_fichiers_ignores" value="on">
+  <button type="submit" class="bouton bouton--danger">Confirmer la suppression malgré tout</button>
+</form>
+
+<script>
+(function () {
+  var NOM_PROJET = {{ projet.nom|tojson }};
+  var COULEUR_PROJET = {{ projet.couleur|tojson }};
+  var COULEUR_TEXTE_PROJET = {{ projet.couleur_texte|tojson }};
+
+  // Même mécanique de confirmation forte que les autres actions difficiles
+  // à défaire (voir base.html, projet.html, echec_suppression_worktree.html) :
+  // le formulaire ci-dessus ré-envoie exactement la requête d'origine (toutes
+  // les sélections déjà faites) avec le flag de contournement du contrôle
+  // côté serveur — la page que l'utilisateur vient de voir est déjà en soi
+  // la confirmation forte, donc nouvelle vérification côté client avant
+  // l'envoi réel, pas de bouton "OK" générique.
+  var formulaire = document.querySelector(".form-confirmer-fichiers-ignores");
+  var envoiConfirme = false;
+  formulaire.addEventListener("submit", function (evenement) {
+    if (envoiConfirme) {
+      envoiConfirme = false;
+      return;
+    }
+    evenement.preventDefault();
+
+    ouvrirConfirmation({
+      variant: "forte",
+      message: "Continuer malgré les fichiers ignorés perdus — " + NOM_PROJET,
+      avertissement: "🔴 Ces fichiers ne sont committés nulle part : ils seront perdus "
+        + "définitivement avec le worktree. Copiez-les avant de confirmer si vous voulez les garder.",
+      libelleBouton: "Confirmer la suppression malgré tout",
+      nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
+      onConfirmer: function () {
+        envoiConfirme = true;
+        formulaire.requestSubmit();
+      },
+    });
+  });
+})();
+</script>
+{% endblock %}
