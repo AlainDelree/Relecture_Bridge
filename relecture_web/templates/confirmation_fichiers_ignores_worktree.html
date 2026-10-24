@@ -47,13 +47,16 @@
   {% endfor %}
 </ul>
 
-<form method="post" action="{{ url_for(request.endpoint, nom_projet=projet.nom) }}" class="form-confirmer-fichiers-ignores">
-  {% for cle, valeur in formulaire_origine.items(multi=True) %}
-  <input type="hidden" name="{{ cle }}" value="{{ valeur }}">
-  {% endfor %}
-  <input type="hidden" name="ignorer_avertissement_fichiers_ignores" value="on">
-  <button type="submit" class="bouton bouton--danger">Confirmer la suppression malgré tout</button>
-</form>
+<div class="zone-actions-confirmation">
+  <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}" class="bouton bouton--annuler lien-bouton" autofocus>Annuler</a>
+  <form method="post" action="{{ url_for(request.endpoint, nom_projet=projet.nom) }}" class="form-confirmer-fichiers-ignores">
+    {% for cle, valeur in formulaire_origine.items(multi=True) %}
+    <input type="hidden" name="{{ cle }}" value="{{ valeur }}">
+    {% endfor %}
+    <input type="hidden" name="ignorer_avertissement_fichiers_ignores" value="on">
+    <button type="submit" class="bouton bouton--danger">Confirmer la suppression malgré tout</button>
+  </form>
+</div>
 
 <script>
 (function () {
