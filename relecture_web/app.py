@@ -195,6 +195,16 @@ def _grouper_locaux_puis_distants(projets):
     return locaux + distants
 
 
+# Statut "ccw_non_configure" (issue #110) : distinct de "injoignable"
+# (ccw_host.conf.example n'a jamais été copié/renseigné, donc aucune
+# connexion SSH n'a même été tentée) — le message invite explicitement à
+# copier le modèle plutôt que de laisser croire à un problème réseau.
+_MESSAGE_CCW_NON_CONFIGURE = (
+    "⚙️ PC fixe (CCW) non configuré — copiez relecture_web/ccw_host.conf.example "
+    "vers relecture_web/ccw_host.conf puis renseignez-y la ligne ccw_host."
+)
+
+
 def _projet_pret(nom_projet):
     """Revérifie l'existence et l'accessibilité du projet à partir de l'état
     git actuel (pas des seules données du formulaire) avant toute action.
@@ -202,6 +212,8 @@ def _projet_pret(nom_projet):
     projet, _erreur = _trouver_projet(nom_projet)
     if projet and projet["statut"] == "injoignable":
         return None, "🔌 PC fixe éteint ou injoignable — projet indisponible pour le moment."
+    if projet and projet["statut"] == "ccw_non_configure":
+        return None, _MESSAGE_CCW_NON_CONFIGURE
     if not projet or projet["statut"] != "ok":
         return None, f"❌ Projet « {nom_projet} » introuvable ou inaccessible."
     return projet, None

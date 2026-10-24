@@ -20,7 +20,9 @@ depuis la racine du dépôt, ou directement
 `python3 relecture_web/test_chargement_a_la_demande_distant.py`.
 
 Aucun accès réseau réel : `git_info.fetch_projets` (téléchargement de
-BRIDGE_AGENT_DOC.md) est remplacée par un tableau fabriqué en mémoire, et
+BRIDGE_AGENT_DOC.md) est remplacée par un tableau fabriqué en mémoire,
+`git_info.charger_config_ccw` (lecture de `ccw_host.conf`, jamais le vrai
+fichier du disque, voir issue #110) par une config factice ou `None`, et
 `git_info.tester_connectivite_ccw` (seul point d'entrée qui lance
 réellement `ssh` vers le PC fixe) est remplacée par un faux compteur
 d'appels qui ne lance jamais de processus — les projets locaux, eux, sont
@@ -61,11 +63,19 @@ class BaseChargementADemandeTestCase(unittest.TestCase):
     (chemin Windows, jamais présent sur ce disque)."""
 
     AVEC_PROJET_DISTANT = True
-    # PC fixe « éteint ou injoignable » par défaut (repli réaliste tant que
-    # ccw_host.conf n'est pas configuré) — une sous-classe peut forcer True
-    # pour simuler un PC fixe joignable (voir ProjetDistantJoignableTestCase),
-    # auquel cas elle doit aussi fournir un faux `_lancer_git_distant`
-    # (jamais de vrai ssh lancé dans ces tests).
+    # `ccw_host.conf` "configuré" par défaut (host/clé factices, voir
+    # `_faux_charger_config_ccw` ci-dessous) — une sous-classe représentant
+    # l'état réel "non configuré" (issue #110, fichier absent ou vide, voir
+    # ProjetDistantNonConfigureTestCase) doit positionner CCW_CONFIGURE à
+    # False, auquel cas `tester_connectivite_ccw` n'est alors JAMAIS appelée
+    # (même comportement que le vrai code : aucune connexion SSH tentée tant
+    # que l'hôte n'est pas renseigné).
+    CCW_CONFIGURE = True
+    # PC fixe « éteint ou injoignable » par défaut (hôte configuré mais ne
+    # répondant pas) — une sous-classe peut forcer True pour simuler un PC
+    # fixe joignable (voir ProjetDistantJoignableTestCase), auquel cas elle
+    # doit aussi fournir un faux `_lancer_git_distant` (jamais de vrai ssh
+    # lancé dans ces tests). Sans effet si CCW_CONFIGURE est False.
     CONNECTIVITE_CCW = False
 
     def setUp(self):
@@ -101,6 +111,13 @@ class BaseChargementADemandeTestCase(unittest.TestCase):
         def _faux_fetch_projets():
             return projets
 
+        def _faux_charger_config_ccw():
+            # Jamais le vrai `ccw_host.conf` du disque (issue #110) : config
+            # factice si CCW_CONFIGURE, None sinon (hôte non configuré).
+            if not self.CCW_CONFIGURE:
+                return None
+            return {"host": "utilisateur@192.0.2.1", "cle": "/chemin/factice/cle"}
+
         def _faux_tester_connectivite_ccw():
             # Jamais de vrai `ssh` lancé dans ces tests — seul le COMPTAGE
             # des appels nous intéresse.
@@ -108,8 +125,10 @@ class BaseChargementADemandeTestCase(unittest.TestCase):
             return self.CONNECTIVITE_CCW
 
         self._original_fetch_projets = git_info.fetch_projets
+        self._original_charger_config_ccw = git_info.charger_config_ccw
         self._original_tester_connectivite = git_info.tester_connectivite_ccw
         git_info.fetch_projets = _faux_fetch_projets
+        git_info.charger_config_ccw = _faux_charger_config_ccw
         git_info.tester_connectivite_ccw = _faux_tester_connectivite_ccw
         self.addCleanup(self._restaurer_git_info)
 
@@ -119,6 +138,7 @@ class BaseChargementADemandeTestCase(unittest.TestCase):
 
     def _restaurer_git_info(self):
         git_info.fetch_projets = self._original_fetch_projets
+        git_info.charger_config_ccw = self._original_charger_config_ccw
         git_info.tester_connectivite_ccw = self._original_tester_connectivite
 
 
@@ -212,6 +232,32 @@ class ProjetDistantJoignableTestCase(BaseChargementADemandeTestCase):
         reponse = self.client.post(f"/projet/{self.nom_distant}/nettoyer", follow_redirects=True)
         self.assertEqual(reponse.status_code, 200)
         self.assertIn("projet distant", reponse.get_data(as_text=True))
+
+
+class ProjetDistantNonConfigureTestCase(BaseChargementADemandeTestCase):
+    """`ccw_host.conf` absent ou vide (issue #110 — installation neuve, ou
+    après la suppression du fichier réel désormais hors git) : statut dédié
+    "ccw_non_configure", zéro appel SSH (jamais tenté, contrairement à
+    "injoignable"), message explicite invitant à copier
+    `ccw_host.conf.example` plutôt que le message générique "éteint ou
+    injoignable"."""
+
+    CCW_CONFIGURE = False
+
+    def test_page_projet_distant_zero_appel_ssh(self):
+        reponse = self.client.get(f"/projet/{self.nom_distant}")
+        self.assertEqual(reponse.status_code, 200)
+        self.assertEqual(self.compteur_ssh["n"], 0)
+
+    def test_page_projet_distant_message_explicite_affiche(self):
+        texte = self.client.get(f"/projet/{self.nom_distant}").get_data(as_text=True)
+        self.assertIn("ccw_host.conf.example", texte)
+        self.assertNotIn("injoignable", texte)
+
+    def test_action_sur_projet_distant_non_configure_message_explicite(self):
+        reponse = self.client.post(f"/projet/{self.nom_distant}/nettoyer", follow_redirects=True)
+        self.assertEqual(reponse.status_code, 200)
+        self.assertIn("ccw_host.conf.example", reponse.get_data(as_text=True))
 
 
 class AffichageAccueilSansProjetDistantTestCase(BaseChargementADemandeTestCase):

@@ -6,3 +6,9 @@ __pycache__/
 mot_de_passe.conf
 secret_key.conf
 ssl/
+
+# Configuration personnelle du PC fixe Windows (CCW, issue #94) — identifiant
+# de session et adresse locale propres à la machine d'Alain, jamais commités
+# ni poussés sur GitHub, même statut que secret_key.conf ci-dessus. Voir
+# ccw_host.conf.example (suivi, lui) pour le modèle à copier (issue #110).
+ccw_host.conf

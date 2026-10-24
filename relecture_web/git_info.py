@@ -336,7 +336,11 @@ def _lancer_git_distant(repertoire, args, timeout, entree):
     if not config:
         return subprocess.CompletedProcess(
             args=[], returncode=1, stdout="",
-            stderr="ccw_host non configuré (relecture_web/ccw_host.conf) — impossible de joindre le PC fixe.",
+            stderr=(
+                "ccw_host non configuré (copiez relecture_web/ccw_host.conf.example vers "
+                "relecture_web/ccw_host.conf puis renseignez-y ccw_host) — impossible de "
+                "joindre le PC fixe."
+            ),
         )
 
     commande_git = " ".join(_quoter_argument_distant(a) for a in ("git", "-C", repertoire, *args))
@@ -2373,11 +2377,21 @@ def charger_etat_projet(projet, repertoire_bridge_agent=None, branches_cibles=No
     if projet_distant:
         # Projet distant (PC fixe CCW, issue #94) : le test `os.path.isdir`
         # ci-dessous ne peut pas s'appliquer (chemin Windows, pas de
-        # filesystem partagé) — pendant distant du même garde-fou, un
-        # test de connectivité SSH borné (ConnectTimeout court, voir
-        # tester_connectivite_ccw) avant toute tentative de commande git,
-        # pour qu'un PC fixe éteint ne bloque jamais le serveur Flask de
-        # développement (mono-thread) ni ne fasse attendre la page
+        # filesystem partagé) — pendant distant du même garde-fou.
+        #
+        # `ccw_host.conf` absent, vide, ou entrée `ccw_host` manquante
+        # (issue #110 — installation neuve, ou après la suppression du
+        # fichier réel désormais hors git) : statut dédié "ccw_non_configure",
+        # distinct de "injoignable", pour que le message affiché invite à
+        # copier `ccw_host.conf.example` plutôt que de laisser croire à un
+        # problème réseau — sans tenter la moindre connexion SSH.
+        if charger_config_ccw() is None:
+            entree["statut"] = "ccw_non_configure"
+            return entree
+        # `ccw_host` configuré : test de connectivité SSH borné (ConnectTimeout
+        # court, voir tester_connectivite_ccw) avant toute tentative de
+        # commande git, pour qu'un PC fixe éteint ne bloque jamais le serveur
+        # Flask de développement (mono-thread) ni ne fasse attendre la page
         # indéfiniment.
         if not tester_connectivite_ccw():
             entree["statut"] = "injoignable"

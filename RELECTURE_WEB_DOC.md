@@ -866,12 +866,13 @@ son `repertoire` (tel que retourné par `fetch_projets`, donc par
 configuration par projet — le PC fixe CCW est aujourd'hui le seul cas où
 ce format apparaît (le ThinkPad n'utilise que des chemins POSIX).
 
-**Configuration (`relecture_web/ccw_host.conf`)** — même convention que
-`branches_cibles.conf` (`cle = valeur`, une entrée par ligne, `#` pour
-les commentaires), mais un seul hôte pour tous les projets CCW :
+**Configuration (`relecture_web/ccw_host.conf`, personnel, hors git —
+issue #110)** — même convention que `branches_cibles.conf` (`cle =
+valeur`, une entrée par ligne, `#` pour les commentaires), mais un seul
+hôte pour tous les projets CCW :
 
 ```
-ccw_host = AlainW@<ip-locale>
+ccw_host = <utilisateur>@<ip-locale>
 ccw_key = ~/.ssh/ccl_ccw   # optionnel, c'est déjà la valeur par défaut
 ```
 
@@ -881,9 +882,32 @@ ccw_key = ~/.ssh/ccl_ccw   # optionnel, c'est déjà la valeur par défaut
   (code de retour 1, message d'erreur clair), sans tenter de connexion.
 - `ccw_key` : chemin de la clé SSH privée à utiliser, optionnel — repli
   sur `~/.ssh/ccl_ccw`, la clé déjà en place côté ThinkPad.
-- Même statut que `branches_cibles.conf` (section 7) : CCL ne modifie
-  jamais ce fichier de sa propre initiative une fois l'entrée `ccw_host`
-  renseignée — seul Alain l'édite à la main.
+- Même statut que `branches_cibles.conf` (section 7) une fois renseigné :
+  CCL ne modifie jamais ce fichier de sa propre initiative — seul Alain
+  l'édite à la main.
+
+**`ccw_host.conf` n'est PAS suivi par git (issue #110)** — ce fichier
+contient l'identifiant de session et l'adresse locale réels du PC fixe
+d'Alain, une information personnelle qui ne doit jamais être poussée sur
+GitHub par accident (même traitement que `secret_key.conf`, voir §1 —
+`relecture_web/.gitignore`). Un modèle suivi, lui, par git,
+**`relecture_web/ccw_host.conf.example`**, documente le format et ne
+contient que des lignes de commentaire (y compris la ligne `ccw_host`
+elle-même, en exemple générique) — jamais d'identifiant ni d'adresse
+réels. Pour configurer l'accès au PC fixe :
+
+```
+cp relecture_web/ccw_host.conf.example relecture_web/ccw_host.conf
+# puis éditer ccw_host.conf : renseigner la ligne ccw_host (et
+# éventuellement ccw_key) avec les vraies valeurs.
+```
+
+**Fichier absent (`ccw_host.conf`)** — installation neuve, ou après la
+suppression du fichier réel devenue possible depuis que git ne le suit
+plus : `charger_config_ccw()` dégrade proprement sur `None` (même
+résultat qu'un fichier présent mais sans entrée `ccw_host`), sans
+exception — voir le statut `"ccw_non_configure"` ci-dessous pour ce que
+`relecture_web` affiche alors côté projet distant.
 
 **Routage (`_lancer_git`)** — quand `repertoire` est distant,
 `_lancer_git_distant` exécute la commande via
@@ -942,6 +966,19 @@ la page. Ce statut n'apparaît jamais sur la page d'accueil ni dans la
 barre latérale (voir ci-dessous) : tant que la page du projet distant
 n'a pas été ouverte, son statut y reste `"distant_a_charger"`, jamais
 testé.
+
+**Statut « ccw_non_configure » (issue #110)** — `charger_etat_projet`
+teste `charger_config_ccw()` AVANT `tester_connectivite_ccw()` : si
+`ccw_host.conf` est absent, vide, ou sans entrée `ccw_host` (installation
+neuve, ou fichier réel supprimé après cette issue), le statut devient
+`"ccw_non_configure"` **sans tenter la moindre connexion SSH** — distinct
+de `"injoignable"` (hôte configuré mais qui ne répond pas). `projet.html`
+et `index.html` affichent alors un message explicite invitant à copier
+`ccw_host.conf.example` vers `ccw_host.conf` puis à renseigner `ccw_host`,
+plutôt que le message « PC fixe éteint ou injoignable », trompeur quand
+aucune connexion n'a même été essayée ; `_projet_pret` (`app.py`) refuse
+de même toute action sur ce projet avec ce message dédié
+(`_MESSAGE_CCW_NON_CONFIGURE`).
 
 ### Chargement à la demande d'un projet distant (issue #109)
 

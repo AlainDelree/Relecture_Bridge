@@ -1,0 +1,36 @@
+# Configuration du PC fixe Windows (CCW), pour le routage SSH des commandes
+# git de projets distants (issue #94).
+#
+# Ce fichier est un MODÈLE, suivi par git — sans aucune information
+# personnelle. Le fichier réel, `ccw_host.conf`, est PERSONNEL (identifiant
+# de session et adresse locale du PC fixe) et n'est PAS suivi par git (voir
+# .gitignore, issue #110), pour ne jamais risquer d'être commité puis
+# poussé sur GitHub par accident :
+#   cp ccw_host.conf.example ccw_host.conf
+# puis renseignez la ligne `ccw_host` ci-dessous dans ce nouveau fichier
+# `ccw_host.conf`, avec vos propres valeurs.
+#
+# Un seul PC physique héberge tous les projets CCW (chemins locaux du type
+# C:\CCW\<NomProjet>), pas toujours allumé — une seule entrée suffit.
+#
+# Format : `cle = valeur`, une entrée par ligne, `#` pour les commentaires.
+# - ccw_host : utilisateur@hôte (ou IP locale) du PC fixe pour la connexion
+#   SSH, ex. utilisateur@192.168.1.50
+# - ccw_key  : chemin de la clé SSH privée à utiliser (optionnel — par
+#   défaut ~/.ssh/ccl_ccw, la clé déjà en place côté ThinkPad)
+#
+# Tant que `ccw_host` n'est pas renseigné dans `ccw_host.conf` (copié depuis
+# ce modèle), aucun projet n'est considéré comme distant pour la connexion
+# SSH elle-même (la détection « projet distant » via le format du
+# répertoire C:\... reste, elle, indépendante de cette config — voir
+# est_projet_distant) : relecture_web affiche alors un message explicite
+# invitant à copier ce modèle puis à renseigner ccw_host, plutôt que
+# d'échouer avec une erreur SSH confuse ou un message de connexion
+# générique.
+#
+# Ce fichier suit le même statut que branches_cibles.conf une fois
+# `ccw_host.conf` créé et renseigné : CCL ne le modifie jamais de sa propre
+# initiative — seul Alain l'édite à la main.
+
+# ccw_host = utilisateur@<ip-locale>
+# ccw_key = ~/.ssh/ccl_ccw
