@@ -1221,7 +1221,19 @@ le faire réellement, sans quitter la page :
   6. Affichage du commit créé et des trois derniers commits
      (`git log -3 --oneline`).
   7. Nettoyage SYSTÉMATIQUE de la copie temporaire du script sur le PC
-     fixe (bloc `try`/`finally`), succès ou échec.
+     fixe (bloc `try`/`finally`), succès, échec (`returncode`) OU
+     exception imprévue (voir le point suivant, issue #115).
+  8. **Toute exception imprévue (issue #115)** pendant la préparation ou
+     l'exécution (y compris un `subprocess.TimeoutExpired` sur n'importe
+     quelle étape distante) est attrapée par un `try`/`except` englobant
+     tout le corps de la fonction, pour ne jamais laisser remonter de page
+     d'erreur serveur jusqu'à la route Flask. Le message produit précise
+     l'étape atteinte (donc ce qui a pu être fait côté PC fixe — script
+     lancé ou non, fichiers modifiés/supprimés dans le dossier de travail,
+     jamais de commit) et la commande de retour en arrière, affichée mais
+     jamais lancée par l'outil — en particulier, si l'exception survient
+     APRÈS l'exécution du script mais AVANT le commit, le message le dit
+     explicitement.
 
   Toute erreur SSH (code 255) réutilise le classement par catégorie de
   l'issue #111 (`_classer_echec_ssh_ccw`/`_message_echec_ssh_ccw`), via le
@@ -1244,6 +1256,46 @@ le faire réellement, sans quitter la page :
   retouché, seul le texte de chaque `CHANGELOG-<N>.md` inséré est ramené à
   la fin de ligne dominante du fichier cible (LF, CRLF, ou mixte — la
   dominante est alors celle qui l'est le plus).
+
+**Accents Windows : décodage tolérant des sorties du PC fixe et encodage
+forcé du script (issue #115, suite de #114)** — premier usage réel du
+bouton a fait planter la page (« Internal Server Error ») avec une
+`UnicodeDecodeError` sur l'octet `0xe9` : un programme Windows dont la
+sortie est redirigée (ssh, scp, ou le script lancé à distance) n'écrit PAS
+en UTF-8 par défaut mais dans l'encodage de la console Windows (`0xe9` =
+« é » en cp1252) — `subprocess.run(text=True)` décode pourtant selon
+l'encodage préféré du process LOCAL (UTF-8 sur ce ThinkPad Linux), ce qui
+lève l'exception avant même d'atteindre le code appelant. Deux corrections
+distinctes :
+
+- **Décodage tolérant** (`_decoder_sortie_distante`/`_run_ssh_scp`) —
+  TOUTE commande ssh/scp qui touche le PC fixe (commande git distante via
+  `_lancer_git_distant`, test de connectivité `tester_connectivite_ccw`,
+  détection de l'interpréteur Python, création du dossier temporaire,
+  copie puis lancement du script de fusion, nettoyage de la copie) passe
+  maintenant par `_run_ssh_scp`, qui capture stdout/stderr en octets bruts
+  puis les décode en essayant UTF-8, puis cp1252 (encodage de console
+  Windows le plus courant), puis cp850 (console « OEM », parfois utilisée
+  selon la configuration régionale) — cp850 associe un caractère à chacun
+  des 256 octets possibles, donc ne peut jamais lever cette exception : un
+  des trois réussit toujours. Nuance : cp1252 ne lève `UnicodeDecodeError`
+  que sur 5 octets précis (non définis dans cette page de code) ; un texte
+  réellement écrit en cp850 qui n'en contient aucun est donc décodé sans
+  exception par le repli cp1252, potentiellement avec un caractère
+  différent de l'original — l'objectif (ne jamais planter) est rempli dans
+  tous les cas, la reconstruction exacte ne l'est que si le texte est
+  vraiment en cp1252, ou contient un de ces 5 octets.
+- **UTF-8 forcé côté PC fixe** — le lancement du script de fusion est
+  désormais fait avec l'option d'interpréteur `-X utf8` (`python -X utf8
+  scripts/fusionner_changelog.py --repo ...`), pour que ses messages
+  accentués (`print()`) soient écrits en UTF-8 plutôt que dans l'encodage
+  de console par défaut, quel qu'il soit. `scripts/fusionner_changelog.py`
+  lui-même précisait déjà `encoding="utf-8"` à chaque lecture/écriture de
+  fichier (`CHANGELOG.md` et chaque `CHANGELOG-<N>.md`) depuis la
+  correction des fins de ligne de l'issue #114 — vérifié à nouveau pour
+  l'issue #115, aucun defaut trouvé là, donc inchangé : le contenu des
+  fichiers n'a jamais dépendu de l'encodage de console, seul l'affichage
+  des messages de progression pouvait planter.
 
 **`installer.sh` et les chemins Windows** — pour une ligne dont le
 répertoire est un chemin Windows (même motif que `MOTIF_CHEMIN_WINDOWS`

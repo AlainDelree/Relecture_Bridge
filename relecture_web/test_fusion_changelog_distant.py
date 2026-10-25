@@ -16,7 +16,19 @@ CCW, issue #114, suite du refus explicite de #108) :
   temporaire ;
 - `git_info.fusionner_changelog_worktree` : ne signale plus un projet
   distant comme « à fusionner » quand aucun `CHANGELOG-<N>.md` n'est
-  réellement présent (avant l'issue #114, ce refus était inconditionnel).
+  réellement présent (avant l'issue #114, ce refus était inconditionnel) ;
+- issue #115 (suite de #114, accents Windows) : `git_info.
+  _decoder_sortie_distante` (décodage tolérant UTF-8 / cp1252 / cp850) ;
+  chaque commande ssh/scp vers le PC fixe avec une sortie accentuée non
+  UTF-8 (connectivité, détection de l'interpréteur, détection des
+  CHANGELOG-<N>.md, fusion complète) ne lève plus jamais
+  `UnicodeDecodeError` ; une exception inattendue survenant après le
+  lancement du script mais avant le commit est attrapée (message explicite,
+  copie temporaire supprimée, aucun commit) ; `scripts/fusionner_changelog.py`
+  préserve le contenu existant octet pour octet même avec les flux
+  stdout/stderr en encodage non UTF-8 (fichiers déjà lus/écrits avec
+  `encoding=\"utf-8\"` explicite, inchangé par cette issue — seul le
+  lancement distant gagne l'option `-X utf8`).
 
 Pas de framework de test externe dans ce dépôt (voir #107) : fichier
 `unittest` autonome (stdlib uniquement), lançable par
@@ -24,6 +36,7 @@ Pas de framework de test externe dans ce dépôt (voir #107) : fichier
 la racine du dépôt, ou directement
 `python3 relecture_web/test_fusion_changelog_distant.py`."""
 
+import base64
 import os
 import shutil
 import stat
@@ -57,10 +70,24 @@ RACINE_DEPOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # réels), jamais via un sous-shell."""
 FAUX_SSH = textwrap.dedent("""\
     #!/usr/bin/env python3
+    import base64
     import os
     import shlex
     import subprocess
     import sys
+
+    # Court-circuit (issue #115) : au lieu de lancer quoi que ce soit, écrit
+    # directement les octets bruts fournis en base64 (FAUX_SSH_*_OCTETS_B64)
+    # sur stdout/stderr, pour simuler un octet non-UTF-8 précis (ex. 0xe9,
+    # « é » en cp1252) sans dépendre de l'encodage réel de ce poste Linux.
+    stdout_force = os.environ.get("FAUX_SSH_STDOUT_OCTETS_B64")
+    stderr_force = os.environ.get("FAUX_SSH_STDERR_OCTETS_B64")
+    if stdout_force is not None or stderr_force is not None:
+        if stdout_force:
+            sys.stdout.buffer.write(base64.b64decode(stdout_force))
+        if stderr_force:
+            sys.stderr.buffer.write(base64.b64decode(stderr_force))
+        sys.exit(int(os.environ.get("FAUX_SSH_CODE", "0") or "0"))
 
     code = os.environ.get("FAUX_SSH_CODE")
     if code and code != "0":
@@ -74,6 +101,20 @@ FAUX_SSH = textwrap.dedent("""\
     commande = commande.replace(chr(92), "/")
     tokens = shlex.split(commande, posix=False)
     tokens = [t[1:-1] if len(t) >= 2 and t[0] == t[-1] == '"' else t for t in tokens]
+
+    # Relais ré-encodant (issue #115, FAUX_SSH_REENCODER) : lance RÉELLEMENT
+    # la commande (git, python, scripts/fusionner_changelog.py — rien de
+    # simulé) puis ré-encode sa sortie, réellement produite en UTF-8 sur ce
+    # poste Linux, dans l'encodage demandé (cp1252/cp850) avant de la
+    # relayer — simule ce qu'une console Windows (dont l'encodage par défaut
+    # n'est pas garanti UTF-8) aurait réellement envoyé sur le canal ssh.
+    reencodage = os.environ.get("FAUX_SSH_REENCODER")
+    if reencodage:
+        resultat = subprocess.run(tokens, capture_output=True)
+        sys.stdout.buffer.write(resultat.stdout.decode("utf-8").encode(reencodage, errors="replace"))
+        sys.stderr.buffer.write(resultat.stderr.decode("utf-8").encode(reencodage, errors="replace"))
+        sys.exit(resultat.returncode)
+
     sys.exit(subprocess.run(tokens).returncode)
 """)
 
@@ -83,9 +124,19 @@ FAUX_SSH = textwrap.dedent("""\
 # même façon que le faux ssh.
 FAUX_SCP = textwrap.dedent("""\
     #!/usr/bin/env python3
+    import base64
     import os
     import shutil
     import sys
+
+    stdout_force = os.environ.get("FAUX_SCP_STDOUT_OCTETS_B64")
+    stderr_force = os.environ.get("FAUX_SCP_STDERR_OCTETS_B64")
+    if stdout_force is not None or stderr_force is not None:
+        if stdout_force:
+            sys.stdout.buffer.write(base64.b64decode(stdout_force))
+        if stderr_force:
+            sys.stderr.buffer.write(base64.b64decode(stderr_force))
+        sys.exit(int(os.environ.get("FAUX_SCP_CODE", "0") or "0"))
 
     code = os.environ.get("FAUX_SCP_CODE")
     if code and code != "0":
@@ -166,6 +217,8 @@ class DepotDistantSimuleTestCase(unittest.TestCase):
         for cle in (
             "FAUX_SSH_CODE", "FAUX_SSH_STDERR", "FAUX_SCP_CODE", "FAUX_SCP_STDERR",
             "FAUX_CCW_PREFIX_WINDOWS", "FAUX_CCW_ROOT_REEL",
+            "FAUX_SSH_STDOUT_OCTETS_B64", "FAUX_SSH_STDERR_OCTETS_B64", "FAUX_SSH_REENCODER",
+            "FAUX_SCP_STDOUT_OCTETS_B64", "FAUX_SCP_STDERR_OCTETS_B64",
         ):
             os.environ.pop(cle, None)
 
@@ -190,6 +243,14 @@ class DepotDistantSimuleTestCase(unittest.TestCase):
     def _ecrire(self, nom_relatif, contenu):
         with open(os.path.join(self.depot, nom_relatif), "w", encoding="utf-8", newline="") as fichier:
             fichier.write(contenu)
+
+    def _preparer(self, contenu_changelog, extensions):
+        self._ecrire("CHANGELOG.md", contenu_changelog)
+        chemins = ["CHANGELOG.md"]
+        for n, texte in extensions.items():
+            self._ecrire(f"CHANGELOG-{n}.md", texte)
+            chemins.append(f"CHANGELOG-{n}.md")
+        self._commit("initial", *chemins)
 
     def _lire_brut(self, nom_relatif):
         with open(os.path.join(self.depot, nom_relatif), "rb") as fichier:
@@ -247,14 +308,6 @@ class DetecterChangelogsATestCase(DepotDistantSimuleTestCase):
 
 class FusionnerChangelogDistantTestCase(DepotDistantSimuleTestCase):
     """`fusionner_changelog_distant` de bout en bout."""
-
-    def _preparer(self, contenu_changelog, extensions):
-        self._ecrire("CHANGELOG.md", contenu_changelog)
-        chemins = ["CHANGELOG.md"]
-        for n, texte in extensions.items():
-            self._ecrire(f"CHANGELOG-{n}.md", texte)
-            chemins.append(f"CHANGELOG-{n}.md")
-        self._commit("initial", *chemins)
 
     def test_un_seul_changelog_succes(self):
         self._preparer("# CHANGELOG\n\nConvention d'ajout : x.\n\n## ancien\n- a\n", {42: "## nouveau\n- b\n"})
@@ -449,6 +502,242 @@ class FusionnerChangelogWorktreeDistantTestCase(DepotDistantSimuleTestCase):
         self.assertIsNotNone(resultat)
         self.assertFalse(resultat["ok"])
         self.assertIn("Fusionner le changelog", resultat["erreur"])
+
+
+def _b64(texte, encodage):
+    return base64.b64encode(texte.encode(encodage)).decode("ascii")
+
+
+class DecoderSortieDistanteTestCase(unittest.TestCase):
+    """`git_info._decoder_sortie_distante` (issue #115) — fonction pure, pas
+    besoin du faux ssh/scp : UTF-8, cp1252, cp850, jamais d'exception.
+
+    Nuance cp1252/cp850 (voir la docstring de `_decoder_sortie_distante`) :
+    cp1252 ne lève `UnicodeDecodeError` QUE sur 5 octets précis (0x81, 0x8D,
+    0x8F, 0x90, 0x9D, non définis dans cette page de code) — un texte
+    accentué encodé en cp850 qui n'en contient aucun est donc décodé avec
+    succès par le repli cp1252, mais produit un résultat FAUX (mojibake)
+    plutôt qu'une exception : conforme à l'objectif n°1 (jamais lever),
+    mais pas à une reconstruction fidèle de ce cas précis. `test_cp850_
+    accents` choisit donc un texte contenant « É » (0x90 en cp850,
+    justement l'un des 5 octets indéfinis en cp1252) pour forcer un repli
+    jusqu'à cp850 et vérifier un décodage exact dans ce cas-là."""
+
+    def test_utf8_deja_correct(self):
+        texte = "café à l'étape réseau — testé"
+        self.assertEqual(git_info._decoder_sortie_distante(texte.encode("utf-8")), texte)
+
+    def test_cp1252_accents(self):
+        texte = "café è à l'étape"
+        self.assertEqual(git_info._decoder_sortie_distante(texte.encode("cp1252")), texte)
+
+    def test_cp850_accents(self):
+        texte = "café É à l'étape"
+        self.assertEqual(git_info._decoder_sortie_distante(texte.encode("cp850")), texte)
+
+    def test_vide(self):
+        self.assertEqual(git_info._decoder_sortie_distante(b""), "")
+
+    def test_ne_leve_jamais_quel_que_soit_loctet(self):
+        for octet in range(256):
+            with self.subTest(octet=octet):
+                git_info._decoder_sortie_distante(bytes([octet]))
+
+
+class DecodageAccentsCommandesDistantesTestCase(DepotDistantSimuleTestCase):
+    """Issue #115 : chaque commande ssh/scp vers le PC fixe doit tolérer une
+    sortie accentuée non UTF-8 (0xe9 = « é » en cp1252, par exemple) sans
+    jamais lever `UnicodeDecodeError` — court-circuit via
+    FAUX_SSH_STD{OUT,ERR}_OCTETS_B64 (voir FAUX_SSH ci-dessus) pour imposer
+    des octets précis, indépendamment de l'encodage réel de ce poste Linux."""
+
+    def test_connectivite_echec_accents_cp1252_sans_exception(self):
+        os.environ["FAUX_SSH_CODE"] = "1"
+        os.environ["FAUX_SSH_STDERR_OCTETS_B64"] = _b64("erreur inconnue : café à l'étape", "cp1252")
+        ok, categorie, message = git_info.tester_connectivite_ccw()
+        self.assertFalse(ok)
+        self.assertIn("café à l'étape", message)
+
+    def test_connectivite_echec_accents_cp850_sans_exception(self):
+        # « É » (0x90 en cp850) force un repli jusqu'à cp850 — voir la note
+        # sur l'ambiguïté cp1252/cp850 dans DecoderSortieDistanteTestCase.
+        os.environ["FAUX_SSH_CODE"] = "1"
+        os.environ["FAUX_SSH_STDERR_OCTETS_B64"] = _b64("erreur inconnue : café É à l'étape", "cp850")
+        ok, categorie, message = git_info.tester_connectivite_ccw()
+        self.assertFalse(ok)
+        self.assertIn("café É à l'étape", message)
+
+    def test_lancer_git_distant_sortie_accentuee_cp1252_sans_exception(self):
+        texte = "résumé : café à l'étape être prêt"
+        os.environ["FAUX_SSH_STDOUT_OCTETS_B64"] = _b64(texte, "cp1252")
+        resultat = git_info._lancer_git(self.repertoire_windows, "status")
+        self.assertEqual(resultat.returncode, 0)
+        self.assertEqual(resultat.stdout, texte)
+
+    def test_lancer_git_distant_sortie_accentuee_cp850_sans_exception(self):
+        texte = "résumé : café É à l'étape être prêt"
+        os.environ["FAUX_SSH_STDOUT_OCTETS_B64"] = _b64(texte, "cp850")
+        resultat = git_info._lancer_git(self.repertoire_windows, "status")
+        self.assertEqual(resultat.returncode, 0)
+        self.assertEqual(resultat.stdout, texte)
+
+    def test_detection_changelogs_a_fusionner_tolere_accents_en_stderr(self):
+        # Le `git ls-tree` sous-jacent passe par _lancer_git_distant (même
+        # décodage tolérant) : une sortie stderr accentuée non UTF-8 (ex.
+        # avertissement git localisé) ne doit jamais faire planter la
+        # détection, même si elle ne change rien au résultat utile (stdout).
+        self._ecrire("CHANGELOG.md", "# CHANGELOG\n")
+        self._ecrire("CHANGELOG-42.md", "## entree\n")
+        self._commit("initial", "CHANGELOG.md", "CHANGELOG-42.md")
+        os.environ["FAUX_SSH_REENCODER"] = "cp1252"
+        try:
+            fichiers = git_info.detecter_changelogs_a_fusionner(self.repertoire_windows)
+        finally:
+            os.environ.pop("FAUX_SSH_REENCODER", None)
+        self.assertEqual(fichiers, [(42, "CHANGELOG-42.md")])
+
+    def test_detection_interpreteur_echec_ssh_accents_cp1252_sans_exception(self):
+        config = git_info.charger_config_ccw()
+        os.environ["FAUX_SSH_CODE"] = "255"
+        os.environ["FAUX_SSH_STDERR_OCTETS_B64"] = _b64("Host key verification failed — café", "cp1252")
+        interpreteur, erreur = git_info._detecter_interpreteur_python_ccw(config)
+        self.assertIsNone(interpreteur)
+        self.assertIsInstance(erreur, str)
+
+    def test_fusion_complete_sortie_pc_fixe_accentuee_cp1252_aucune_exception(self):
+        self._preparer(
+            "# CHANGELOG\n\nConvention d'ajout : x.\n\n## ancien\n- entrée à l'ancienne\n",
+            {42: "## nouveau\n- correctif à l'étape réseau\n"},
+        )
+        os.environ["FAUX_SSH_REENCODER"] = "cp1252"
+        try:
+            resultat = git_info.fusionner_changelog_distant(self.repertoire_windows, "testproj")
+        finally:
+            os.environ.pop("FAUX_SSH_REENCODER", None)
+        self.assertTrue(resultat["ok"], resultat.get("erreur"))
+        self.assertEqual([n for n, _ in resultat["traites"]], [42])
+        contenu = self._lire_brut("CHANGELOG.md").decode("utf-8")
+        self.assertIn("## nouveau", contenu)
+        self.assertIn("## ancien", contenu)
+
+    def test_fusion_complete_sortie_pc_fixe_accentuee_cp850_aucune_exception(self):
+        self._preparer(
+            "# CHANGELOG\n\nConvention d'ajout : x.\n\n## ancien\n- entrée à l'ancienne\n",
+            {7: "## nouveau\n- correctif à l'étape réseau\n"},
+        )
+        os.environ["FAUX_SSH_REENCODER"] = "cp850"
+        try:
+            resultat = git_info.fusionner_changelog_distant(self.repertoire_windows, "testproj")
+        finally:
+            os.environ.pop("FAUX_SSH_REENCODER", None)
+        self.assertTrue(resultat["ok"], resultat.get("erreur"))
+        self.assertEqual([n for n, _ in resultat["traites"]], [7])
+
+    def test_commande_lancement_script_force_option_utf8(self):
+        # Vérifie que la commande distante réellement construite pour lancer
+        # le script porte bien l'option « -X utf8 » (issue #115, partie
+        # Windows) — indépendamment du décodage tolérant testé ci-dessus.
+        self._preparer("# CHANGELOG\n\nConvention d'ajout : x.\n\n## ancien\n- a\n", {1: "## x\n- y\n"})
+        resultat = git_info.fusionner_changelog_distant(self.repertoire_windows, "testproj")
+        self.assertTrue(resultat["ok"], resultat.get("erreur"))
+        commande_script = next(c for c in resultat["commandes"] if "fusionner_changelog.py" in c and "--repo" in c)
+        self.assertIn("-X utf8", commande_script)
+
+
+class ExceptionInattenduePendantFusionTestCase(DepotDistantSimuleTestCase):
+    """Issue #115, point 3 : une exception inattendue (pas seulement un
+    `returncode` non nul) pendant la fusion doit être attrapée — jamais de
+    propagation jusqu'à la route Flask. Simulée en forçant `git_info.
+    _lancer_git` à lever au moment du `git add`, c'est-à-dire APRÈS que le
+    script de fusion a réellement tourné (CHANGELOG.md modifié et
+    CHANGELOG-<N>.md supprimés sur le clone distant simulé) mais AVANT tout
+    commit — exactement l'état laissé sur le clone par le bug original
+    (issue #114/#115)."""
+
+    def test_exception_apres_script_avant_commit(self):
+        self._preparer("# CHANGELOG\n\nConvention d'ajout : x.\n\n## ancien\n- a\n", {1: "## x\n- y\n"})
+
+        original_lancer_git = git_info._lancer_git
+
+        def _lancer_git_qui_explose(repertoire, *args, **kwargs):
+            if args and args[0] == "add":
+                raise RuntimeError("panne réseau simulée pendant git add")
+            return original_lancer_git(repertoire, *args, **kwargs)
+
+        git_info._lancer_git = _lancer_git_qui_explose
+        try:
+            resultat = git_info.fusionner_changelog_distant(self.repertoire_windows, "testproj")
+        finally:
+            git_info._lancer_git = original_lancer_git
+
+        self.assertFalse(resultat["ok"])
+        self.assertIn("avant le commit", resultat["erreur"])
+        self.assertIn("checkout", resultat["erreur"])
+
+        # Le script a réellement tourné sur le clone distant simulé :
+        # CHANGELOG.md modifié, CHANGELOG-1.md supprimé, rien de committé.
+        self.assertFalse(os.path.exists(os.path.join(self.depot, "CHANGELOG-1.md")))
+        contenu = self._lire_brut("CHANGELOG.md").decode("utf-8")
+        self.assertIn("## x", contenu)
+        statut = subprocess.run(
+            ["git", "status", "--porcelain=v1"], cwd=self.depot, capture_output=True, text=True, check=True,
+        ).stdout
+        self.assertIn("CHANGELOG.md", statut)
+        self.assertIn("CHANGELOG-1.md", statut)
+
+        # La copie temporaire du script est supprimée malgré l'exception.
+        chemin_copie = os.path.join(
+            self.ccw_root_reel, "_relecture_bridge_tmp_fusion_changelog", "fusionner_changelog.py",
+        )
+        self.assertFalse(os.path.exists(chemin_copie))
+
+
+class ScriptFusionnerChangelogEncodageTestCase(unittest.TestCase):
+    """`scripts/fusionner_changelog.py` (issue #115) : chaque lecture/
+    écriture de fichier précise déjà `encoding=\"utf-8\"` explicitement
+    (vérifié dans le code, inchangé par cette issue) — ce test le confirme
+    par le comportement : contenu existant (accents, tirets longs) préservé
+    octet pour octet, même quand le script est lancé dans une configuration
+    qui désactive l'UTF-8 effectif des flux stdout/stderr (`PYTHONIOENCODING`,
+    seul levier disponible sur ce poste Linux pour s'approcher du défaut
+    d'un PC fixe Windows sans console UTF-8) — preuve que la correction de
+    fichier ne dépend QUE de l'`encoding=` explicite de chaque `open()`,
+    jamais de l'encodage ambiant du process."""
+
+    def setUp(self):
+        self.scratch = tempfile.mkdtemp(prefix="relecture_bridge_test_fusion_encodage_")
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+
+    def _ecrire_brut(self, nom, donnees_bytes):
+        with open(os.path.join(self.scratch, nom), "wb") as fichier:
+            fichier.write(donnees_bytes)
+
+    def _lire_brut(self, nom):
+        with open(os.path.join(self.scratch, nom), "rb") as fichier:
+            return fichier.read()
+
+    def test_accents_et_tirets_longs_preserves_octet_pour_octet_sous_pythonioencoding_non_utf8(self):
+        en_tete = "# CHANGELOG\n\nConvention d'ajout : x.\n\n".encode("utf-8")
+        ancien = "## ancien\n- entrée déjà là, à conserver — inchangée\n".encode("utf-8")
+        self._ecrire_brut("CHANGELOG.md", en_tete + ancien)
+        nouveau = "## nouveau\n- correctif à l'étape réseau — testé\n"
+        self._ecrire_brut("CHANGELOG-9.md", nouveau.encode("utf-8"))
+
+        racine_depot = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        chemin_script = os.path.join(racine_depot, "scripts", "fusionner_changelog.py")
+        env = dict(os.environ)
+        env["PYTHONIOENCODING"] = "cp1252"
+        resultat = subprocess.run(
+            [sys.executable, chemin_script, "--repo", self.scratch],
+            capture_output=True, timeout=30, env=env,
+        )
+        self.assertEqual(resultat.returncode, 0, resultat.stderr)
+
+        apres = self._lire_brut("CHANGELOG.md")
+        self.assertTrue(apres.startswith(en_tete))
+        self.assertTrue(apres.endswith(ancien))
+        self.assertIn(nouveau.encode("utf-8"), apres)
+        self.assertFalse(os.path.exists(os.path.join(self.scratch, "CHANGELOG-9.md")))
 
 
 if __name__ == "__main__":
