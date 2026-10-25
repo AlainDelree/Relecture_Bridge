@@ -45,6 +45,21 @@ face à un `CHANGELOG.md` cible qui ne suit pas forcément la convention
 Dans tous les cas, le contenu existant est conservé intégralement : jamais de
 perte de contenu, seulement un point d'insertion différent.
 
+Fins de ligne (issue #114, même défaut que celui corrigé par #107 côté
+résolution de conflit dans relecture_web/git_info.py) : ce script peut être
+exécuté sur un PC fixe Windows (projet distant CCW, via le bouton
+« Fusionner le changelog »), où `os.linesep` vaut `\r\n`. Lire/écrire avec
+les fonctions par défaut de `pathlib`/`open` (mode texte universel) aurait
+traduit silencieusement toute fin de ligne vers `\r\n` à l'ÉCRITURE,
+indépendamment de la convention d'origine de `CHANGELOG.md` : un fichier
+entièrement en LF se serait retrouvé entièrement en CRLF après un simple
+ajout d'entrée, faisant apparaître tout le fichier comme modifié dans le
+commit. Tous les fichiers sont donc lus et réécrits avec `newline=""`
+(aucune traduction, voir `_normaliser_fin_de_ligne`/`_fin_de_ligne_
+dominante`) : le contenu déjà présent dans `CHANGELOG.md` n'est jamais
+touché, seul le texte inséré est ramené à la fin de ligne dominante du
+fichier cible.
+
 Usage :
     python3 scripts/fusionner_changelog.py                # dépôt courant (.)
     python3 scripts/fusionner_changelog.py --repo /chemin/vers/le/depot
@@ -125,6 +140,27 @@ def _retirer_entete_echange(texte: str) -> str:
     return "".join(lignes[i:])
 
 
+def _fin_de_ligne_dominante(contenu: str) -> str:
+    """Fin de ligne dominante de `contenu` (issue #114, même principe que
+    `_fin_de_ligne_dominante_fichier` dans relecture_web/git_info.py, issue
+    #107 — dupliqué ici plutôt qu'importé : ce script est copié seul sur le
+    PC fixe CCW, sans le reste de relecture_web) : la plus fréquente entre
+    `\\r\\n` (CRLF) et `\\n` isolé (LF), par simple comptage — `\\n` par
+    défaut en cas d'égalité ou d'absence totale de fin de ligne."""
+    nb_crlf = contenu.count("\r\n")
+    nb_lf_isole = contenu.count("\n") - nb_crlf
+    return "\r\n" if nb_crlf > nb_lf_isole else "\n"
+
+
+def _normaliser_fin_de_ligne(texte: str, fin_de_ligne: str) -> str:
+    """Ramène toutes les fins de ligne de `texte` à `fin_de_ligne`, quelle
+    que soit leur forme d'origine (`\\r\\n`, `\\n`, ou un mélange des deux)
+    — appliqué UNIQUEMENT au texte de chaque CHANGELOG-<N>.md inséré,
+    jamais au contenu déjà présent dans CHANGELOG.md, pour que celui-ci
+    reste strictement inchangé (issue #114)."""
+    return texte.replace("\r\n", "\n").replace("\n", fin_de_ligne)
+
+
 def fusionner(repo: Path) -> dict:
     """Exécute la fusion. Retourne un rapport structuré (utilisé aussi bien
     pour l'affichage console que pour des tests)."""
@@ -135,7 +171,14 @@ def fusionner(repo: Path) -> dict:
     fichier_changelog = repo / "CHANGELOG.md"
     en_tete_absent = False
     if fichier_changelog.exists():
-        contenu = fichier_changelog.read_text(encoding="utf-8")
+        # `newline=""` (issue #114) : aucune traduction de fin de ligne à la
+        # lecture — sans ça, le mode texte universel par défaut aplatirait
+        # silencieusement tout `\r\n`/`\r` en `\n`, et la fin de ligne
+        # dominante calculée ci-dessous porterait alors toujours sur un
+        # contenu déjà perdu.
+        with open(fichier_changelog, encoding="utf-8", newline="") as f:
+            contenu = f.read()
+        fin_de_ligne = _fin_de_ligne_dominante(contenu)
         lignes = contenu.splitlines(keepends=True)
         idx = _point_insertion(lignes)
         if idx is None:
@@ -144,14 +187,24 @@ def fusionner(repo: Path) -> dict:
     else:
         lignes = []
         idx = 0
+        fin_de_ligne = "\n"
 
     blocs = []
     for n, chemin in fichiers:
-        texte = _retirer_entete_echange(chemin.read_text(encoding="utf-8")).strip("\n")
-        blocs.append(texte + "\n\n")
+        with open(chemin, encoding="utf-8", newline="") as f:
+            texte_brut = f.read()
+        texte = _retirer_entete_echange(texte_brut).strip("\r\n")
+        texte = _normaliser_fin_de_ligne(texte, fin_de_ligne)
+        blocs.append(texte + fin_de_ligne * 2)
 
     nouveau_contenu = "".join(lignes[:idx]) + "".join(blocs) + "".join(lignes[idx:])
-    fichier_changelog.write_text(nouveau_contenu, encoding="utf-8")
+    # `newline=""` à l'écriture aussi : sans ça, Python retraduirait chaque
+    # `\n` vers `os.linesep` de la machine qui EXÉCUTE ce script — `\r\n` sur
+    # le PC fixe Windows, ce qui aurait converti en bloc tout CHANGELOG.md
+    # resté en LF jusqu'ici (le défaut que #107 avait déjà corrigé côté
+    # résolution de conflit, voir l'en-tête de ce fichier).
+    with open(fichier_changelog, "w", encoding="utf-8", newline="") as f:
+        f.write(nouveau_contenu)
 
     for n, chemin in fichiers:
         chemin.unlink()

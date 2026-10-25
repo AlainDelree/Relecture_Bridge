@@ -357,6 +357,35 @@ def _commande_ssh_ccw(config, commande_distante):
     ]
 
 
+def _commande_scp_ccw(config, chemin_local, chemin_distant):
+    """Commande `scp` complète (liste d'arguments, prête pour
+    `subprocess.run`) pour copier `chemin_local` vers `chemin_distant` sur
+    le PC fixe CCW configuré (issue #114) — mêmes options que
+    `_commande_ssh_ccw` (clé, `ConnectTimeout`, `BatchMode=yes`,
+    `StrictHostKeyChecking=accept-new`), `scp` les acceptant à l'identique
+    de `ssh`."""
+    return [
+        "scp", "-i", config["cle"],
+        "-o", f"ConnectTimeout={TIMEOUT_SSH_CONNECT}",
+        "-o", "BatchMode=yes",
+        "-o", "StrictHostKeyChecking=accept-new",
+        chemin_local,
+        f"{config['host']}:{chemin_distant}",
+    ]
+
+
+def _commande_distante(tokens):
+    """Assemble une commande shell distante à partir de `tokens` (liste
+    d'arguments), chacun échappé par `_quoter_argument_distant` — même
+    principe que la construction de `commande_git` dans
+    `_lancer_git_distant`, pour une commande non-git (issue #114 : lancement
+    de l'interpréteur Python et nettoyage sur le PC fixe) : jamais de `&&`
+    shell, jamais de syntaxe spécifique à un shell distant précis
+    (PowerShell, cmd.exe ou Git Bash, non confirmé — voir
+    `_lancer_git_distant`)."""
+    return " ".join(_quoter_argument_distant(str(t)) for t in tokens)
+
+
 def _lancer_git_distant(repertoire, args, timeout, entree):
     """Exécute une commande git sur le PC fixe CCW via SSH (issue #94),
     appelée par `_lancer_git` quand `est_projet_distant(repertoire)` est
@@ -391,21 +420,27 @@ def _lancer_git_distant(repertoire, args, timeout, entree):
     commande_git = " ".join(_quoter_argument_distant(a) for a in ("git", "-C", repertoire, *args))
     commande_ssh = _commande_ssh_ccw(config, commande_git)
     resultat = subprocess.run(commande_ssh, input=entree, capture_output=True, text=True, timeout=timeout)
-    if resultat.returncode == 255:
-        # Code de sortie propre à ssh lui-même, jamais à git (issue #111) :
-        # une commande git en cours d'action peut échouer pour la même
-        # raison que `tester_connectivite_ccw` (connexion coupée entre le
-        # chargement de la page et l'action, clé d'hôte changée pendant ce
-        # délai...) — même classement, même message, ajouté devant le
-        # texte brut de ssh plutôt que de le remplacer (conservé pour le
-        # diagnostic).
-        categorie = _classer_echec_ssh_ccw(resultat.stderr)
-        message = _message_echec_ssh_ccw(categorie, config, resultat.stderr)
-        resultat = subprocess.CompletedProcess(
-            args=resultat.args, returncode=resultat.returncode,
-            stdout=resultat.stdout, stderr=f"{message}\n\n{resultat.stderr}",
-        )
-    return resultat
+    return _classer_resultat_ssh_255(resultat, config)
+
+
+def _classer_resultat_ssh_255(resultat, config):
+    """Si `resultat.returncode == 255` (code de sortie propre à SSH lui-même,
+    jamais à la commande distante — issue #111), préfixe `resultat.stderr`
+    par le message classé (voir `_classer_echec_ssh_ccw`/
+    `_message_echec_ssh_ccw`) plutôt que de le remplacer (texte brut
+    conservé pour le diagnostic), et retourne un nouveau
+    `CompletedProcess` ; `resultat` inchangé sinon. Factorisé ici (issue
+    #114) : `_lancer_git_distant` en avait besoin pour toute commande git
+    distante, et le lancement distant (non-git) du script de fusion du
+    CHANGELOG en a besoin de façon identique."""
+    if resultat.returncode != 255:
+        return resultat
+    categorie = _classer_echec_ssh_ccw(resultat.stderr)
+    message = _message_echec_ssh_ccw(categorie, config, resultat.stderr)
+    return subprocess.CompletedProcess(
+        args=resultat.args, returncode=resultat.returncode,
+        stdout=resultat.stdout, stderr=f"{message}\n\n{resultat.stderr}",
+    )
 
 
 def _adresse_ccw(config):
@@ -1484,21 +1519,24 @@ def fusionner_changelog_worktree(repertoire, nom_projet=None):
     CHEMIN_JOURNAL_FUSION_CHANGELOG, indépendamment du message flash
     (issue #62).
 
-    Refuse explicitement pour un projet distant (PC fixe CCW, issue #94) :
-    `os.listdir(repertoire)` et le `subprocess.run` ci-dessous visent tous
-    deux le filesystem LOCAL de ce process, jamais routés via SSH comme les
-    commandes git du module (voir `_lancer_git`) — sur un chemin Windows,
-    `os.listdir` échouerait silencieusement (dossier local inexistant,
-    capturé par l'except ci-dessous) et laisserait croire à tort qu'aucun
-    `CHANGELOG-<N>.md` n'attend de fusion, alors que l'état réel du clone
-    distant n'a jamais été consulté. Fusion automatique du changelog sur un
-    projet distant hors périmètre de cette issue (comme la résolution de
-    conflit, voir `conflit_fichier_route`) — ce refus explicite remplace ce
-    faux-négatif silencieux par un message clair."""
+    Pour un projet distant (PC fixe CCW, issue #94) : `os.listdir(repertoire)`
+    et le `subprocess.run` ci-dessous visent tous deux le filesystem LOCAL de
+    ce process, jamais routés via SSH comme les commandes git du module (voir
+    `_lancer_git`) — intégration automatique hors périmètre pour un projet
+    distant (comme la résolution de conflit, voir `conflit_fichier_route`).
+    Jusqu'à l'issue #114, ce refus était inconditionnel, même sans aucun
+    `CHANGELOG-<N>.md` réellement en attente ; `detecter_changelogs_a_
+    fusionner` (via `git ls-tree`, routé par `_lancer_git`, donc valable à
+    distance) permet maintenant de vérifier l'état réel du clone avant de
+    prévenir Alain, et le message renvoie vers le bouton « Fusionner le
+    changelog » de la page du projet (voir `fusionner_changelog_distant`)
+    plutôt que vers un geste manuel."""
     if est_projet_distant(repertoire):
+        if not detecter_changelogs_a_fusionner(repertoire):
+            return None
         erreur = (
-            "fusion automatique du changelog non disponible pour un projet distant "
-            "(PC fixe CCW) — à vérifier/fusionner manuellement sur place si besoin."
+            "le CHANGELOG reste à intégrer sur ce projet distant (PC fixe CCW) — "
+            "utilisez le bouton « Fusionner le changelog » de la page du projet."
         )
         commande_str = "non applicable (projet distant)"
         _journaliser_fusion_changelog(nom_projet or repertoire, commande_str, False, erreur)
@@ -1590,6 +1628,317 @@ def fusionner_changelog_worktree(repertoire, nom_projet=None):
         }
 
     return {"ok": True, "erreur": None, "commande": " ".join(commande)}
+
+
+# --- Bouton « Fusionner le changelog » pour un projet distant (issue #114,
+# suite du refus explicite de #108) --------------------------------------
+
+# Dossier temporaire sur le PC fixe CCW où la copie de
+# scripts/fusionner_changelog.py est posée le temps de l'exécution (issue
+# #114) : TOUJOURS un frère des dossiers de projets (`C:\CCW\_tmp_...`,
+# voir `_dossier_parent_windows`), jamais À L'INTÉRIEUR d'un worktree
+# surveillé par git — sinon la copie apparaîtrait comme un fichier non
+# suivi dans `git status`, et le garde-fou de `fusionner_changelog_distant`
+# (aucune autre modification que le CHANGELOG) la prendrait à tort pour un
+# travail en cours.
+NOM_DOSSIER_TMP_FUSION_CHANGELOG_CCW = "_relecture_bridge_tmp_fusion_changelog"
+NOM_SCRIPT_FUSION_CHANGELOG = "fusionner_changelog.py"
+
+
+def _dossier_parent_windows(chemin):
+    """Pendant Windows de `os.path.dirname` (issue #114) : `os.path.dirname`
+    ne reconnaît que `/` comme séparateur sur ce process Linux et renverrait
+    un chemin Windows (`C:\\CCW\\rummikub`) inchangé plutôt que son dossier
+    parent (`C:\\CCW`). Barres obliques normalisées en barres inverses
+    (convention du tableau de projets, voir `charger_config_ccw`/
+    `nom_dossier_chemin_windows`)."""
+    chemin = (chemin or "").replace("/", "\\").rstrip("\\")
+    if "\\" not in chemin:
+        return chemin
+    return chemin.rsplit("\\", 1)[0]
+
+
+def detecter_changelogs_a_fusionner(repertoire):
+    """Liste des `(n, nom)` des `CHANGELOG-<N>.md` présents à la racine du
+    commit HEAD de `repertoire` (issue #114), triés par `n` décroissant —
+    utilisée par le bouton « Fusionner le changelog » d'un projet distant
+    (PC fixe CCW), mais fonctionne identiquement pour un projet local.
+
+    `git ls-tree --name-only HEAD` (routé par `_lancer_git`, donc valable à
+    distance) plutôt qu'un `os.listdir` local (impossible sur un chemin
+    Windows depuis ce process, voir `fusionner_changelog_worktree`) ou un
+    pathspec glob `CHANGELOG-*.md` confié à git : seules les entrées de
+    PREMIER NIVEAU de l'arborescence sont listées (coût borné, jamais une
+    liste récursive de tout le dépôt), et le filtre `CHANGELOG-<N>.md` est
+    appliqué ici côté Python — jamais confié à un glob shell dont
+    l'implémentation réelle côté PC fixe (PowerShell, cmd.exe ou Git Bash)
+    n'est pas garantie (voir `_lancer_git_distant`). Les fichiers listés ici
+    sont donc nécessairement déjà suivis par git (committés par la branche
+    qui vient d'être fusionnée) — un `CHANGELOG-<N>.md` qui ne serait
+    qu'ajouté sur disque sans être commité n'apparaît pas, cas qui ne se
+    présente pas en pratique (le worktree source le committe toujours avant
+    la fusion).
+
+    Retourne une liste vide si `HEAD` est indéterminable (dépôt vide,
+    commande git en échec) — jamais d'exception."""
+    resultat = _lancer_git(repertoire, "ls-tree", "--name-only", "HEAD")
+    if resultat.returncode != 0:
+        return []
+    fichiers = []
+    for ligne in resultat.stdout.splitlines():
+        nom = ligne.strip()
+        if MOTIF_CHANGELOG_WORKTREE.match(nom):
+            fichiers.append((int(nom[len("CHANGELOG-"):-len(".md")]), nom))
+    fichiers.sort(key=lambda t: t[0], reverse=True)
+    return fichiers
+
+
+def _branche_courante_est_cible(branche_courante, cible_comparaison):
+    """True si `branche_courante` correspond à `cible_comparaison` (issue
+    #114) — `cible_comparaison` (voir `get_branche_cible_comparaison`) peut
+    être une chaîne unique ou une liste pour un projet à plusieurs cibles
+    configurées (issue #41) ; `branche_courante` None (HEAD détachée,
+    indéterminable) n'est jamais considérée comme une cible valide."""
+    if not branche_courante:
+        return False
+    cibles = cible_comparaison if isinstance(cible_comparaison, list) else [cible_comparaison]
+    return branche_courante in cibles
+
+
+def _detecter_interpreteur_python_ccw(config):
+    """Détermine l'interpréteur à utiliser sur le PC fixe CCW pour lancer
+    `scripts/fusionner_changelog.py` (issue #114) : essaie « python » puis,
+    en repli, le lanceur Windows « py » (présent par défaut sur une
+    installation officielle de Python, même quand « python » seul n'est pas
+    sur le PATH). Ne modifie rien côté distant (`--version` seulement).
+
+    Retourne `(interpreteur, erreur)` — `interpreteur` vaut None si aucun
+    des deux n'a répondu : `erreur` porte alors soit le message SSH classé
+    si la CONNEXION elle-même a échoué (code 255, voir
+    `_classer_echec_ssh_ccw` — abandon immédiat, pas de sens à essayer « py »
+    si le PC fixe est injoignable), soit un message générique si la
+    connexion a réussi mais qu'aucun interpréteur n'a été trouvé."""
+    for interpreteur in ("python", "py"):
+        commande = _commande_ssh_ccw(config, _commande_distante([interpreteur, "--version"]))
+        resultat = subprocess.run(
+            commande, capture_output=True, text=True, timeout=TIMEOUT_SSH_CONNECT + 5,
+        )
+        if resultat.returncode == 255:
+            categorie = _classer_echec_ssh_ccw(resultat.stderr)
+            return None, _message_echec_ssh_ccw(categorie, config, resultat.stderr)
+        if resultat.returncode == 0:
+            return interpreteur, None
+    return None, (
+        "aucun interpréteur Python trouvé sur le PC fixe (ni « python » ni « py ») "
+        "— installez Python sur le PC fixe avant de réessayer."
+    )
+
+
+def commandes_previsualisees_fusion_changelog_distant(repertoire, fichiers_changelog):
+    """Commandes affichées dans la confirmation du bouton « Fusionner le
+    changelog » (issue #114), calculées SANS AUCUNE connexion SSH (pure
+    construction de chaînes, comme `commande_affichee` pour les autres
+    actions de l'outil) — « python » y est affiché à titre représentatif :
+    l'interpréteur réellement utilisé (lui-même ou son repli « py ») n'est
+    déterminé qu'à l'exécution (voir `_detecter_interpreteur_python_ccw`),
+    exactement comme les autres confirmations affichent la commande AVANT
+    de l'exécuter, jamais un résultat déjà connu."""
+    config = charger_config_ccw()
+    dossier_tmp = _dossier_parent_windows(repertoire) + "\\" + NOM_DOSSIER_TMP_FUSION_CHANGELOG_CCW
+    chemin_script_distant = dossier_tmp + "\\" + NOM_SCRIPT_FUSION_CHANGELOG
+    chemins_changelog = ["CHANGELOG.md"] + [nom for _, nom in fichiers_changelog]
+    hote = config["host"] if config else "<ccw_host non configuré>"
+    prefixe_ssh = f"ssh -i {config['cle']} {hote}" if config else f"ssh {hote}"
+    prefixe_scp = f"scp -i {config['cle']}" if config else "scp"
+    message_commit = "chore: fusionne CHANGELOG-<N>.md dans CHANGELOG.md (auto)"
+    return [
+        f"{prefixe_ssh} python -c \"import os; os.makedirs(r'{dossier_tmp}', exist_ok=True)\"",
+        f"{prefixe_scp} {CHEMIN_SCRIPT_FUSION_CHANGELOG} {hote}:{chemin_script_distant}",
+        f"{prefixe_ssh} python {chemin_script_distant} --repo {repertoire}",
+        commande_affichee(repertoire, f"git -C {repertoire} add -- " + " ".join(chemins_changelog)),
+        commande_affichee(
+            repertoire,
+            f"git -C {repertoire} commit -m {json.dumps(message_commit)} -- " + " ".join(chemins_changelog),
+        ),
+        commande_affichee(repertoire, f"git -C {repertoire} log -3 --oneline"),
+        f"{prefixe_ssh} python -c \"import os; os.path.exists(r'{chemin_script_distant}') and "
+        f"os.remove(r'{chemin_script_distant}')\"",
+    ]
+
+
+def fusionner_changelog_distant(repertoire, nom_projet=None, branches_cibles=None):
+    """Bouton « Fusionner le changelog » (issue #114, suite du refus
+    explicite de #108) pour un projet distant (PC fixe CCW) : copie
+    `scripts/fusionner_changelog.py` (celui de CE dépôt, voir
+    `CHEMIN_SCRIPT_FUSION_CHANGELOG` — jamais une copie du projet cible,
+    même raison que `fusionner_changelog_worktree`) sur le PC fixe dans un
+    dossier temporaire, l'y exécute sur `repertoire`, puis committe
+    UNIQUEMENT `CHANGELOG.md` et les `CHANGELOG-<N>.md` traités — jamais de
+    push.
+
+    Garde-fous vérifiés AVANT toute commande SSH/SCP (aucune ne part si l'un
+    échoue) :
+    - `repertoire` doit être sur sa branche principale, c'est-à-dire la
+      branche cible de comparaison configurée pour ce projet (voir
+      `get_branche_cible_comparaison`) — SANS entrée explicite dans
+      `branches_cibles.conf` pour ce projet, ce repli vaut par construction
+      la branche ACTUELLEMENT extraite (voir la docstring de
+      `get_branche_courante`) : la vérification ne peut alors détecter
+      qu'une HEAD détachée (indéterminable), pas un changement de branche
+      réel — seul un projet avec une entrée explicite dans `branches_
+      cibles.conf` bénéficie d'une vérification non tautologique ici ;
+    - au moins un `CHANGELOG-<N>.md` doit être présent à la racine (voir
+      `detecter_changelogs_a_fusionner`) — sinon rien à faire ;
+    - `git status` ne doit signaler AUCUNE modification en dehors de
+      `CHANGELOG.md` et des `CHANGELOG-<N>.md` détectés (voir
+      `get_modifications_non_committees`, qui respecte déjà les exclusions
+      locales `configs/`/`logs/` posées sur les clones via
+      `.git/info/exclude`, puisqu'elle ne fait que lire `git status`).
+
+    Un interpréteur Python fonctionnel sur le PC fixe (« python » ou son
+    repli « py », voir `_detecter_interpreteur_python_ccw`) est une
+    précondition de TOUT le reste (création du dossier temporaire incluse) :
+    vérifié avant la moindre copie, pour ne jamais laisser une copie
+    orpheline si aucun interpréteur n'est disponible pour la lancer ni la
+    nettoyer.
+
+    La copie temporaire du script est TOUJOURS supprimée du PC fixe en fin
+    d'exécution, succès ou échec (bloc `try`/`finally` ci-dessous) — jamais
+    laissée traîner. Si le lancement du script échoue à mi-chemin, rien
+    n'est ajouté à l'index ni committé ; la commande de retour en arrière
+    éventuellement utile est affichée dans le message d'erreur, jamais
+    lancée par cette fonction.
+
+    Retourne {ok, erreur, commandes, traites, derniers_commits} —
+    `commandes` liste les commandes réellement exécutées (pour le compte
+    rendu), même en cas d'échec partiel ; `traites`/`derniers_commits` ne
+    sont renseignés qu'en cas de succès."""
+    config = charger_config_ccw()
+    if not config:
+        return {
+            "ok": False,
+            "erreur": (
+                "ccw_host non configuré (copiez relecture_web/ccw_host.conf.example vers "
+                "relecture_web/ccw_host.conf puis renseignez-y ccw_host)."
+            ),
+            "commandes": [],
+        }
+
+    nom_projet = nom_projet or os.path.basename(os.path.normpath(repertoire))
+    commandes = []
+
+    def _echec(message):
+        _journaliser_fusion_changelog(nom_projet, " ; ".join(commandes) or "non applicable", False, message)
+        return {"ok": False, "erreur": message, "commandes": commandes}
+
+    branche_courante = get_branche_courante(repertoire)
+    if branches_cibles is None:
+        branches_cibles = charger_branches_cibles()
+    cible_comparaison = get_branche_cible_comparaison(nom_projet, branche_courante, branches_cibles)
+    if not _branche_courante_est_cible(branche_courante, cible_comparaison):
+        return _echec(
+            f"le clone n'est pas sur sa branche principale (actuellement "
+            f"« {branche_courante or 'HEAD détachée'} », attendue « {cible_comparaison} ») "
+            "— fusion du CHANGELOG refusée."
+        )
+
+    fichiers_changelog = detecter_changelogs_a_fusionner(repertoire)
+    if not fichiers_changelog:
+        return _echec("aucun CHANGELOG-<N>.md à fusionner.")
+    noms_changelog = [nom for _, nom in fichiers_changelog]
+    chemins_attendus = {"CHANGELOG.md", *noms_changelog}
+
+    autres = [m for m in get_modifications_non_committees(repertoire) if m not in chemins_attendus]
+    if autres:
+        return _echec(
+            "d'autres modifications que le CHANGELOG sont présentes dans le clone "
+            f"({', '.join(autres)}) — fusion refusée pour ne jamais les emporter dans ce commit."
+        )
+
+    interpreteur, erreur_interpreteur = _detecter_interpreteur_python_ccw(config)
+    if not interpreteur:
+        return _echec(erreur_interpreteur)
+
+    dossier_tmp = _dossier_parent_windows(repertoire) + "\\" + NOM_DOSSIER_TMP_FUSION_CHANGELOG_CCW
+    chemin_script_distant = dossier_tmp + "\\" + NOM_SCRIPT_FUSION_CHANGELOG
+
+    commande_mkdir = _commande_ssh_ccw(config, _commande_distante([
+        interpreteur, "-c", f"import os; os.makedirs(r'{dossier_tmp}', exist_ok=True)",
+    ]))
+    commandes.append(" ".join(commande_mkdir))
+    resultat_mkdir = _classer_resultat_ssh_255(
+        subprocess.run(commande_mkdir, capture_output=True, text=True, timeout=TIMEOUT_SSH_CONNECT + 5),
+        config,
+    )
+    if resultat_mkdir.returncode != 0:
+        return _echec(
+            "impossible de créer le dossier temporaire sur le PC fixe : "
+            + (resultat_mkdir.stderr or resultat_mkdir.stdout).strip()
+        )
+
+    try:
+        commande_scp = _commande_scp_ccw(config, CHEMIN_SCRIPT_FUSION_CHANGELOG, chemin_script_distant)
+        commandes.append(" ".join(commande_scp))
+        resultat_scp = subprocess.run(commande_scp, capture_output=True, text=True, timeout=TIMEOUT_GIT_LONG)
+        if resultat_scp.returncode != 0:
+            return _echec("copie du script de fusion échouée : " + (resultat_scp.stderr or resultat_scp.stdout).strip())
+
+        commande_lancement = _commande_ssh_ccw(config, _commande_distante([
+            interpreteur, chemin_script_distant, "--repo", repertoire,
+        ]))
+        commandes.append(" ".join(commande_lancement))
+        resultat_script = _classer_resultat_ssh_255(
+            subprocess.run(commande_lancement, capture_output=True, text=True, timeout=TIMEOUT_GIT_LONG),
+            config,
+        )
+        if resultat_script.returncode != 0:
+            commande_retour = commande_affichee(
+                repertoire,
+                f"git -C {repertoire} checkout -- CHANGELOG.md " + " ".join(noms_changelog),
+            )
+            return _echec(
+                "le script de fusion a échoué sur le PC fixe : "
+                + (resultat_script.stderr or resultat_script.stdout).strip()
+                + " — rien n'a été ajouté à l'index ni committé ; si CHANGELOG.md ou un "
+                f"CHANGELOG-<N>.md a été modifié côté PC fixe, pour revenir en arrière "
+                f"(jamais lancé automatiquement) : {commande_retour}"
+            )
+
+        chemins_changelog = ["CHANGELOG.md"] + noms_changelog
+        ajout = _lancer_git(repertoire, "add", "--", *chemins_changelog)
+        commandes.append(commande_affichee(repertoire, f"git -C {repertoire} add -- " + " ".join(chemins_changelog)))
+        if ajout.returncode != 0:
+            return _echec("fusion effectuée mais git add impossible : " + (ajout.stderr or ajout.stdout).strip())
+
+        message_commit = "chore: fusionne CHANGELOG-<N>.md dans CHANGELOG.md (auto)"
+        commit = _lancer_git(repertoire, "commit", "-m", message_commit, "--", *chemins_changelog)
+        commandes.append(commande_affichee(
+            repertoire,
+            f"git -C {repertoire} commit -m {json.dumps(message_commit)} -- " + " ".join(chemins_changelog),
+        ))
+        if commit.returncode != 0:
+            return _echec("fusion effectuée mais commit impossible : " + (commit.stderr or commit.stdout).strip())
+
+        derniers_commits = _lancer_git(repertoire, "log", "-3", "--oneline")
+        commandes.append(commande_affichee(repertoire, f"git -C {repertoire} log -3 --oneline"))
+
+        resultat = {
+            "ok": True,
+            "erreur": None,
+            "commandes": commandes,
+            "traites": fichiers_changelog,
+            "derniers_commits": (
+                derniers_commits.stdout.strip().splitlines() if derniers_commits.returncode == 0 else []
+            ),
+        }
+        _journaliser_fusion_changelog(nom_projet, " ; ".join(commandes), True, None)
+        return resultat
+    finally:
+        commande_nettoyage = _commande_ssh_ccw(config, _commande_distante([
+            interpreteur, "-c",
+            f"import os; p = r'{chemin_script_distant}'; os.path.exists(p) and os.remove(p)",
+        ]))
+        subprocess.run(commande_nettoyage, capture_output=True, text=True, timeout=TIMEOUT_SSH_CONNECT + 5)
 
 
 def get_modifications_non_committees(repertoire):
@@ -2670,6 +3019,25 @@ def charger_etat_projet(projet, repertoire_bridge_agent=None, branches_cibles=No
     entree["branche_cible_comparaison"] = get_branche_cible_comparaison(
         projet["nom"], branche_principale, branches_cibles
     )
+
+    # Détection du bouton « Fusionner le changelog » (issue #114) : SEULEMENT
+    # pour un projet distant (PC fixe CCW) — un projet local fusionne déjà
+    # automatiquement son CHANGELOG après chaque merge (voir
+    # `fusionner_changelog_worktree`), ce bouton n'a jamais de sens pour lui.
+    # Un coût SSH de plus par chargement complet de CETTE page (le
+    # chargement à la demande de #109 reste intact : rien n'est ajouté pour
+    # les AUTRES projets/pages).
+    if projet_distant:
+        changelogs_distant = detecter_changelogs_a_fusionner(repertoire)
+        entree["changelogs_a_fusionner_distant"] = changelogs_distant
+        entree["commandes_fusion_changelog_distant"] = (
+            commandes_previsualisees_fusion_changelog_distant(repertoire, changelogs_distant)
+            if changelogs_distant else []
+        )
+    else:
+        entree["changelogs_a_fusionner_distant"] = []
+        entree["commandes_fusion_changelog_distant"] = []
+
     lignes_deja_pris = _lignes_deja_pris_watcher(projet["nom"], repertoire_bridge_agent)
     for worktree in get_worktrees(repertoire):
         worktree.update(get_commits_en_attente(worktree["path"]))

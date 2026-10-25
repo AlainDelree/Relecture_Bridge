@@ -1146,20 +1146,104 @@ d'erreur système confus. `retraiter_fichier_conflit_route` n'a pas besoin
 de ce garde-fou : elle ne fait qu'un `git checkout --conflict=merge`,
 déjà correctement routé par `_lancer_git`.
 
-**Fusion du changelog sur un projet distant : refus explicite** —
+**Fusion du changelog sur un projet distant : bouton « Fusionner le
+changelog » (issue #114, remplace le refus explicite de l'issue #108)** —
 `fusionner_worktree` (bouton « Fusionner ») reste utilisable sur un
 worktree distant (le `git merge` lui-même est routé par `_lancer_git`),
-mais l'étape suivante, `fusionner_changelog_worktree`, lit et écrit
-directement le filesystem LOCAL (`os.listdir`, `subprocess.run` du script
-`scripts/fusionner_changelog.py`) : sur un chemin Windows, elle échouait
-silencieusement à trouver un dossier local inexistant et concluait à tort
-qu'aucun `CHANGELOG-<N>.md` n'attendait de fusion. Elle détecte maintenant
-`est_projet_distant(repertoire)` en entrée et retourne directement
-`{"ok": False, "erreur": "fusion automatique du changelog non disponible
-pour un projet distant...", ...}`, affiché par la même case `⚠️` que tout
-autre échec de fusion du changelog — Alain sait qu'il doit vérifier
-manuellement sur le PC fixe plutôt que de croire, à tort, qu'il n'y avait
-rien à fusionner.
+mais l'étape suivante, l'intégration du CHANGELOG, ne peut pas s'appuyer
+sur `fusionner_changelog_worktree` local (`os.listdir`,
+`subprocess.run(["python3", "scripts/fusionner_changelog.py", ...])`
+visent tous deux le filesystem LOCAL de ce process — inutilisables sur un
+chemin Windows). Jusqu'à l'issue #108, ce cas était un refus explicite
+inconditionnel après chaque merge ; depuis #114, un bouton dédié permet de
+le faire réellement, sans quitter la page :
+
+- **Détection** (`detecter_changelogs_a_fusionner`, appelée dans
+  `charger_etat_projet` pour un projet distant uniquement, à CHAQUE
+  ouverture de la page du projet — pas seulement juste après un merge) :
+  `git ls-tree --name-only HEAD` (routé en SSH comme toute commande du
+  module), filtré côté Python sur le motif `CHANGELOG-<N>.md`, jamais un
+  `os.listdir` local ni un pathspec glob confié à un shell distant dont
+  l'implémentation réelle (PowerShell, cmd.exe, Git Bash) n'est pas
+  confirmée. Présence détectée -> bouton « Fusionner le changelog (#N) »
+  affiché (plusieurs numéros possibles) sous le bandeau « 💻 Projet du PC
+  fixe » ; rien détecté -> pas de bouton. Le message après un merge réussi
+  (`fusionner_changelog_worktree`, toujours appelée juste après le merge)
+  utilise maintenant cette même détection : s'il n'y a réellement rien à
+  fusionner, elle ne signale plus rien (avant #114, le refus apparaissait
+  systématiquement, qu'il y ait ou non un `CHANGELOG-<N>.md`) ; sinon, le
+  message `⚠️` invite à utiliser le bouton plutôt qu'à « fusionner
+  manuellement ».
+
+- **Confirmation** : même niveau « légère » que les autres actions de
+  l'outil (`ouvrirConfirmation({variant: "legere", ...})`), affichant les
+  commandes réellement exécutées (ssh/scp/git), précalculées SANS connexion
+  SSH par `commandes_previsualisees_fusion_changelog_distant` — l'
+  interpréteur y est affiché comme « python » à titre représentatif, le
+  repli éventuel vers « py » n'étant déterminé qu'à l'exécution.
+
+- **Action** (`fusionner_changelog_distant`, route
+  `POST /projet/<nom_projet>/fusionner-changelog-distant`) :
+  1. Garde-fous, AVANT toute commande SSH/SCP : `repertoire` doit être sur
+     sa branche principale (la branche cible de comparaison configurée
+     pour ce projet, voir `get_branche_cible_comparaison` — **sans entrée
+     explicite dans `branches_cibles.conf` pour ce projet, ce repli vaut
+     par construction la branche actuellement extraite : seule une HEAD
+     détachée est alors détectable, pas un changement de branche réel** —
+     limitation connue, cohérente avec le fait que ce dépôt ne mémorise
+     nulle part ailleurs « la » branche par défaut d'un projet sans
+     configuration explicite) ; au moins un `CHANGELOG-<N>.md` détecté ;
+     `git status` ne signalant AUCUNE modification en dehors de
+     `CHANGELOG.md` et des `CHANGELOG-<N>.md` détectés (les exclusions
+     locales `configs/`/`logs/` déjà posées sur les clones via
+     `.git/info/exclude` s'appliquent d'elles-mêmes, `git status` les
+     ignorant nativement).
+  2. Interpréteur Python disponible sur le PC fixe (« python », repli
+     « py » — `_detecter_interpreteur_python_ccw`) : précondition de tout
+     le reste, vérifiée AVANT la moindre copie ; absent des deux ->
+     erreur explicite, rien n'est modifié.
+  3. Copie de `scripts/fusionner_changelog.py` (toujours celui de CE
+     dépôt, jamais une copie du projet cible — même raison que pour la
+     fusion locale) via `scp`, dans un dossier temporaire frère des
+     dossiers de projets (`C:\CCW\_relecture_bridge_tmp_fusion_changelog`,
+     créé au besoin par le même interpréteur Python détecté, JAMAIS à
+     l'intérieur d'un worktree suivi par git — sinon la copie apparaîtrait
+     comme fichier non suivi et serait prise à tort pour « une autre
+     modification » par le garde-fou ci-dessus).
+  4. Lancement du script sur `repertoire` ; échec à mi-chemin -> rien
+     n'est ajouté à l'index ni committé, la commande de retour en arrière
+     éventuellement utile est affichée dans le message d'erreur, jamais
+     lancée automatiquement.
+  5. `git add` puis `git commit` limités à `CHANGELOG.md` et aux
+     `CHANGELOG-<N>.md` traités (même portée stricte que la fusion
+     locale), message `chore: fusionne CHANGELOG-<N>.md dans CHANGELOG.md
+     (auto)` — jamais `git push`.
+  6. Affichage du commit créé et des trois derniers commits
+     (`git log -3 --oneline`).
+  7. Nettoyage SYSTÉMATIQUE de la copie temporaire du script sur le PC
+     fixe (bloc `try`/`finally`), succès ou échec.
+
+  Toute erreur SSH (code 255) réutilise le classement par catégorie de
+  l'issue #111 (`_classer_echec_ssh_ccw`/`_message_echec_ssh_ccw`), via le
+  même point de factorisation (`_classer_resultat_ssh_255`) que
+  `_lancer_git_distant`.
+
+- **Fins de ligne** (le point le plus important de l'issue #114) —
+  `scripts/fusionner_changelog.py` ouvrait et réécrivait `CHANGELOG.md` en
+  mode texte universel par défaut (`Path.read_text`/`write_text`) : sans
+  effet visible tant que le script tournait sur le ThinkPad (Linux,
+  `os.linesep` = `\n`), mais sur le PC fixe (`os.linesep` = `\r\n`), un
+  `CHANGELOG.md` resté entièrement en LF se serait retrouvé entièrement
+  converti en CRLF après un simple ajout d'entrée — tout le fichier serait
+  alors apparu modifié dans le commit (le défaut déjà corrigé par #107
+  côté résolution de conflit). Corrigé en reprenant le même principe que
+  #107 (`_fin_de_ligne_dominante`/`_normaliser_fin_de_ligne`, dupliqués
+  dans le script plutôt qu'importés : il est copié seul sur le PC fixe,
+  sans le reste de `relecture_web`) : lecture/écriture avec `newline=""`
+  (aucune traduction), contenu déjà présent dans `CHANGELOG.md` jamais
+  retouché, seul le texte de chaque `CHANGELOG-<N>.md` inséré est ramené à
+  la fin de ligne dominante du fichier cible (LF, CRLF, ou mixte — la
+  dominante est alors celle qui l'est le plus).
 
 **`installer.sh` et les chemins Windows** — pour une ligne dont le
 répertoire est un chemin Windows (même motif que `MOTIF_CHEMIN_WINDOWS`

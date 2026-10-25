@@ -42,6 +42,7 @@ from git_info import (
     est_projet_distant,
     extraire_numero_issue,
     finaliser_commit_merge,
+    fusionner_changelog_distant,
     fusionner_worktree,
     get_branches_contenant,
     get_branches_distantes_contenant,
@@ -1442,6 +1443,37 @@ def nettoyer_projet_route(nom_projet):
     return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 
+@app.route("/projet/<nom_projet>/fusionner-changelog-distant", methods=["POST"])
+@login_requis
+def fusionner_changelog_distant_route(nom_projet):
+    """Bouton « Fusionner le changelog » (issue #114, suite du refus
+    explicite de #108) — réservé aux projets distants (PC fixe CCW) : voir
+    `fusionner_changelog_distant` côté git_info.py pour le détail des
+    garde-fous (branche principale, absence d'autres modifications,
+    interpréteur Python disponible), des étapes (copie du script, lancement,
+    commit limité à CHANGELOG.md et aux CHANGELOG-<N>.md traités) et du
+    nettoyage systématique de la copie temporaire. `_projet_pret` relit
+    l'état git actuel du clone avant d'agir, jamais celui, potentiellement
+    périmé, de la page déjà affichée."""
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+    if not projet.get("distant"):
+        flash(f"❌ « {nom_projet} » n'est pas un projet distant (PC fixe) — action non applicable.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    resultat = fusionner_changelog_distant(projet["repertoire"], projet["nom"])
+    if resultat["ok"]:
+        numeros = ", ".join(f"#{n}" for n, _ in resultat["traites"])
+        flash(f"✅ CHANGELOG fusionné sur le PC fixe (issues {numeros}) — jamais poussé.", "succes")
+        if resultat.get("derniers_commits"):
+            flash("Derniers commits : " + " | ".join(resultat["derniers_commits"]), "succes")
+    else:
+        flash(f"❌ {resultat['erreur']}", "erreur")
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+
 @app.route("/projet/<nom_projet>/gitignore/ajouter", methods=["POST"])
 @login_requis
 def ajouter_motif_gitignore_route(nom_projet):
@@ -1771,9 +1803,13 @@ def merger_branches_route(nom_projet):
                 if changelog["ok"]:
                     flash(f"✅ CHANGELOG-<N>.md fusionné dans CHANGELOG.md — {changelog['commande']}", "succes")
                 else:
+                    # Message distant déjà autonome (invite au bouton « Fusionner le
+                    # changelog », issue #114) — le suffixe générique ne s'ajoute que
+                    # pour un projet local, où aucune alternative outillée n'existe.
+                    suffixe = "" if projet["distant"] else " — à fusionner manuellement."
                     flash(
                         f"⚠️ « {nom} » fusionnée, mais l'intégration du CHANGELOG a échoué "
-                        f"({changelog['commande']}) : {changelog['erreur']} — à fusionner manuellement.",
+                        f"({changelog['commande']}) : {changelog['erreur']}{suffixe}",
                         "erreur",
                     )
             erreur_retour_branche = resultat.get("erreur_retour_branche")
@@ -1926,9 +1962,10 @@ def merger_et_supprimer_route(nom_projet):
                     if changelog["ok"]:
                         flash(f"✅ CHANGELOG-<N>.md fusionné dans CHANGELOG.md — {changelog['commande']}", "succes")
                     else:
+                        suffixe = "" if projet["distant"] else " — à fusionner manuellement."
                         flash(
                             f"⚠️ « {nom} » fusionnée, mais l'intégration du CHANGELOG a échoué "
-                            f"({changelog['commande']}) : {changelog['erreur']} — à fusionner manuellement.",
+                            f"({changelog['commande']}) : {changelog['erreur']}{suffixe}",
                             "erreur",
                         )
                 erreur_retour_branche = resultat.get("erreur_retour_branche")

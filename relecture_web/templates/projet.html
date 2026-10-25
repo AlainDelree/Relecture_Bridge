@@ -25,6 +25,48 @@
   💻 Projet du PC fixe (Windows) — chemin <code>{{ projet.repertoire }}</code>, accès par SSH
   (cette page est plus lente que les autres pour cette raison).
 </p>
+{% if projet.changelogs_a_fusionner_distant %}
+<div class="panneau-changelog-distant">
+  <p class="statut statut--distant">
+    📄 CHANGELOG à intégrer sur ce clone —
+    {% for n, nom in projet.changelogs_a_fusionner_distant %}<code>{{ nom }}</code>{{ ", " if not loop.last }}{% endfor %}
+  </p>
+  <form method="post" action="{{ url_for('fusionner_changelog_distant_route', nom_projet=projet.nom) }}" id="form-fusionner-changelog-distant">
+    <button type="submit" class="bouton bouton--merger" id="bouton-fusionner-changelog-distant"
+            data-commandes='{{ projet.commandes_fusion_changelog_distant|tojson }}'>
+      Fusionner le changelog
+      ({% for n, nom in projet.changelogs_a_fusionner_distant %}#{{ n }}{{ ", " if not loop.last }}{% endfor %})
+    </button>
+  </form>
+</div>
+<script>
+(function () {
+  var envoiForceChangelogDistant = false;
+  var formeChangelogDistant = document.getElementById("form-fusionner-changelog-distant");
+  if (formeChangelogDistant) {
+    formeChangelogDistant.addEventListener("submit", function (evenement) {
+      if (envoiForceChangelogDistant) {
+        envoiForceChangelogDistant = false;
+        return;
+      }
+      evenement.preventDefault();
+      var bouton = document.getElementById("bouton-fusionner-changelog-distant");
+      ouvrirConfirmation({
+        variant: "legere",
+        message: "Fusionner le CHANGELOG sur le PC fixe — " + {{ projet.nom|tojson }},
+        commandes: JSON.parse(bouton.dataset.commandes || "[]"),
+        libelleBouton: "Fusionner le changelog",
+        nomProjet: {{ projet.nom|tojson }}, couleurProjet: {{ projet.couleur|tojson }}, couleurTexteProjet: {{ projet.couleur_texte|tojson }},
+        onConfirmer: function () {
+          envoiForceChangelogDistant = true;
+          formeChangelogDistant.requestSubmit();
+        },
+      });
+    });
+  }
+})();
+</script>
+{% endif %}
 {% endif %}
 
 {% if erreur %}

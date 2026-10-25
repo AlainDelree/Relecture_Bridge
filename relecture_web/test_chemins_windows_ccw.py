@@ -144,15 +144,35 @@ class WorktreeEstPrincipalTestCase(unittest.TestCase):
 
 
 class FusionChangelogProjetDistantTestCase(unittest.TestCase):
-    """`fusionner_changelog_worktree` doit refuser explicitement pour un
-    projet distant, sans jamais tenter d'accès filesystem local sur le
-    chemin Windows (issue #108)."""
+    """`fusionner_changelog_worktree` ne doit jamais tenter d'accès
+    filesystem local sur un chemin Windows (issue #108) — `os.listdir`
+    échouerait silencieusement sur un tel chemin depuis ce process Linux.
 
-    def test_refus_explicite_sans_acces_disque(self):
+    Depuis l'issue #114, la détection passe par `detecter_changelogs_a_
+    fusionner` (git, routé en SSH) plutôt que par le filesystem : sans
+    `ccw_host` configuré (cas de ce test, pas de `ccw_host.conf` dans cet
+    environnement), la détection échoue proprement (liste vide, voir
+    `detecter_changelogs_a_fusionner`) et la fonction retombe sur son
+    comportement « rien à signaler » (None), plutôt que sur un message
+    d'erreur — le cas « détection positive côté distant » est couvert par
+    `test_fusion_changelog_distant.py` (ssh/scp factices, dépôt jetable).
+
+    `git_info.CHEMIN_CONFIG_CCW` redirigée vers un chemin inexistant (jamais
+    le vrai `ccw_host.conf` du dépôt — même principe que
+    test_ccw_host_conf.py) : sans cette redirection, un `ccw_host.conf` réel
+    déjà configuré sur cette machine ferait tenter une vraie connexion SSH
+    depuis ce test, ce qu'aucun test de ce dépôt ne doit jamais faire."""
+
+    def setUp(self):
+        self._config_original = git_info.CHEMIN_CONFIG_CCW
+        git_info.CHEMIN_CONFIG_CCW = "/chemin/inexistant/ccw_host.conf"
+
+    def tearDown(self):
+        git_info.CHEMIN_CONFIG_CCW = self._config_original
+
+    def test_aucun_acces_disque_local_sans_ccw_host_configure(self):
         resultat = git_info.fusionner_changelog_worktree("C:\\CCW\\rummikub", "rummikub_ccw")
-        self.assertIsNotNone(resultat)
-        self.assertFalse(resultat["ok"])
-        self.assertIn("projet distant", resultat["erreur"])
+        self.assertIsNone(resultat)
 
     def test_local_inchange_aucun_changelog(self):
         with tempfile.TemporaryDirectory(prefix="relecture_bridge_test_ccw_") as repertoire:
