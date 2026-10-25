@@ -2289,6 +2289,52 @@ def lister_fichiers_ignores_worktree(chemin_worktree):
     return entrees
 
 
+# Journal persistant des décisions prises, fichier par fichier, sur les
+# fichiers/dossiers ignorés menacés par une suppression de worktree (voir
+# `lister_fichiers_ignores_worktree` ci-dessus et
+# confirmation_fichiers_ignores_worktree.html) — même emplacement et même
+# principe que CHEMIN_JOURNAL_FUSION_CHANGELOG : hors de tout worktree,
+# jamais suivi par git (voir .gitignore), chemin en constante modifiable
+# pour les tests (issue #116). Ne classe rien automatiquement : permet
+# seulement de décider plus tard, sur des données réelles, quels fichiers
+# reviennent assez souvent pour être considérés comme du bruit, par projet
+# ou globalement.
+CHEMIN_JOURNAL_DECISIONS_FICHIERS_IGNORES = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "decisions_fichiers_ignores.log"
+)
+
+
+def journaliser_decision_fichier_ignore(nom_projet, branche, chemin, taille_affichee, decision, origine, bouton):
+    """Ajoute une ligne au journal persistant des décisions prises sur un
+    fichier ignoré menacé par une suppression de worktree (voir
+    CHEMIN_JOURNAL_DECISIONS_FICHIERS_IGNORES ci-dessus, issue #116) —
+    PAS un journal de résultat : la ligne écrite ici reflète la décision
+    prise au moment de la validation (« Annuler » ou « Confirmer »), même
+    si une suppression réelle échoue ensuite (renvoi vers la page de
+    suppression forcée, non modifiée par cette issue).
+
+    `decision` vaut "garder" (case cochée) ou "supprimer"/"supprimer (pas
+    encore fait)" (case décochée, suivant que le bouton utilisé supprime
+    réellement ou se contente d'enregistrer l'intention) ; `origine` vaut
+    "claude_chat" ou "personnelle" (menu obligatoire de la page) ;
+    `bouton` vaut "annuler" ou "confirmer". Retourne True si la ligne a pu
+    être écrite, False sinon — une écriture impossible (dossier en lecture
+    seule, disque plein...) ne doit JAMAIS bloquer l'action en cours,
+    seulement être signalée par l'appelant (message flash d'avertissement),
+    jamais faire croire que la décision est enregistrée."""
+    horodatage = datetime.datetime.now().isoformat(timespec="seconds")
+    ligne = (
+        f"{horodatage} | projet={nom_projet} | branche={branche} | fichier={chemin} "
+        f"| taille={taille_affichee} | decision={decision} | origine={origine} | bouton={bouton}"
+    )
+    try:
+        with open(CHEMIN_JOURNAL_DECISIONS_FICHIERS_IGNORES, "a", encoding="utf-8") as fichier:
+            fichier.write(ligne + "\n")
+        return True
+    except OSError:
+        return False
+
+
 def diagnostiquer_echec_suppression_worktree(chemin_worktree):
     """Diagnostique un échec de `supprimer_worktree` SANS dépendre du texte
     (traduit selon la langue de git) du message d'erreur renvoyé par `git

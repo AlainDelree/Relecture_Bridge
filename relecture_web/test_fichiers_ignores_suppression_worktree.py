@@ -314,6 +314,10 @@ class SupprimerAvecFichiersIgnoresTestCase(BaseSuppressionAvecFichiersIgnoresTes
         confirmee = self.client.post("/projet/projet_local/supprimer", data={
             "branches": ["feature-build"],
             "ignorer_avertissement_fichiers_ignores": "on",
+            # Menu obligatoire introduit par l'issue #116 (suite de celle-ci) :
+            # sans ce champ, la re-soumission est maintenant refusée côté
+            # serveur avant toute suppression (voir test dédié).
+            "origine_decision": "personnelle",
         })
         self.assertEqual(confirmee.status_code, 302)
         self.assertFalse(self._worktree_existe(worktree))
@@ -376,6 +380,10 @@ class SupprimerAvecFichiersIgnoresTestCase(BaseSuppressionAvecFichiersIgnoresTes
         reponse = self.client.post("/projet/projet_local/supprimer", data={
             "branches": ["feature-build", "feature-propre"],
             "ignorer_avertissement_fichiers_ignores": "on",
+            # Menu obligatoire introduit par l'issue #116 (suite de celle-ci) :
+            # sans ce champ, la re-soumission est maintenant refusée côté
+            # serveur avant toute suppression (voir test dédié).
+            "origine_decision": "personnelle",
         })
         self.assertEqual(reponse.status_code, 302)
         self.assertFalse(self._worktree_existe(worktree_build))
@@ -405,6 +413,10 @@ class RejeterAvecFichiersIgnoresTestCase(BaseSuppressionAvecFichiersIgnoresTestC
         reponse = self.client.post("/projet/projet_local/rejeter", data={
             "branches": ["feature-rejet"],
             "ignorer_avertissement_fichiers_ignores": "on",
+            # Menu obligatoire introduit par l'issue #116 (suite de celle-ci) :
+            # sans ce champ, la re-soumission est maintenant refusée côté
+            # serveur avant toute suppression (voir test dédié).
+            "origine_decision": "personnelle",
         })
         self.assertEqual(reponse.status_code, 302)
         self.assertFalse(self._worktree_existe(worktree))
@@ -438,6 +450,10 @@ class MergerEtSupprimerAvecFichiersIgnoresTestCase(BaseSuppressionAvecFichiersIg
         reponse = self.client.post("/projet/projet_local/merger-et-supprimer", data={
             "branches": ["feature-merge"],
             "ignorer_avertissement_fichiers_ignores": "on",
+            # Menu obligatoire introduit par l'issue #116 (suite de celle-ci) :
+            # sans ce champ, la re-soumission est maintenant refusée côté
+            # serveur avant toute suppression (voir test dédié).
+            "origine_decision": "personnelle",
         })
         self.assertEqual(reponse.status_code, 302)
         self.assertTrue(os.path.exists(os.path.join(self.repertoire, "feature-merge.txt")))

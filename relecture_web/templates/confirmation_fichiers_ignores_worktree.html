@@ -13,7 +13,10 @@
     Ces fichiers et dossiers sont ignorés par <code>.gitignore</code> : ils ne sont
     dans AUCUN commit, et <code>git worktree remove</code> les supprime SANS JAMAIS
     le signaler, même sans forçage (issue #112) — rien n'a encore été supprimé.
-    Copiez ce qui doit être gardé avant de continuer.
+    Copiez ce qui doit être gardé avant de continuer. Cochez « à garder » sur un
+    fichier pour noter l'intention et la tracer dans le journal des décisions
+    (issue #116) — la suppression reste toujours par worktree entier, cette case
+    ne sert jamais à supprimer ou copier un fichier séparément.
   </p>
 </header>
 
@@ -27,36 +30,58 @@
   {% endif %}
 {% endwith %}
 
-<ul class="liste-echecs-suppression">
-  {% for w in worktrees %}
-  <li class="ligne-echec-suppression">
-    <div class="echec-suppression__entete">
-      <span class="nom-branche">{{ w.nom_branche }}</span>
-    </div>
-    <ul class="liste-fichiers-perdus">
-      {% for f in w.fichiers %}
-      <li class="ligne-fichier-perdu">
-        <code>{{ f.chemin }}</code>
-        <button type="button" class="bouton-copier" data-copier="{{ f.chemin }}" title="Copier le chemin">📋</button>
-        <span class="badge badge--info">ignoré par git</span>
-        <span class="stats-diff-fichier">{{ f.taille_affichee }}</span>
-      </li>
-      {% endfor %}
-    </ul>
-  </li>
+<form method="post" action="{{ url_for(request.endpoint, nom_projet=projet.nom) }}" class="form-confirmer-fichiers-ignores">
+  {% for cle, valeur in formulaire_origine.items(multi=True) %}
+  <input type="hidden" name="{{ cle }}" value="{{ valeur }}">
   {% endfor %}
-</ul>
+  <input type="hidden" name="ignorer_avertissement_fichiers_ignores" value="on">
+  <input type="hidden" name="origine_decision" id="champ-origine-decision" value="">
 
-<div class="zone-actions-confirmation">
-  <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}" class="bouton bouton--annuler lien-bouton" autofocus>Annuler</a>
-  <form method="post" action="{{ url_for(request.endpoint, nom_projet=projet.nom) }}" class="form-confirmer-fichiers-ignores">
-    {% for cle, valeur in formulaire_origine.items(multi=True) %}
-    <input type="hidden" name="{{ cle }}" value="{{ valeur }}">
+  {% set ns = namespace(i=0, plats=[]) %}
+  <ul class="liste-echecs-suppression">
+    {% for w in worktrees %}
+    {% set index_worktree = loop.index %}
+    <li class="ligne-echec-suppression">
+      <div class="echec-suppression__entete">
+        <span class="nom-branche">{{ w.nom_branche }}</span>
+      </div>
+      <div class="worktree-actions-garder">
+        <button type="button" class="bouton bouton--nav bouton-tout-cocher-garder" data-cible-worktree="wt-{{ index_worktree }}">Tout cocher « à garder »</button>
+        <button type="button" class="bouton bouton--nav bouton-tout-decocher-garder" data-cible-worktree="wt-{{ index_worktree }}">Tout décocher</button>
+      </div>
+      <ul class="liste-fichiers-perdus">
+        {% for f in w.fichiers %}
+        {% set _ = ns.plats.append({"branche": w.nom_branche, "chemin": f.chemin, "taille": f.taille_affichee}) %}
+        <li class="ligne-fichier-perdu">
+          <label class="case-a-garder-label">
+            <input type="checkbox" class="case-a-garder" name="garder" value="{{ ns.i }}" data-worktree="wt-{{ index_worktree }}">
+            à garder
+          </label>
+          <code>{{ f.chemin }}</code>
+          <button type="button" class="bouton-copier" data-copier="{{ f.chemin }}" title="Copier le chemin">📋</button>
+          <span class="badge badge--info">ignoré par git</span>
+          <span class="stats-diff-fichier">{{ f.taille_affichee }}</span>
+        </li>
+        {% set ns.i = ns.i + 1 %}
+        {% endfor %}
+      </ul>
+    </li>
     {% endfor %}
-    <input type="hidden" name="ignorer_avertissement_fichiers_ignores" value="on">
-    <button type="submit" class="bouton bouton--danger">Confirmer la suppression malgré tout</button>
-  </form>
-</div>
+  </ul>
+  <input type="hidden" name="fichiers_json" id="champ-fichiers-json" value='{{ ns.plats|tojson }}'>
+
+  <p class="avertissement-case-a-garder" id="avertissement-case-a-garder" hidden>
+    ⚠️ Au moins un fichier est marqué « à garder » — copiez-le d'abord, puis décochez
+    la case, ou revenez plus tard : le bouton de suppression reste désactivé tant
+    qu'une case « à garder » est cochée.
+  </p>
+
+  <div class="zone-actions-confirmation">
+    <button type="submit" id="bouton-annuler-fichiers-ignores" class="bouton bouton--annuler"
+            formaction="{{ url_for('annuler_fichiers_ignores_route', nom_projet=projet.nom) }}" autofocus>Annuler</button>
+    <button type="submit" id="bouton-confirmer-fichiers-ignores" class="bouton bouton--danger">Confirmer la suppression malgré tout</button>
+  </div>
+</form>
 
 <script>
 (function () {
@@ -64,14 +89,60 @@
   var COULEUR_PROJET = {{ projet.couleur|tojson }};
   var COULEUR_TEXTE_PROJET = {{ projet.couleur_texte|tojson }};
 
-  // Même mécanique de confirmation forte que les autres actions difficiles
-  // à défaire (voir base.html, projet.html, echec_suppression_worktree.html) :
-  // le formulaire ci-dessus ré-envoie exactement la requête d'origine (toutes
-  // les sélections déjà faites) avec le flag de contournement du contrôle
-  // côté serveur — la page que l'utilisateur vient de voir est déjà en soi
-  // la confirmation forte, donc nouvelle vérification côté client avant
-  // l'envoi réel, pas de bouton "OK" générique.
+  // Menu obligatoire « origine de la décision » (issue #116) — sans valeur
+  // présélectionnée, partagé par les fenêtres Annuler et Confirmer
+  // ci-dessous (voir ouvrirConfirmation dans base.html).
+  var MENU_ORIGINE_DECISION = {
+    libelle: "Origine de la décision",
+    choix: [
+      {valeur: "claude_chat", libelle: "Vu avec Claude Chat"},
+      {valeur: "personnelle", libelle: "Décision personnelle"},
+    ],
+  };
+
   var formulaire = document.querySelector(".form-confirmer-fichiers-ignores");
+  var boutonAnnulerSubmit = document.getElementById("bouton-annuler-fichiers-ignores");
+  var boutonConfirmerSubmit = document.getElementById("bouton-confirmer-fichiers-ignores");
+  var champOrigine = document.getElementById("champ-origine-decision");
+  var avertissementGarder = document.getElementById("avertissement-case-a-garder");
+  var casesGarder = formulaire.querySelectorAll(".case-a-garder");
+
+  // « À garder » décide/trace fichier par fichier (issue #116) — la
+  // suppression reste toujours par worktree entier : tant qu'au moins une
+  // case reste cochée, « Confirmer » est désactivé (ici ET côté serveur,
+  // voir _refus_confirmation_fichiers_ignores dans app.py) plutôt que de
+  // choisir quels fichiers supprimer individuellement.
+  function majEtatBoutonConfirmer() {
+    var auMoinsUneGardee = Array.prototype.some.call(casesGarder, function (c) { return c.checked; });
+    boutonConfirmerSubmit.disabled = auMoinsUneGardee;
+    avertissementGarder.hidden = !auMoinsUneGardee;
+  }
+  Array.prototype.forEach.call(casesGarder, function (c) {
+    c.addEventListener("change", majEtatBoutonConfirmer);
+  });
+  majEtatBoutonConfirmer();
+
+  // Tout cocher/décocher « à garder » d'un seul geste, par worktree —
+  // jamais de sélection groupée inter-worktrees, chaque worktree reste
+  // indépendant.
+  document.addEventListener("click", function (evenement) {
+    var bouton = evenement.target.closest(".bouton-tout-cocher-garder, .bouton-tout-decocher-garder");
+    if (!bouton || !formulaire.contains(bouton)) return;
+    var coche = bouton.classList.contains("bouton-tout-cocher-garder");
+    var cible = bouton.dataset.cibleWorktree;
+    Array.prototype.forEach.call(casesGarder, function (c) {
+      if (c.dataset.worktree === cible) c.checked = coche;
+    });
+    majEtatBoutonConfirmer();
+  });
+
+  // Même mécanique de confirmation forte que les autres actions difficiles
+  // à défaire (voir base.html, projet.html, echec_suppression_worktree.html)
+  // — enrichie ici d'un menu obligatoire (issue #116). Les deux boutons de
+  // CE même formulaire (Annuler et Confirmer) partagent un seul événement
+  // "submit" : evenement.submitter indique lequel a réellement été cliqué,
+  // pour ouvrir la bonne fenêtre et ré-émettre vers la bonne route
+  // (formAction du bouton Annuler, action par défaut du formulaire sinon).
   var envoiConfirme = false;
   formulaire.addEventListener("submit", function (evenement) {
     if (envoiConfirme) {
@@ -79,19 +150,37 @@
       return;
     }
     evenement.preventDefault();
+    var cibleAnnuler = evenement.submitter === boutonAnnulerSubmit;
 
-    ouvrirConfirmation({
-      variant: "forte",
-      message: "Continuer malgré les fichiers ignorés perdus — " + NOM_PROJET,
-      avertissement: "🔴 Ces fichiers ne sont committés nulle part : ils seront perdus "
-        + "définitivement avec le worktree. Copiez-les avant de confirmer si vous voulez les garder.",
-      libelleBouton: "Confirmer la suppression malgré tout",
-      nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
-      onConfirmer: function () {
-        envoiConfirme = true;
-        formulaire.requestSubmit();
-      },
-    });
+    if (cibleAnnuler) {
+      ouvrirConfirmation({
+        variant: "legere",
+        message: "Annuler — rien n'est supprimé pour aucun worktree du lot, " + NOM_PROJET,
+        menu: MENU_ORIGINE_DECISION,
+        libelleBouton: "Valider et revenir au projet",
+        nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
+        onConfirmer: function (valeurMenu) {
+          champOrigine.value = valeurMenu;
+          envoiConfirme = true;
+          formulaire.requestSubmit(boutonAnnulerSubmit);
+        },
+      });
+    } else {
+      ouvrirConfirmation({
+        variant: "forte",
+        message: "Continuer malgré les fichiers ignorés perdus — " + NOM_PROJET,
+        avertissement: "🔴 Ces fichiers ne sont committés nulle part : ils seront perdus "
+          + "définitivement avec le worktree. Copiez-les avant de confirmer si vous voulez les garder.",
+        menu: MENU_ORIGINE_DECISION,
+        libelleBouton: "Confirmer la suppression malgré tout",
+        nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
+        onConfirmer: function (valeurMenu) {
+          champOrigine.value = valeurMenu;
+          envoiConfirme = true;
+          formulaire.requestSubmit(boutonConfirmerSubmit);
+        },
+      });
+    }
   });
 })();
 </script>

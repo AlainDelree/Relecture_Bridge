@@ -4,15 +4,22 @@ suppression (issue #113, suite de #112) :
 
 - `confirmation_fichiers_ignores_worktree.html` : un seul bouton visible
   (« Confirmer la suppression malgré tout ») donnait psychologiquement
-  l'impression de n'avoir que ce choix. Un élément « Annuler » (lien de
-  retour vers la page projet, sans aucune soumission) doit maintenant
-  apparaître AVANT ce bouton, avec le focus par défaut, sans que le
-  formulaire de confirmation lui-même (champs cachés, action) ne change.
+  l'impression de n'avoir que ce choix. Un élément « Annuler » doit
+  apparaître AVANT ce bouton, avec le focus par défaut. **Depuis l'issue
+  #116** (suite de celle-ci), ce n'est plus un lien `<a>` de retour direct
+  sans soumission : la case « à garder » par fichier et le journal des
+  décisions imposent d'enregistrer une décision avant de revenir à la page
+  du projet, donc Annuler est devenu un bouton de soumission du même
+  formulaire que Confirmer (menu obligatoire « origine de la décision »,
+  voir `test_decisions_fichiers_ignores_worktree.py` pour le détail de ce
+  nouveau comportement) — seules les invariants encore valables ici (ordre
+  des boutons, focus par défaut) sont revérifiés.
 - `echec_suppression_worktree.html` (suppression forcée après un premier
   échec, issue #103) avait le même défaut pour chaque worktree concerné :
   même correction, même ordre, focus par défaut sur le premier Annuler de
   la page seulement (un seul élément avec `autofocus` par page, comme
-  l'exige le HTML).
+  l'exige le HTML). **Non concernée par l'issue #116** — comportement et
+  tests inchangés ci-dessous.
 
 Pas de framework de test externe dans ce dépôt (voir #107) : fichier
 `unittest` autonome (stdlib uniquement), lançable par
@@ -127,10 +134,19 @@ class PageFichiersIgnoresTestCase(BaseAnnulerTestCase):
         self.assertNotEqual(position_confirmer, -1, "bouton de confirmation introuvable")
         self.assertLess(position_annuler, position_confirmer)
 
-    def test_annuler_est_un_lien_vers_la_page_projet_sans_soumission(self):
+    def test_annuler_est_un_bouton_de_soumission_depuis_lissue_116(self):
+        # Depuis l'issue #116, Annuler n'est plus un simple lien <a> : il
+        # soumet le même formulaire que Confirmer (menu obligatoire
+        # d'origine de la décision), vers une route dédiée qui n'efface
+        # jamais rien — voir test_decisions_fichiers_ignores_worktree.py.
         texte = self._obtenir_page()
+        self.assertNotIn(
+            '<a href="/projet/projet_local" class="bouton bouton--annuler lien-bouton"',
+            texte,
+        )
         self.assertIn(
-            '<a href="/projet/projet_local" class="bouton bouton--annuler lien-bouton" autofocus>Annuler</a>',
+            'id="bouton-annuler-fichiers-ignores" class="bouton bouton--annuler"\n'
+            '            formaction="/projet/projet_local/fichiers-ignores/annuler" autofocus>Annuler</button>',
             texte,
         )
 
@@ -156,9 +172,11 @@ class PageFichiersIgnoresTestCase(BaseAnnulerTestCase):
         self._fusionner_branche("feature-build")
 
         self.client.post("/projet/projet_local/supprimer", data={"branches": ["feature-build"]})
-        # « Annuler » n'est qu'un lien <a> de retour (pas un contrôle du
-        # formulaire) : rien à envoyer, un simple GET de la page projet ne
-        # doit rien avoir changé.
+        # N'exerce pas le bouton Annuler lui-même (voir
+        # test_decisions_fichiers_ignores_worktree.py, issue #116, pour son
+        # comportement complet depuis qu'il soumet le formulaire) : une
+        # simple navigation GET vers la page projet, sans aucune requête
+        # supplémentaire, ne doit rien avoir changé — invariant inchangé.
         reponse_projet = self.client.get("/projet/projet_local")
         self.assertEqual(reponse_projet.status_code, 200)
         self.assertTrue(os.path.isdir(worktree))

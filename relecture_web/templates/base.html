@@ -37,6 +37,10 @@
     <p class="modal-confirmation__avertissement" id="modal-confirmation-avertissement" hidden></p>
     <p class="modal-confirmation__titre" id="modal-confirmation-titre"></p>
     <pre class="modal-confirmation__commande" id="modal-confirmation-commande"></pre>
+    <div class="modal-confirmation__menu" id="modal-confirmation-menu" hidden>
+      <label class="modal-confirmation__menu-libelle" for="modal-confirmation-select" id="modal-confirmation-menu-libelle"></label>
+      <select class="modal-confirmation__select" id="modal-confirmation-select"></select>
+    </div>
     <div class="modal-confirmation__boutons">
       <button type="button" class="bouton bouton--annuler" id="modal-confirmation-annuler">Annuler</button>
       <button type="button" class="bouton" id="modal-confirmation-confirmer"></button>
@@ -57,12 +61,22 @@
 // un bandeau à la couleur du projet quand elle est configurée (issue #73),
 // le bouton de validation nommé d'après l'action réelle (jamais un OK
 // générique), et le focus par défaut sur Annuler.
+//
+// Menu obligatoire optionnel (options.menu = {libelle, choix: [{valeur,
+// libelle}, ...]}, issue #116) : ajoute un <select> sans aucune valeur
+// présélectionnée au-dessus des boutons, désactive le bouton de
+// validation jusqu'à un choix explicite, et passe la valeur choisie en
+// argument de options.onConfirmer(valeurMenu) — undefined si pas de menu,
+// pour ne rien changer aux appelants existants.
 function ouvrirConfirmation(options) {
   var modal = document.getElementById("modal-confirmation");
   var bandeau = document.getElementById("modal-confirmation-bandeau");
   var avertissement = document.getElementById("modal-confirmation-avertissement");
   var titre = document.getElementById("modal-confirmation-titre");
   var texteCommande = document.getElementById("modal-confirmation-commande");
+  var menuConteneur = document.getElementById("modal-confirmation-menu");
+  var menuLibelle = document.getElementById("modal-confirmation-menu-libelle");
+  var menuSelect = document.getElementById("modal-confirmation-select");
   var boutonAnnuler = document.getElementById("modal-confirmation-annuler");
   var boutonConfirmer = document.getElementById("modal-confirmation-confirmer");
 
@@ -90,15 +104,44 @@ function ouvrirConfirmation(options) {
   boutonConfirmer.textContent = options.libelleBouton;
   boutonConfirmer.className = "bouton " + (estForte ? "bouton--danger" : "bouton--confirmer-legere");
 
+  function surChangementMenu() {
+    boutonConfirmer.disabled = !menuSelect.value;
+  }
+
+  if (options.menu) {
+    menuLibelle.textContent = options.menu.libelle || "";
+    menuSelect.innerHTML = "";
+    var optionVide = document.createElement("option");
+    optionVide.value = "";
+    optionVide.textContent = "— Choisir —";
+    optionVide.disabled = true;
+    optionVide.selected = true;
+    menuSelect.appendChild(optionVide);
+    (options.menu.choix || []).forEach(function (choix) {
+      var option = document.createElement("option");
+      option.value = choix.valeur;
+      option.textContent = choix.libelle;
+      menuSelect.appendChild(option);
+    });
+    menuConteneur.hidden = false;
+    boutonConfirmer.disabled = true;
+    menuSelect.addEventListener("change", surChangementMenu);
+  } else {
+    menuConteneur.hidden = true;
+    boutonConfirmer.disabled = false;
+  }
+
   function fermer() {
     modal.hidden = true;
     boutonConfirmer.removeEventListener("click", surConfirmer);
     boutonAnnuler.removeEventListener("click", surAnnuler);
     document.removeEventListener("keydown", surTouche);
+    menuSelect.removeEventListener("change", surChangementMenu);
   }
   function surConfirmer() {
+    var valeurMenu = options.menu ? menuSelect.value : undefined;
     fermer();
-    options.onConfirmer();
+    options.onConfirmer(valeurMenu);
   }
   function surAnnuler() {
     fermer();

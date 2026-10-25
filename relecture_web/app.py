@@ -17,6 +17,7 @@ mode de lancement — voir RELECTURE_WEB_DOC.md.
     python3 relecture_web/app.py --set-password
 """
 
+import json
 import os
 import subprocess
 from datetime import timedelta
@@ -64,6 +65,7 @@ from git_info import (
     get_sujet_commit,
     gitignore_a_des_modifications_non_committees,
     hash_depuis_branche_recuperation,
+    journaliser_decision_fichier_ignore,
     lire_conflits_fichier,
     lire_lignes_gitignore,
     lire_verrous_actifs,
@@ -267,6 +269,95 @@ def _worktrees_avec_fichiers_ignores(noms_branches, branches):
         if fichiers:
             resultat.append({"nom_branche": nom, "fichiers": fichiers})
     return resultat
+
+
+# Menu obligatoire « origine de la décision » de
+# confirmation_fichiers_ignores_worktree.html (issue #116) — valeur de
+# formulaire -> libellé affiché, sans aucune présélection possible côté
+# page (voir le template) ni côté serveur (une valeur absente ou hors de
+# ces deux clés est refusée, jamais traitée comme une valeur par défaut).
+ORIGINES_DECISION_FICHIERS_IGNORES = {
+    "claude_chat": "Vu avec Claude Chat",
+    "personnelle": "Décision personnelle",
+}
+
+
+def _decisions_depuis_formulaire(form):
+    """Reconstruit, à partir des champs `fichiers_json` (liste plate
+    {branche, chemin, taille} sérialisée par
+    confirmation_fichiers_ignores_worktree.html, dans l'ordre des cases
+    « à garder ») et `garder` (index des cases cochées) du formulaire
+    POSTé par cette page, la liste des décisions par fichier — commune à
+    « Annuler » et « Confirmer » (issue #116). Retourne une liste de
+    {branche, chemin, taille, garder: bool} ; silencieusement vide si
+    `fichiers_json` est absent ou corrompu (formulaire jamais passé par
+    cette page), plutôt que de lever une erreur pour une donnée qui ne
+    peut provenir que d'une page que CE code a lui-même générée."""
+    try:
+        fichiers = json.loads(form.get("fichiers_json") or "[]")
+    except ValueError:
+        fichiers = []
+    indices_gardes = set(form.getlist("garder"))
+    return [
+        {
+            "branche": f.get("branche", ""),
+            "chemin": f.get("chemin", ""),
+            "taille": f.get("taille", "taille non calculée"),
+            "garder": str(i) in indices_gardes,
+        }
+        for i, f in enumerate(fichiers)
+        if isinstance(f, dict)
+    ]
+
+
+def _journaliser_decisions_fichiers_ignores(nom_projet, decisions, origine, bouton):
+    """Journalise chaque décision de `_decisions_depuis_formulaire`
+    (`journaliser_decision_fichier_ignore`, voir git_info.py) sans jamais
+    bloquer l'action en cours (issue #116) — une case cochée vaut toujours
+    « garder » ; sinon « supprimer » si le bouton est Confirmer (la
+    suppression a réellement lieu juste après), « supprimer (pas encore
+    fait) » si c'est Annuler (rien n'est supprimé). Retourne True si
+    toutes les lignes ont pu être écrites, False si au moins une a échoué
+    — à charge de l'appelant d'avertir Alain par message flash, sans
+    jamais annuler l'action elle-même ni laisser croire que la décision a
+    bien été enregistrée."""
+    toutes_ok = True
+    for decision in decisions:
+        if decision["garder"]:
+            libelle_decision = "garder"
+        elif bouton == "annuler":
+            libelle_decision = "supprimer (pas encore fait)"
+        else:
+            libelle_decision = "supprimer"
+        ok = journaliser_decision_fichier_ignore(
+            nom_projet, decision["branche"], decision["chemin"], decision["taille"],
+            libelle_decision, origine, bouton,
+        )
+        toutes_ok = toutes_ok and ok
+    return toutes_ok
+
+
+def _refus_confirmation_fichiers_ignores(form):
+    """Raisons de refus, appliquées CÔTÉ SERVEUR (pas seulement en
+    désactivant le bouton dans la page), de la re-soumission de
+    « Confirmer la suppression malgré tout » sur
+    confirmation_fichiers_ignores_worktree.html (issue #116) — au moins une
+    case « à garder » cochée (il faut d'abord copier ces fichiers, puis
+    décocher ou revenir plus tard), ou menu d'origine de la décision
+    absent/invalide (aucune valeur présélectionnée dans la page). Retourne
+    un message de refus (str) si la confirmation ne doit pas être honorée,
+    None sinon."""
+    if form.getlist("garder"):
+        return (
+            "❌ Suppression refusée : au moins un fichier est marqué « à garder » — "
+            "copiez-le d'abord, puis décochez la case, ou revenez plus tard."
+        )
+    if form.get("origine_decision") not in ORIGINES_DECISION_FICHIERS_IGNORES:
+        return (
+            "❌ Suppression refusée : choisissez l'origine de la décision "
+            "(Vu avec Claude Chat / Décision personnelle) avant de confirmer."
+        )
+    return None
 
 
 def _diagnostiquer_echec_pour_forcage(projet, nom_branche, branche, resultat_worktree, verrous_actifs, purger=False):
@@ -1889,6 +1980,31 @@ def merger_et_supprimer_route(nom_projet):
                 "confirmation_fichiers_ignores_worktree.html",
                 projet=projet, worktrees=worktrees_concernes, formulaire_origine=request.form,
             )
+    else:
+        # Re-soumission depuis confirmation_fichiers_ignores_worktree.html
+        # (bouton « Confirmer la suppression malgré tout ») — le garde-fou
+        # « au moins une case à garder cochée » et le menu obligatoire
+        # d'origine de la décision sont désactivés/imposés dans la page,
+        # mais revérifiés ici CÔTÉ SERVEUR (issue #116) : une requête
+        # construite à la main malgré tout est refusée sans supprimer quoi
+        # que ce soit. Chaque fichier listé sur cette page est ensuite
+        # journalisé « supprimer » (la suppression a lieu juste après),
+        # même si une suppression individuelle échoue plus loin (renvoi
+        # vers la page de suppression forcée, non modifiée par cette
+        # issue) — ce journal enregistre la décision, pas le résultat.
+        refus = _refus_confirmation_fichiers_ignores(request.form)
+        if refus:
+            flash(refus, "erreur")
+            return redirect(url_for("projet_route", nom_projet=nom_projet))
+        if not _journaliser_decisions_fichiers_ignores(
+            projet["nom"], _decisions_depuis_formulaire(request.form),
+            request.form.get("origine_decision"), "confirmer",
+        ):
+            flash(
+                "⚠️ Décision prise en compte, mais le journal des décisions sur les fichiers "
+                "ignorés n'a pas pu être mis à jour.",
+                "erreur",
+            )
     projets, _erreur = _charger_projets()
     verrous_actifs = _verrous_actifs_projets(projets)
     echecs_a_forcer = []
@@ -2065,6 +2181,31 @@ def supprimer_worktrees_route(nom_projet):
                 "confirmation_fichiers_ignores_worktree.html",
                 projet=projet, worktrees=worktrees_concernes, formulaire_origine=request.form,
             )
+    else:
+        # Re-soumission depuis confirmation_fichiers_ignores_worktree.html
+        # (bouton « Confirmer la suppression malgré tout ») — le garde-fou
+        # « au moins une case à garder cochée » et le menu obligatoire
+        # d'origine de la décision sont désactivés/imposés dans la page,
+        # mais revérifiés ici CÔTÉ SERVEUR (issue #116) : une requête
+        # construite à la main malgré tout est refusée sans supprimer quoi
+        # que ce soit. Chaque fichier listé sur cette page est ensuite
+        # journalisé « supprimer » (la suppression a lieu juste après),
+        # même si une suppression individuelle échoue plus loin (renvoi
+        # vers la page de suppression forcée, non modifiée par cette
+        # issue) — ce journal enregistre la décision, pas le résultat.
+        refus = _refus_confirmation_fichiers_ignores(request.form)
+        if refus:
+            flash(refus, "erreur")
+            return redirect(url_for("projet_route", nom_projet=nom_projet))
+        if not _journaliser_decisions_fichiers_ignores(
+            projet["nom"], _decisions_depuis_formulaire(request.form),
+            request.form.get("origine_decision"), "confirmer",
+        ):
+            flash(
+                "⚠️ Décision prise en compte, mais le journal des décisions sur les fichiers "
+                "ignorés n'a pas pu être mis à jour.",
+                "erreur",
+            )
     projets, _erreur = _charger_projets()
     verrous_actifs = _verrous_actifs_projets(projets)
     echecs_a_forcer = []
@@ -2207,6 +2348,49 @@ def supprimer_worktree_force_route(nom_projet):
     return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 
+@app.route("/projet/<nom_projet>/fichiers-ignores/annuler", methods=["POST"])
+@login_requis
+def annuler_fichiers_ignores_route(nom_projet):
+    """Bouton « Annuler » de confirmation_fichiers_ignores_worktree.html
+    (issue #116, suite de #113) — contrairement à l'ancien lien simple vers
+    la page du projet, ce bouton impose maintenant le même menu obligatoire
+    que « Confirmer » (origine de la décision), donc une vraie requête
+    POST plutôt qu'une navigation directe.
+
+    Ne supprime JAMAIS rien (aucun worktree, aucune branche, pour aucun des
+    worktrees du lot) : enregistre seulement, fichier par fichier, la
+    décision « garder » (case cochée) ou « supprimer (pas encore fait) »
+    (case décochée) dans le journal (voir
+    `_journaliser_decisions_fichiers_ignores`), puis retourne à la page du
+    projet — le ou les worktrees restent strictement inchangés, cette même
+    page pourra être rouverte plus tard en relançant l'action d'origine.
+    Distinct de « Précédent », du fil d'Ariane ou de tout autre lien de la
+    page (restés de simples liens <a>, voir le template) : ceux-ci
+    n'envoient aucune requête et n'enregistrent donc rien."""
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+
+    origine = request.form.get("origine_decision")
+    if origine not in ORIGINES_DECISION_FICHIERS_IGNORES:
+        flash(
+            "❌ Annulation refusée : choisissez l'origine de la décision (Vu avec Claude Chat / "
+            "Décision personnelle) avant de valider.",
+            "erreur",
+        )
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    decisions = _decisions_depuis_formulaire(request.form)
+    if not _journaliser_decisions_fichiers_ignores(projet["nom"], decisions, origine, "annuler"):
+        flash(
+            "⚠️ Annulation prise en compte (rien n'a été supprimé), mais le journal des décisions "
+            "sur les fichiers ignorés n'a pas pu être mis à jour.",
+            "erreur",
+        )
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+
 @app.route("/projet/<nom_projet>/rejeter", methods=["POST"])
 @login_requis
 def rejeter_worktrees_route(nom_projet):
@@ -2255,6 +2439,31 @@ def rejeter_worktrees_route(nom_projet):
             return render_template(
                 "confirmation_fichiers_ignores_worktree.html",
                 projet=projet, worktrees=worktrees_concernes, formulaire_origine=request.form,
+            )
+    else:
+        # Re-soumission depuis confirmation_fichiers_ignores_worktree.html
+        # (bouton « Confirmer la suppression malgré tout ») — le garde-fou
+        # « au moins une case à garder cochée » et le menu obligatoire
+        # d'origine de la décision sont désactivés/imposés dans la page,
+        # mais revérifiés ici CÔTÉ SERVEUR (issue #116) : une requête
+        # construite à la main malgré tout est refusée sans supprimer quoi
+        # que ce soit. Chaque fichier listé sur cette page est ensuite
+        # journalisé « supprimer » (la suppression a lieu juste après),
+        # même si une suppression individuelle échoue plus loin (renvoi
+        # vers la page de suppression forcée, non modifiée par cette
+        # issue) — ce journal enregistre la décision, pas le résultat.
+        refus = _refus_confirmation_fichiers_ignores(request.form)
+        if refus:
+            flash(refus, "erreur")
+            return redirect(url_for("projet_route", nom_projet=nom_projet))
+        if not _journaliser_decisions_fichiers_ignores(
+            projet["nom"], _decisions_depuis_formulaire(request.form),
+            request.form.get("origine_decision"), "confirmer",
+        ):
+            flash(
+                "⚠️ Décision prise en compte, mais le journal des décisions sur les fichiers "
+                "ignorés n'a pas pu être mis à jour.",
+                "erreur",
             )
     projets, _erreur = _charger_projets()
     verrous_actifs = _verrous_actifs_projets(projets)

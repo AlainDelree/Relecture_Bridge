@@ -786,6 +786,23 @@ pre.brut {
   margin: 0 0 1rem 0;
 }
 
+/* Menu obligatoire optionnel (options.menu, issue #116) — sans valeur
+   présélectionnée, le bouton de validation reste désactivé (voir
+   ouvrirConfirmation) jusqu'à un choix explicite. */
+.modal-confirmation__menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0 0 1rem 0;
+}
+.modal-confirmation__menu-libelle { font-size: 0.82rem; font-weight: 600; color: #3a4550; }
+.modal-confirmation__select {
+  font-size: 0.85rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #d7dde5;
+  border-radius: 5px;
+}
+
 .modal-confirmation__boutons {
   display: flex;
   justify-content: flex-end;
@@ -962,3 +979,28 @@ pre.brut {
    la section ajoutée à la page de suppression refusée existante. */
 .section-fichiers-ignores { margin-top: 0.5rem; }
 .section-fichiers-ignores__titre { font-size: 0.82rem; color: #a35a00; margin: 0 0 0.2rem 0; font-weight: 600; }
+
+/* Décision par fichier et journal (issue #116) — case « à garder » décochée
+   par défaut sur confirmation_fichiers_ignores_worktree.html, uniquement
+   pour décider/tracer : la suppression reste toujours par worktree
+   entier. */
+.case-a-garder-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  color: #3a4550;
+  white-space: nowrap;
+}
+.worktree-actions-garder { display: flex; gap: 0.4rem; margin: 0.3rem 0; }
+.avertissement-case-a-garder {
+  flex-basis: 100%;
+  background: #fff4e5;
+  border-left: 3px solid #d98c00;
+  color: #a35a00;
+  font-weight: 600;
+  padding: 0.5rem 0.7rem;
+  border-radius: 0 4px 4px 0;
+  margin: 0.4rem 0 0 0;
+  font-size: 0.85rem;
+}
