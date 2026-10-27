@@ -823,9 +823,17 @@ pre.brut {
 .zone-actions-confirmation { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.6rem; }
 .zone-actions-confirmation .bouton { font-size: 0.9rem; padding: 0.5rem 1rem; }
 
-/* Panneau repliable « .gitignore » (issue #98), même principe que
-   .details-options-rejet de l'issue #97 mais en section autonome plutôt
-   qu'imbriqué dans le panneau d'actions des branches — fermé par défaut. */
+/* Section « Outils du projet » (issue #117), en bas de la page projet sous
+   la liste des branches — regroupe pour l'instant le seul panneau
+   .gitignore ci-dessous, déplacé ici pour ne plus être confondu avec la
+   liste de fichiers d'un message de refus affiché juste au-dessus des
+   messages flash, en haut de page. */
+.outils-projet { margin-top: 1.5rem; }
+.outils-projet h2 { font-size: 1rem; margin: 0 0 0.5rem 0; color: #3a4550; }
+
+/* Panneau repliable « .gitignore » (issue #98 ; section autonome dans
+   « Outils du projet » depuis l'issue #117), même principe que
+   .details-options-rejet de l'issue #97 — fermé par défaut. */
 .panneau-gitignore {
   background: #fff;
   border: 1px solid #ddd;

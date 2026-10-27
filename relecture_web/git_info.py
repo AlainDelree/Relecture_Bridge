@@ -69,6 +69,12 @@ NOMS_FICHIERS_IGNORES_SANS_VALEUR = (".DS_Store", "Thumbs.db", "desktop.ini")
 LIMITE_SECONDES_TAILLE_FICHIERS_IGNORES = 2.0
 LIMITE_FICHIERS_TAILLE_FICHIERS_IGNORES = 20000
 
+# Garde-fou avant merge/fusion+suppression (issue #74) : nombre maximal de
+# fichiers nommés dans le message de refus avant de basculer sur « … et N
+# autres » (issue #117) — un dépôt avec des dizaines de fichiers modifiés ne
+# doit pas produire un message flash illisible.
+PLAFOND_FICHIERS_MODIFICATIONS_NON_COMMITTEES = 10
+
 # Config par projet, à éditer à la main (voir charger_branches_cibles) —
 # dans relecture_bridge, pas dans configs/ de bridge_agent (hors périmètre).
 CHEMIN_BRANCHES_CIBLES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "branches_cibles.conf")
@@ -2060,6 +2066,65 @@ def get_modifications_non_committees(repertoire):
     if resultat.returncode != 0:
         return []
     return [ligne[3:].strip() for ligne in resultat.stdout.splitlines() if ligne.strip()]
+
+
+def _libelle_statut_fichier_git(code):
+    """Traduit un code à deux caractères de `git status --porcelain=v1`
+    (index puis arbre de travail) en un mot lisible pour un message de
+    refus (issue #117) — l'ordre de vérification reflète la priorité d'un
+    diagnostic sur l'autre quand les deux caractères divergent (ex. « AD »,
+    ajouté dans l'index puis supprimé dans l'arbre de travail : signalé
+    « supprimé », l'état le plus récent)."""
+    if code == "??":
+        return "non suivi"
+    index, arbre = code[0], code[1] if len(code) > 1 else " "
+    if "U" in (index, arbre) or (index, arbre) in (("A", "A"), ("D", "D")):
+        return "conflit"
+    if "D" in (index, arbre):
+        return "supprimé"
+    if "R" in (index, arbre):
+        return "renommé"
+    if "C" in (index, arbre):
+        return "copié"
+    if "A" in (index, arbre):
+        return "ajouté"
+    return "modifié"
+
+
+def get_modifications_non_committees_detaillees(repertoire):
+    """Comme `get_modifications_non_committees`, mais conserve pour chaque
+    fichier son statut lisible (voir `_libelle_statut_fichier_git`) en plus
+    du chemin (issue #117 : nommer les fichiers dans les messages de refus
+    plutôt que seulement en donner le nombre). Retourne une liste de
+    tuples (chemin, statut) ; liste vide si l'arbre est propre ou si la
+    commande échoue, même comportement permissif que
+    `get_modifications_non_committees`."""
+    resultat = _lancer_git(repertoire, "status", "--porcelain=v1")
+    if resultat.returncode != 0:
+        return []
+    details = []
+    for ligne in resultat.stdout.splitlines():
+        if not ligne.strip():
+            continue
+        details.append((ligne[3:].strip(), _libelle_statut_fichier_git(ligne[:2])))
+    return details
+
+
+def decrire_modifications_non_committees(details):
+    """Construit le segment nommant les fichiers d'un message de refus à
+    partir de `get_modifications_non_committees_detaillees` (issue #117) —
+    `chemin (statut)` séparés par des virgules, plafonné à
+    PLAFOND_FICHIERS_MODIFICATIONS_NON_COMMITTEES entrées puis « … et N
+    autres » plutôt qu'une liste illimitée. Retourne une chaîne vide si
+    `details` est vide."""
+    if not details:
+        return ""
+    affiches = details[:PLAFOND_FICHIERS_MODIFICATIONS_NON_COMMITTEES]
+    segment = ", ".join(f"{chemin} ({statut})" for chemin, statut in affiches)
+    restant = len(details) - len(affiches)
+    if restant:
+        segment += f", … et {restant} autre(s)"
+    return segment
 
 
 def fusionner_worktree(repertoire, branche_cible, branche_source, nom_projet=None):

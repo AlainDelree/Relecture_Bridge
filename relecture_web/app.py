@@ -37,6 +37,7 @@ from git_info import (
     commit_est_securise,
     commit_existe,
     committer_gitignore,
+    decrire_modifications_non_committees,
     diagnostiquer_commits_orphelins,
     diagnostiquer_echec_suppression_worktree,
     ecrire_lignes_gitignore,
@@ -58,7 +59,7 @@ from git_info import (
     get_hashes_commits_non_fusionnes,
     get_issue_deja_referencee,
     get_merge_en_cours,
-    get_modifications_non_committees,
+    get_modifications_non_committees_detaillees,
     get_nombre_commits_non_fusionnes,
     get_rapport_cherry_brut,
     get_remote_defaut,
@@ -1816,11 +1817,12 @@ def merger_branches_route(nom_projet):
     # disponible (voir issue #73, où l'intégration automatique du CHANGELOG
     # avait committé ce travail en cours par-dessus) — refus explicite plutôt
     # que de fusionner par-dessus un travail potentiellement en cours.
-    modifications = get_modifications_non_committees(projet["repertoire"])
+    modifications = get_modifications_non_committees_detaillees(projet["repertoire"])
     if modifications:
         flash(
-            f"❌ Modifications non committées dans « {projet['repertoire']} » — une tâche CCL y "
-            f"travaille peut-être ; merge refusé ({len(modifications)} fichier(s) concerné(s)).",
+            f"❌ Modifications non committées dans le dossier principal du projet « {projet['repertoire']} » "
+            f"(ces fichiers peuvent être non suivis par git) : {decrire_modifications_non_committees(modifications)} "
+            f"— une tâche CCL y travaille peut-être ; merge refusé ({len(modifications)} fichier(s) concerné(s)).",
             "erreur",
         )
         return redirect(url_for("projet_route", nom_projet=nom_projet))
@@ -1948,11 +1950,12 @@ def merger_et_supprimer_route(nom_projet):
 
     # Même garde-fou qu'avant tout merge (issue #74) : voir
     # merger_branches_route pour le détail du raisonnement.
-    modifications = get_modifications_non_committees(projet["repertoire"])
+    modifications = get_modifications_non_committees_detaillees(projet["repertoire"])
     if modifications:
         flash(
-            f"❌ Modifications non committées dans « {projet['repertoire']} » — une tâche CCL y "
-            f"travaille peut-être ; fusion+suppression refusée ({len(modifications)} fichier(s) concerné(s)).",
+            f"❌ Modifications non committées dans le dossier principal du projet « {projet['repertoire']} » "
+            f"(ces fichiers peuvent être non suivis par git) : {decrire_modifications_non_committees(modifications)} "
+            f"— une tâche CCL y travaille peut-être ; fusion+suppression refusée ({len(modifications)} fichier(s) concerné(s)).",
             "erreur",
         )
         return redirect(url_for("projet_route", nom_projet=nom_projet))
