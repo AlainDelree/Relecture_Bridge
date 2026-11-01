@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block body %}
+<a href="{{ url_for('projet_route', nom_projet=projet.nom) }}" class="bouton-precedent">◀ Précédent</a>
+
+<header>
+  <p class="fil-ariane">
+    <a href="{{ url_for('index') }}">Projets</a> /
+    <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}">{{ projet.nom }}</a> /
+    fusion refusée — verrou actif
+  </p>
+  <h1>Fusion refusée — {{ verrous|length }} verrou(x) Bridge_Agent actif(s)</h1>
+  <p class="sous-titre">
+    Au moins une issue Bridge_Agent travaille actuellement dans le dossier où
+    cette fusion va s'exécuter (issue #118) : la poursuivre maintenant peut
+    perturber ou annuler son travail — une fusion, surtout avec conflits, ou
+    un <code>git pull</code> survenant pendant qu'elle tourne serait vu comme
+    une écriture extérieure et pourrait être restauré. Rien n'a encore été
+    fusionné.
+  </p>
+</header>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+  <ul class="messages">
+    {% for categorie, message in messages %}
+    <li class="message message--{{ categorie }}">{{ message }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+{% endwith %}
+
+<ul class="liste-echecs-suppression">
+  {% for v in verrous %}
+  <li class="ligne-echec-suppression">
+    <div class="echec-suppression__entete">
+      <span class="nom-branche">{{ v.projet or '(projet inconnu)' }}</span>
+      <span class="badge {{ 'badge--attention' if v.mode == 'écriture' else 'badge--info' }}">
+        {{ v.mode or 'mode inconnu' }}
+      </span>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+
+<div class="zone-actions-confirmation">
+  <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}" class="bouton bouton--annuler lien-bouton" autofocus>Annuler</a>
+  <form method="post" action="{{ url_for(request.endpoint, nom_projet=projet.nom) }}" class="form-forcer-fusion-malgre-verrou">
+    {% for cle, valeur in formulaire_origine.items(multi=True) %}
+    <input type="hidden" name="{{ cle }}" value="{{ valeur }}">
+    {% endfor %}
+    <input type="hidden" name="forcer_malgre_verrou" value="on">
+    <button type="submit" class="bouton bouton--danger bouton-forcer-fusion-malgre-verrou">Fusionner quand même</button>
+  </form>
+</div>
+
+<script>
+(function () {
+  var NOM_PROJET = {{ projet.nom|tojson }};
+  var COULEUR_PROJET = {{ projet.couleur|tojson }};
+  var COULEUR_TEXTE_PROJET = {{ projet.couleur_texte|tojson }};
+
+  // Même mécanique de confirmation forte que les autres actions difficiles
+  // à défaire (voir base.html, echec_suppression_worktree.html) — jamais de
+  // case à cocher qui survivrait à un rechargement (leçon de la case
+  // « Purger », issue #102) : le champ caché `forcer_malgre_verrou` n'existe
+  // que dans ce formulaire, réémis pour cette seule requête.
+  var formulaire = document.querySelector(".form-forcer-fusion-malgre-verrou");
+  if (formulaire) {
+    var envoiConfirme = false;
+    formulaire.addEventListener("submit", function (evenement) {
+      if (envoiConfirme) {
+        envoiConfirme = false;
+        return;
+      }
+      evenement.preventDefault();
+
+      ouvrirConfirmation({
+        variant: "forte",
+        message: "Fusionner quand même — " + NOM_PROJET,
+        avertissement: "🔴 Une issue Bridge_Agent travaille dans ce dossier : la fusion peut "
+          + "perturber ou annuler son travail.",
+        libelleBouton: "Fusionner quand même",
+        nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
+        onConfirmer: function () {
+          envoiConfirme = true;
+          formulaire.requestSubmit();
+        },
+      });
+    });
+  }
+})();
+</script>
+{% endblock %}

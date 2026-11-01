@@ -716,15 +716,23 @@ def _pid_vivant(pid):
 
 
 def lire_verrous_actifs(repertoire_bridge_agent):
-    """Chemins `rep=` des verrous actifs de Bridge_Agent — un fichier par
-    tâche `mode_write` en cours dans `logs/verrous/*.lock`, avec des paires
-    `pid=<pid>`, `rep=<chemin_worktree>` et `mode=<mode>` (ajouté par #609
+    """Verrous actifs de Bridge_Agent — un fichier par tâche en cours dans
+    `logs/verrous/*.lock`, avec des paires `pid=<pid>`, `rep=<chemin_worktree>`,
+    `projet=<nom_projet>` et `mode=<mode>` (`projet`/`mode` ajoutés par #609
     côté bridge_agent) séparées par des espaces — sur une seule ligne en
     pratique côté Bridge_Agent, mais réparties sur plusieurs lignes
-    également acceptées (issue #89) — utilisés pour signaler dans la page
-    projet (issue #88) qu'une tâche CCL travaille peut-être encore dans un
-    worktree donné avant de proposer sa suppression (voir
-    `worktree_ccl_actif`).
+    également acceptées (issue #89). Retourne une liste de dicts `{rep, pid,
+    projet, mode}` (`projet`/`mode` valent None si absents du fichier —
+    verrou posé par une version de Bridge_Agent antérieure à #609) :
+    - badge « ⚠ CCL travaille ici » de la page projet (issue #88, voir
+      `worktree_ccl_actif`), qui n'a besoin que de `rep` ;
+    - garde-fou de pré-fusion (issue #118, voir `verrous_sur_dossier`), qui a
+      aussi besoin de `projet`/`mode` pour nommer l'issue concernée dans
+      l'avertissement.
+
+    Le verrou est posé pour TOUTE tâche en cours, quel que soit son mode
+    (lecture ou écriture) — `mode` ne filtre rien ici, à charge de
+    l'appelant de s'en servir ou non.
 
     Un verrou n'est retenu que si son `pid` correspond à un processus
     toujours vivant (voir `_pid_vivant`) — un fichier `.lock` laissé derrière
@@ -744,7 +752,7 @@ def lire_verrous_actifs(repertoire_bridge_agent):
     except OSError:
         return []
 
-    reps_actifs = []
+    verrous_actifs = []
     for nom in noms_fichiers:
         try:
             with open(os.path.join(dossier_verrous, nom), encoding="utf-8", errors="replace") as fichier:
@@ -768,12 +776,15 @@ def lire_verrous_actifs(repertoire_bridge_agent):
         except ValueError:
             continue
         if _pid_vivant(pid):
-            reps_actifs.append(rep)
-    return reps_actifs
+            verrous_actifs.append({
+                "rep": rep, "pid": pid,
+                "projet": champs.get("projet"), "mode": champs.get("mode"),
+            })
+    return verrous_actifs
 
 
-def worktree_ccl_actif(chemin_worktree, reps_actifs):
-    """True si `chemin_worktree` correspond au `rep=` d'un verrou Bridge_Agent
+def worktree_ccl_actif(chemin_worktree, verrous_actifs):
+    """True si `chemin_worktree` correspond au `rep` d'un verrou Bridge_Agent
     actif (voir `lire_verrous_actifs`) — badge « ⚠ CCL travaille ici » de la
     page projet (issue #88). Comparaison par chemin réel (`os.path.realpath`)
     des deux côtés, pour ne pas manquer une correspondance à cause d'un lien
@@ -781,7 +792,32 @@ def worktree_ccl_actif(chemin_worktree, reps_actifs):
     if not chemin_worktree:
         return False
     chemin_reel = os.path.realpath(chemin_worktree)
-    return any(os.path.realpath(rep) == chemin_reel for rep in reps_actifs)
+    return any(os.path.realpath(v["rep"]) == chemin_reel for v in verrous_actifs)
+
+
+def verrous_sur_dossier(chemin_dossier, verrous_actifs):
+    """Verrous Bridge_Agent actifs (voir `lire_verrous_actifs`) dont le `rep`
+    correspond à `chemin_dossier` — même comparaison par chemin réel que
+    `worktree_ccl_actif`, mais retourne ici la liste des verrous concernés
+    (avec leur `projet`/`mode`) plutôt qu'un simple booléen, pour que
+    l'appelant puisse les nommer dans un message d'avertissement.
+
+    Utilisé par le garde-fou de pré-fusion (issue #118) : avant une fusion,
+    avertir si une issue Bridge_Agent — en lecture OU en écriture, les deux
+    modes risquent d'être perturbés par un merge ou un `git pull` survenant
+    pendant qu'elle tourne — travaille dans le dossier où le merge va
+    réellement s'exécuter. Contrairement à `worktree_ccl_actif`, qui sert au
+    badge par worktree de CHAQUE branche affichée, cette fonction est
+    destinée à n'être appelée qu'une fois, sur le seul dossier cible du
+    merge (le worktree dédié de la branche cible s'il en a un, sinon le
+    dossier principal du projet) — jamais sur les worktrees des autres
+    branches du même projet.
+
+    Dégrade à liste vide si `chemin_dossier` est vide/None."""
+    if not chemin_dossier:
+        return []
+    chemin_reel = os.path.realpath(chemin_dossier)
+    return [v for v in verrous_actifs if os.path.realpath(v["rep"]) == chemin_reel]
 
 
 def get_branche_courante(repertoire):

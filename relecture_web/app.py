@@ -87,6 +87,7 @@ from git_info import (
     verifier_finalisation_merge_apres_timeout,
     verifier_merge_apres_timeout,
     verifier_push_apres_timeout,
+    verrous_sur_dossier,
     worktree_ccl_actif,
 )
 from resumes_info import (
@@ -241,6 +242,30 @@ def _verrous_actifs_projets(projets):
         (p["repertoire"] for p in projets if p["nom"] == "bridge_agent"), None
     )
     return lire_verrous_actifs(repertoire_bridge_agent)
+
+
+def _dossier_execution_fusion(projet, branche_cible, branches):
+    """Dossier où une fusion vers `branche_cible` va réellement s'exécuter
+    (issue #118) : le worktree dédié de cette branche s'il en existe un
+    (`branches`, voir `_branches_par_nom`), sinon le dossier principal du
+    projet — `fusionner_worktree` bascule toujours dans ce second cas via un
+    `checkout` temporaire dans le dossier principal, plutôt que d'opérer
+    dans un worktree séparé."""
+    branche = branches.get(branche_cible)
+    if branche and branche["chemin_worktree"]:
+        return branche["chemin_worktree"]
+    return projet["repertoire"]
+
+
+def _verrous_bloquant_fusion(projet, branche_cible, branches, verrous_actifs):
+    """Verrous Bridge_Agent actifs sur le dossier où va réellement
+    s'exécuter une fusion vers `branche_cible` (issue #118, voir
+    `verrous_sur_dossier` et `_dossier_execution_fusion`) — jamais sur les
+    worktrees des AUTRES branches du même projet : une issue qui y travaille
+    ne gêne en rien ce merge précis, puisque son `rep` est un dossier
+    distinct de celui où le merge s'exécute."""
+    dossier_cible = _dossier_execution_fusion(projet, branche_cible, branches)
+    return verrous_sur_dossier(dossier_cible, verrous_actifs)
 
 
 def _worktrees_avec_fichiers_ignores(noms_branches, branches):
@@ -1843,6 +1868,25 @@ def merger_branches_route(nom_projet):
         branche_cible = cible_configuree
 
     branches = _branches_par_nom(projet)
+
+    # Garde-fou de pré-fusion (issue #118) : avertir, puis bloquer tant que
+    # non explicitement contourné pour CETTE requête (jamais mémorisé d'une
+    # requête à l'autre, même principe que la case « Purger », issue #102),
+    # si une issue Bridge_Agent travaille dans le dossier où ce merge va
+    # réellement s'exécuter — voir `_verrous_bloquant_fusion`. Revérifié ici
+    # à chaque requête à partir de l'état actuel des verrous, jamais d'un
+    # état pré-calculé à l'affichage de la page projet.
+    if request.form.get("forcer_malgre_verrou") != "on":
+        projets_verrous, _erreur = _charger_projets()
+        verrous_bloquants = _verrous_bloquant_fusion(
+            projet, branche_cible, branches, _verrous_actifs_projets(projets_verrous)
+        )
+        if verrous_bloquants:
+            return render_template(
+                "confirmation_verrou_fusion.html",
+                projet=projet, verrous=verrous_bloquants, formulaire_origine=request.form,
+            )
+
     for nom in noms_branches:
         if nom not in branches:
             flash(f"❌ Branche « {nom} » introuvable.", "erreur")
@@ -1976,6 +2020,23 @@ def merger_et_supprimer_route(nom_projet):
         branche_cible = cible_configuree
 
     branches = _branches_par_nom(projet)
+
+    # Garde-fou de pré-fusion (issue #118) : même raisonnement et même
+    # contournement non persistant que `merger_branches_route` — voir
+    # `_verrous_bloquant_fusion`. Placé avant l'avertissement « fichiers
+    # ignorés » ci-dessous : inutile de montrer ce qui serait perdu à la
+    # suppression si la fusion elle-même ne peut pas même être lancée.
+    if request.form.get("forcer_malgre_verrou") != "on":
+        projets_verrous, _erreur = _charger_projets()
+        verrous_bloquants = _verrous_bloquant_fusion(
+            projet, branche_cible, branches, _verrous_actifs_projets(projets_verrous)
+        )
+        if verrous_bloquants:
+            return render_template(
+                "confirmation_verrou_fusion.html",
+                projet=projet, verrous=verrous_bloquants, formulaire_origine=request.form,
+            )
+
     if request.form.get("ignorer_avertissement_fichiers_ignores") != "on":
         worktrees_concernes = _worktrees_avec_fichiers_ignores(noms_branches, branches)
         if worktrees_concernes:
