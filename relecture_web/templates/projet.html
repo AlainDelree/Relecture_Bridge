@@ -57,6 +57,7 @@
         commandes: JSON.parse(bouton.dataset.commandes || "[]"),
         libelleBouton: "Fusionner le changelog",
         nomProjet: {{ projet.nom|tojson }}, couleurProjet: {{ projet.couleur|tojson }}, couleurTexteProjet: {{ projet.couleur_texte|tojson }},
+        boutonDeclencheur: bouton,
         onConfirmer: function () {
           envoiForceChangelogDistant = true;
           formeChangelogDistant.requestSubmit();
@@ -564,6 +565,7 @@
         commandes: lignes,
         libelleBouton: libelleMerger,
         nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
+        boutonDeclencheur: submitter,
         onConfirmer: function () {
           envoiForce = true;
           afficherOverlaiAction("Fusion");
@@ -589,6 +591,7 @@
         commandes: lignes,
         libelleBouton: libelleMergerSupprimer,
         nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
+        boutonDeclencheur: submitter,
         onConfirmer: function () {
           envoiForce = true;
           afficherOverlaiAction("Fusion et suppression");
@@ -639,6 +642,7 @@
         commandes: lignesRejet,
         libelleBouton: libelleRejeter,
         nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
+        boutonDeclencheur: submitter,
         onConfirmer: function () {
           envoiForce = true;
           form.requestSubmit(submitter);
@@ -665,6 +669,7 @@
       commandes: lignes,
       libelleBouton: libelleBouton,
       nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
+      boutonDeclencheur: submitter,
       onConfirmer: function () {
         envoiForce = true;
         if (submitter === boutonPush) {
@@ -820,6 +825,7 @@
         commandes: [bouton.dataset.commande],
         libelleBouton: "Retirer " + motif,
         nomProjet: NOM_PROJET_GITIGNORE, couleurProjet: COULEUR_PROJET_GITIGNORE, couleurTexteProjet: COULEUR_TEXTE_PROJET_GITIGNORE,
+        boutonDeclencheur: bouton,
         onConfirmer: function () {
           envoiForceGitignore = form;
           form.requestSubmit();
@@ -847,6 +853,7 @@
         commandes: [bouton.dataset.commande],
         libelleBouton: "Ne plus suivre " + chemin,
         nomProjet: NOM_PROJET_GITIGNORE, couleurProjet: COULEUR_PROJET_GITIGNORE, couleurTexteProjet: COULEUR_TEXTE_PROJET_GITIGNORE,
+        boutonDeclencheur: bouton,
         onConfirmer: function () {
           envoiForceGitignore = form;
           form.requestSubmit();

@@ -74,6 +74,8 @@
       }
       evenement.preventDefault();
 
+      var boutonSubmit = evenement.submitter || formulaire.querySelector(".bouton-forcer-fusion-malgre-verrou");
+
       ouvrirConfirmation({
         variant: "forte",
         message: "Fusionner quand même — " + NOM_PROJET,
@@ -81,6 +83,7 @@
           + "perturber ou annuler son travail.",
         libelleBouton: "Fusionner quand même",
         nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
+        boutonDeclencheur: boutonSubmit,
         onConfirmer: function () {
           envoiConfirme = true;
           formulaire.requestSubmit();

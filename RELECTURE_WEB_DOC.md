@@ -489,6 +489,30 @@ bandeau à la couleur du projet en tête de fenêtre quand elle est
 configurée (section 2, issue #73) ; et dans tous les cas le focus par
 défaut sur Annuler, pour qu'un Entrée réflexe ne valide rien.
 
+**Grisage pendant l'envoi réel (issue #120) :** dès le clic de validation
+dans la fenêtre — jamais à son ouverture — `ouvrirConfirmation` grise son
+propre bouton de validation (non cliquable, libellé remplacé par « <action>
+en cours... »), bloque aussi son bouton Annuler, et bloque en plus, si
+`options.boutonDeclencheur` est fourni, le bouton « Confirmer » de la page
+derrière qui a ouvert cette fenêtre — pour qu'aucun second envoi ne parte
+pendant que le premier tourne (un clic resté sans retour visible pendant
+une suppression ou une fusion encourageait sinon à recliquer). La fenêtre
+reste affichée tant que la vraie navigation déclenchée par le formulaire
+n'a pas eu lieu, elle ne se ferme jamais ici — donc là où un indicateur
+« ... en cours... Ns » existe déjà (Push, Merger, issue #49 ci-dessous), il
+reste affiché tel quel, par-dessus la fenêtre grisée (`.overlay-action`
+passé à un z-index supérieur à `.modal-confirmation` pour cette raison) :
+ce grisage s'y ajoute, il ne le remplace pas. Un `pageshow` global
+réinitialise ces trois boutons (validation et Annuler de la fenêtre,
+déclencheur de la page) si une restauration par le bouton « précédent » du
+navigateur (bfcache) les avait figés désactivés juste avant la navigation ;
+un rechargement de page (nouvel appel à `ouvrirConfirmation`) les
+réinitialise de la même façon. Branché pour toutes les actions qui
+utilisent cette fenêtre, y compris les trois pages de confirmation forte
+dédiées plus bas (fichiers ignorés avant suppression de worktree, forçage
+de suppression, avertissement de verrou avant fusion) — chacune relie son
+propre bouton de page à `options.boutonDeclencheur`.
+
 Dans tous les cas (y compris l'absence de toute confirmation), jamais
 d'exécution silencieuse : la commande git équivalente qui sera exécutée
 est toujours affichée avant soumission (dans la fenêtre de confirmation

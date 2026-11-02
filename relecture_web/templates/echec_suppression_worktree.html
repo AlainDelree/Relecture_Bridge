@@ -140,6 +140,7 @@
       var libelleBouton = "Supprimer " + nomBranche + " et " + (
         nbFichiers === 1 ? "son 1 fichier concerné" : "ses " + nbFichiers + " fichiers concernés"
       );
+      var boutonSubmit = evenement.submitter || formulaire.querySelector(".bouton-forcer-suppression");
 
       ouvrirConfirmation({
         variant: "forte",
@@ -149,6 +150,7 @@
         commandes: [formulaire.dataset.commandeForce],
         libelleBouton: libelleBouton,
         nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
+        boutonDeclencheur: boutonSubmit,
         onConfirmer: function () {
           envoiForce = true;
           formulaire.requestSubmit();

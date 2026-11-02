@@ -687,7 +687,12 @@ pre.brut {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  /* Au-dessus de .modal-confirmation (issue #120) : depuis cette issue, la
+     fenêtre de confirmation reste affichée (grisée) pendant l'envoi réel au
+     lieu de se refermer tout de suite — pour Push/Merger, cet indicateur
+     "... en cours... Ns" (issue #49) doit rester visible par-dessus elle,
+     inchangé, plutôt que d'apparaître derrière son fond semi-transparent. */
+  z-index: 1150;
 }
 
 .overlay-action__contenu {

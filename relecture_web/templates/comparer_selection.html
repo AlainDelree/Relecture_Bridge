@@ -65,6 +65,7 @@
   var COULEUR_TEXTE_PROJET = {{ projet.couleur_texte|tojson }};
 
   var formulaire = document.getElementById("form-supprimer-selection-recuperation");
+  var boutonSubmit = formulaire.querySelector("button");
   var noms = [{% for r in a_supprimer %}"{{ r.nom_branche }}"{{ ", " if not loop.last }}{% endfor %}];
   var envoiForce = false;
 
@@ -85,6 +86,7 @@
       commandes: noms,
       libelleBouton: libelleBouton,
       nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
+      boutonDeclencheur: boutonSubmit,
       onConfirmer: function () {
         envoiForce = true;
         formulaire.requestSubmit();

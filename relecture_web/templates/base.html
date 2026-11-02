@@ -72,6 +72,17 @@
 // vide si pas de case cochée ou pas de `cases` du tout, jamais undefined,
 // pour que les appelants existants (qui ignorent cet argument) continuent
 // de fonctionner à l'identique.
+//
+// Bouton déclencheur (options.boutonDeclencheur, issue #120) : référence
+// optionnelle vers le bouton « Confirmer » de la page derrière la fenêtre
+// (celui qui a ouvert cette confirmation), bloqué lui aussi dès l'envoi
+// réel — voir le grisage du bouton de validation de la fenêtre elle-même
+// dans surConfirmer plus bas. Mémorisé dans boutonDeclencheurEnCours pour
+// que le pageshow global, tout en bas de ce script, puisse le réactiver
+// si une restauration par le bouton « précédent » du navigateur (bfcache)
+// l'avait figé désactivé.
+var boutonDeclencheurEnCours = null;
+
 function ouvrirConfirmation(options) {
   var modal = document.getElementById("modal-confirmation");
   var bandeau = document.getElementById("modal-confirmation-bandeau");
@@ -109,6 +120,7 @@ function ouvrirConfirmation(options) {
   boutonConfirmer.className = "bouton " + (estForte ? "bouton--danger" : "bouton--confirmer-legere");
 
   boutonConfirmer.disabled = false;
+  boutonAnnuler.disabled = false;
 
   if (options.cases) {
     casesLibelle.textContent = options.cases.libelle || "";
@@ -142,7 +154,31 @@ function ouvrirConfirmation(options) {
           function (c) { return c.checked; }
         ).map(function (c) { return c.value; })
       : [];
-    fermer();
+
+    // Dès l'envoi réel (issue #120, au clic de validation ICI — jamais à
+    // l'ouverture) : grise le bouton de validation de la fenêtre avec un
+    // libellé qui dit ce qui se passe, bloque aussi Annuler et le bouton
+    // déclencheur de la page derrière (options.boutonDeclencheur, le
+    // bouton qui a ouvert cette fenêtre) pour qu'aucun second envoi ne
+    // parte pendant que le premier tourne. La fenêtre reste affichée tant
+    // que la vraie navigation du formulaire n'a pas eu lieu — jamais
+    // fermée ici — donc là où un indicateur « ... en cours... Ns » existe
+    // déjà (Push, Merger, issue #49), il reste affiché tel quel, ce
+    // grisage s'y ajoute sans le remplacer. Restauration garantie par le
+    // pageshow global plus bas (bfcache) et par tout rechargement de page
+    // (nouvel appel à ouvrirConfirmation, qui réinitialise ces mêmes
+    // boutons à l'ouverture).
+    boutonConfirmer.disabled = true;
+    boutonConfirmer.textContent = options.libelleBouton + " en cours…";
+    boutonAnnuler.disabled = true;
+    if (options.boutonDeclencheur) {
+      options.boutonDeclencheur.disabled = true;
+      boutonDeclencheurEnCours = options.boutonDeclencheur;
+    }
+    boutonConfirmer.removeEventListener("click", surConfirmer);
+    boutonAnnuler.removeEventListener("click", surAnnuler);
+    document.removeEventListener("keydown", surTouche);
+
     options.onConfirmer(valeursCasesCochees);
   }
   function surAnnuler() {
@@ -159,6 +195,25 @@ function ouvrirConfirmation(options) {
   modal.hidden = false;
   boutonAnnuler.focus();
 }
+
+// Garde-fou (issue #120) : si la fenêtre a été laissée grisée « ... en
+// cours » juste avant la navigation déclenchée par la validation (voir
+// surConfirmer ci-dessus), une restauration de cette page par le bouton
+// « précédent » du navigateur (bfcache) peut figer ce même état au retour
+// — jamais réaffiché tel quel, pour qu'aucune action ne reste impossible
+// à relancer à cause d'un bouton resté désactivé.
+window.addEventListener("pageshow", function () {
+  var modalConfirmation = document.getElementById("modal-confirmation");
+  var boutonConfirmerModal = document.getElementById("modal-confirmation-confirmer");
+  var boutonAnnulerModal = document.getElementById("modal-confirmation-annuler");
+  if (modalConfirmation) modalConfirmation.hidden = true;
+  if (boutonConfirmerModal) boutonConfirmerModal.disabled = false;
+  if (boutonAnnulerModal) boutonAnnulerModal.disabled = false;
+  if (boutonDeclencheurEnCours) {
+    boutonDeclencheurEnCours.disabled = false;
+    boutonDeclencheurEnCours = null;
+  }
+});
 
 (function () {
   function copierAncienneMethode(texte) {
