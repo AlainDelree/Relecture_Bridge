@@ -212,6 +212,14 @@ class DepotDistantSimuleTestCase(unittest.TestCase):
         git_info.CHEMIN_CONFIG_CCW = self.chemin_config
         self.addCleanup(self._restaurer_config)
 
+        self._journal_fusion_original = git_info.CHEMIN_JOURNAL_FUSION_CHANGELOG
+        self.chemin_journal_fusion = os.path.join(self.scratch, "changelog_fusion.log")
+        git_info.CHEMIN_JOURNAL_FUSION_CHANGELOG = self.chemin_journal_fusion
+        self.addCleanup(self._restaurer_journal_fusion)
+
+    def _restaurer_journal_fusion(self):
+        git_info.CHEMIN_JOURNAL_FUSION_CHANGELOG = self._journal_fusion_original
+
     def _restaurer_env(self):
         os.environ["PATH"] = self._path_original
         for cle in (

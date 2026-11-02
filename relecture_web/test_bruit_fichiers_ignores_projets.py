@@ -25,7 +25,10 @@ test_decisions_fichiers_ignores_worktree.py pour ce qui reste inchangé) :
   SSH ajouté ;
 - les deux entrées initiales pour relecture_bridge lui-même
   (`relecture_web/secret_key.conf`, `relecture_web/changelog_fusion.log`)
-  sont déjà présentes dans le vrai fichier de ce dépôt.
+  masquent bien les deux fichiers correspondants, pour ce projet
+  seulement — sans dépendre du vrai fichier de ce dépôt, absent d'un
+  nouveau worktree puisque non versionné (issue #121, constaté pendant
+  #120).
 
 Pas de framework de test externe dans ce dépôt (voir #107) : fichier
 `unittest` autonome (stdlib uniquement), lançable par
@@ -36,9 +39,8 @@ depuis la racine du dépôt, ou directement
 Aucun accès réseau réel, aucune vraie commande ssh, et jamais le vrai
 fichier de bruit d'Alain : `git_info.CHEMIN_LISTE_BRUIT_PROJETS` est
 redirigée vers un fichier d'un dossier temporaire dans `setUp`/`tearDown`
-de chaque cas (sauf la classe dédiée qui vérifie justement le vrai
-fichier), même pattern que les autres constantes de chemin de ce module
-dans les tests précédents."""
+de chaque cas, même pattern que les autres constantes de chemin de ce
+module dans les tests précédents."""
 
 import json
 import os
@@ -520,18 +522,55 @@ class ProjetDistantBruitTestCase(CheminTemporaireMixin, unittest.TestCase):
         self.assertEqual(git_info.lire_bruit_projets(), {})
 
 
-class EntreesInitialesRelectureBridgeTestCase(unittest.TestCase):
+class EntreesInitialesRelectureBridgeTestCase(CheminTemporaireMixin, unittest.TestCase):
     """Les deux entrées initiales demandées par l'issue #119 pour
-    relecture_bridge lui-même sont déjà présentes dans le vrai fichier de
-    ce dépôt (`relecture_web/bruit_projets.log`, jamais redirigé ici) —
-    `secret_key.conf` et `changelog_fusion.log` reviennent à chaque
-    suppression d'un worktree de relecture_bridge et n'ont aucune valeur
-    dans un worktree."""
+    relecture_bridge lui-même (`relecture_web/secret_key.conf`,
+    `relecture_web/changelog_fusion.log`) reviennent à chaque suppression
+    d'un worktree de relecture_bridge et n'ont aucune valeur dans un
+    worktree — mais ce test ne lit JAMAIS le vrai fichier de bruit d'Alain
+    (`relecture_web/bruit_projets.log`, local, ignoré par git) : un nouveau
+    worktree de ce dépôt ne le contient pas, ce qui faisait échouer ce
+    test dans chaque worktree, sans lien avec le travail en cours (issue
+    #121, constaté pendant #120). Le fichier est fabriqué ici dans un
+    dossier temporaire, avec les deux mêmes entrées, via le même mécanisme
+    de redirection (`CheminTemporaireMixin`) que les autres tests de ce
+    module."""
 
-    def test_deux_entrees_initiales_presentes(self):
-        entrees = git_info.lire_bruit_projets().get("relecture_bridge", set())
-        self.assertIn("relecture_web/secret_key.conf", entrees)
-        self.assertIn("relecture_web/changelog_fusion.log", entrees)
+    def setUp(self):
+        self.scratch = tempfile.mkdtemp(prefix="relecture_bridge_test_bruit_entrees_initiales_")
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+        self._preparer_chemins_temporaires(self.scratch)
+
+        git_info.ajouter_bruit_projet("relecture_bridge", "relecture_web/secret_key.conf")
+        git_info.ajouter_bruit_projet("relecture_bridge", "relecture_web/changelog_fusion.log")
+
+        self.repertoire = os.path.join(self.scratch, "depot")
+        _init_depot_git_local(self.repertoire)
+        # Un fichier suivi dans relecture_web/ (ex. app.py dans le vrai
+        # dépôt) empêche git de réduire le dossier entier à son seul nom
+        # dans `git status --ignored` : sans lui, les deux fichiers ignorés
+        # ci-dessous seraient rapportés comme "relecture_web/" plutôt que
+        # chacun par son propre chemin.
+        _creer_fichier(self.repertoire, "relecture_web/app.py", contenu="suivi\n")
+        subprocess.run(["git", "add", "relecture_web/app.py"], cwd=self.repertoire, check=True)
+        subprocess.run(["git", "commit", "--quiet", "-m", "ajoute relecture_web/"], cwd=self.repertoire, check=True)
+        _ajouter_et_committer_gitignore(
+            self.repertoire,
+            ["relecture_web/secret_key.conf", "relecture_web/changelog_fusion.log"],
+        )
+        _creer_fichier(self.repertoire, "relecture_web/secret_key.conf")
+        _creer_fichier(self.repertoire, "relecture_web/changelog_fusion.log")
+
+    def test_deux_entrees_initiales_masquees_pour_relecture_bridge(self):
+        fichiers = git_info.lister_fichiers_ignores_worktree(self.repertoire, "relecture_bridge")
+        self.assertEqual(fichiers, [])
+
+    def test_deux_entrees_initiales_toujours_signalees_pour_un_autre_projet(self):
+        fichiers = git_info.lister_fichiers_ignores_worktree(self.repertoire, "autre_projet")
+        self.assertEqual(
+            sorted(f["chemin"] for f in fichiers),
+            ["relecture_web/changelog_fusion.log", "relecture_web/secret_key.conf"],
+        )
 
     def test_fichier_ignore_par_git(self):
         depot = tempfile.mkdtemp(prefix="relecture_bridge_test_gitignore_bruit_")
