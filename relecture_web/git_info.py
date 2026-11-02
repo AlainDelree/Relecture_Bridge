@@ -2275,20 +2275,34 @@ def supprimer_worktree(repertoire, chemin_worktree):
     }
 
 
-def _entree_ignoree_est_bruit(chemin_relatif):
+def _entree_ignoree_est_bruit(chemin_relatif, bruit_projet=()):
     """True si `chemin_relatif` (une entrée `!!` de `git status --ignored`,
     donc un fichier ou un dossier ignoré, potentiellement déjà réduit par
     git lui-même au premier niveau de sa propre arborescence ignorée) est
     du bruit sans valeur à exclure de l'avertissement avant suppression
     d'un worktree (issue #112) — voir DOSSIERS_IGNORES_SANS_VALEUR et les
-    constantes voisines, seul endroit à éditer pour en exclure davantage."""
+    constantes voisines (valables pour tous les projets), seul endroit à
+    éditer pour en exclure davantage globalement.
+
+    `bruit_projet` (issue #119) est l'ensemble des chemins exacts classés
+    comme bruit pour UN SEUL projet (voir `lire_bruit_projets` et
+    `lister_fichiers_ignores_worktree`) — comparé tel quel (même chaîne
+    EXACTE, trailing slash éventuel compris, jamais `rstrip`), jamais par
+    nom seul : un fichier de clé ou de journal portant le même nom dans un
+    autre projet peut mériter d'être signalé. La comparaison reste fiable
+    d'un worktree à l'autre du même projet : pour une structure de dépôt
+    inchangée, `git status --ignored` réduit un même dossier entièrement
+    ignoré à la même chaîne, systématiquement (voir `ajouter_bruit_projet`,
+    qui stocke ce chemin sans y toucher non plus)."""
     segments = chemin_relatif.rstrip("/").split("/")
     nom = segments[-1]
     if any(segment in DOSSIERS_IGNORES_SANS_VALEUR for segment in segments):
         return True
     if nom in NOMS_FICHIERS_IGNORES_SANS_VALEUR:
         return True
-    return nom.endswith(SUFFIXES_IGNORES_SANS_VALEUR)
+    if nom.endswith(SUFFIXES_IGNORES_SANS_VALEUR):
+        return True
+    return chemin_relatif in bruit_projet
 
 
 def formater_taille_octets(taille_octets):
@@ -2334,7 +2348,7 @@ def _taille_locale_plafonnee(chemin_absolu, etat):
     return total
 
 
-def lister_fichiers_ignores_worktree(chemin_worktree):
+def lister_fichiers_ignores_worktree(chemin_worktree, nom_projet=None):
     """Fichiers/dossiers ignorés par .gitignore présents dans
     `chemin_worktree`, hors bruit sans valeur (voir
     `_entree_ignoree_est_bruit`) — c'est précisément ce que `git worktree
@@ -2343,6 +2357,12 @@ def lister_fichiers_ignores_worktree(chemin_worktree):
     suppression_worktree` ci-dessous, qui ne regarde que cette sortie — ne
     les voit jamais (issue #112). À appeler AVANT toute tentative de
     suppression, pas seulement après un échec.
+
+    `nom_projet` (issue #119) ajoute au filtrage le bruit propre à CE
+    projet (voir `lire_bruit_projets`) — relu à chaque appel, jamais mis en
+    cache, pour qu'un ajout/retrait depuis le panneau de la page projet
+    prenne effet sans redémarrer relecture_web. Laissé à None, seul le
+    bruit global (DOSSIERS_IGNORES_SANS_VALEUR et voisines) est exclu.
 
     `git status --porcelain=v1 --ignored` (sans `=matching`) réduit déjà de
     lui-même un dossier entièrement ignoré/non suivi à son seul nom plutôt
@@ -2364,12 +2384,13 @@ def lister_fichiers_ignores_worktree(chemin_worktree):
     if resultat.returncode != 0:
         return []
 
+    bruit_projet = lire_bruit_projets().get(nom_projet, ()) if nom_projet else ()
     entrees = []
     for ligne in resultat.stdout.splitlines():
         if not ligne.startswith("!! "):
             continue
         chemin_relatif = ligne[3:].strip()
-        if chemin_relatif and not _entree_ignoree_est_bruit(chemin_relatif):
+        if chemin_relatif and not _entree_ignoree_est_bruit(chemin_relatif, bruit_projet):
             entrees.append({"chemin": chemin_relatif, "taille": None, "taille_affichee": "taille non calculée"})
 
     if not entrees or est_projet_distant(chemin_worktree):
@@ -2396,29 +2417,32 @@ def lister_fichiers_ignores_worktree(chemin_worktree):
 # confirmation_fichiers_ignores_worktree.html) — même emplacement et même
 # principe que CHEMIN_JOURNAL_FUSION_CHANGELOG : hors de tout worktree,
 # jamais suivi par git (voir .gitignore), chemin en constante modifiable
-# pour les tests (issue #116). Ne classe rien automatiquement : permet
-# seulement de décider plus tard, sur des données réelles, quels fichiers
-# reviennent assez souvent pour être considérés comme du bruit, par projet
-# ou globalement.
+# pour les tests (issue #116). Ne classe rien automatiquement de lui-même :
+# permet seulement de garder une trace des décisions prises (dont les
+# classements en bruit par projet, voir CHEMIN_LISTE_BRUIT_PROJETS
+# ci-dessous, issue #119).
 CHEMIN_JOURNAL_DECISIONS_FICHIERS_IGNORES = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "decisions_fichiers_ignores.log"
 )
 
 
-def journaliser_decision_fichier_ignore(nom_projet, branche, chemin, taille_affichee, decision, origine, bouton):
+def journaliser_decision_fichier_ignore(nom_projet, branche, chemin, taille_affichee, decision):
     """Ajoute une ligne au journal persistant des décisions prises sur un
     fichier ignoré menacé par une suppression de worktree (voir
-    CHEMIN_JOURNAL_DECISIONS_FICHIERS_IGNORES ci-dessus, issue #116) —
-    PAS un journal de résultat : la ligne écrite ici reflète la décision
-    prise au moment de la validation (« Annuler » ou « Confirmer »), même
-    si une suppression réelle échoue ensuite (renvoi vers la page de
-    suppression forcée, non modifiée par cette issue).
+    CHEMIN_JOURNAL_DECISIONS_FICHIERS_IGNORES ci-dessus, issue #116, champ
+    « origine » retiré par l'issue #119) — PAS un journal de résultat : la
+    ligne écrite ici reflète la décision prise au moment de la validation
+    de « Confirmer la suppression malgré tout », même si une suppression
+    réelle échoue ensuite (renvoi vers la page de suppression forcée, non
+    modifiée par cette issue). Plus aucune ligne n'est écrite pour
+    « Annuler » depuis l'issue #119 (redevenu un simple lien, rien à
+    journaliser).
 
-    `decision` vaut "garder" (case cochée) ou "supprimer"/"supprimer (pas
-    encore fait)" (case décochée, suivant que le bouton utilisé supprime
-    réellement ou se contente d'enregistrer l'intention) ; `origine` vaut
-    "claude_chat" ou "personnelle" (menu obligatoire de la page) ;
-    `bouton` vaut "annuler" ou "confirmer". Retourne True si la ligne a pu
+    `decision` vaut "garder" (case « à garder » cochée), "supprimer" (case
+    décochée, la suppression a réellement lieu juste après), ou "bruit"
+    (case « Classer comme bruit pour ce projet » cochée, voir
+    `ajouter_bruit_projet` — en PLUS, pas à la place, de la ligne
+    "garder"/"supprimer" du même fichier). Retourne True si la ligne a pu
     être écrite, False sinon — une écriture impossible (dossier en lecture
     seule, disque plein...) ne doit JAMAIS bloquer l'action en cours,
     seulement être signalée par l'appelant (message flash d'avertissement),
@@ -2426,11 +2450,111 @@ def journaliser_decision_fichier_ignore(nom_projet, branche, chemin, taille_affi
     horodatage = datetime.datetime.now().isoformat(timespec="seconds")
     ligne = (
         f"{horodatage} | projet={nom_projet} | branche={branche} | fichier={chemin} "
-        f"| taille={taille_affichee} | decision={decision} | origine={origine} | bouton={bouton}"
+        f"| taille={taille_affichee} | decision={decision}"
     )
     try:
         with open(CHEMIN_JOURNAL_DECISIONS_FICHIERS_IGNORES, "a", encoding="utf-8") as fichier:
             fichier.write(ligne + "\n")
+        return True
+    except OSError:
+        return False
+
+
+# Bruit propre à UN SEUL projet (issue #119, suite de #112/#116), en plus du
+# bruit global ci-dessus (DOSSIERS_IGNORES_SANS_VALEUR et voisines, valables
+# pour tous les projets) : alimenté uniquement depuis la case « Classer
+# comme bruit pour ce projet » de confirmation_fichiers_ignores_worktree.html
+# (jamais automatiquement) et consultable/retirable depuis le panneau
+# correspondant de la page projet (même esprit que le panneau .gitignore,
+# issue #98). Même emplacement et même principe que
+# CHEMIN_JOURNAL_DECISIONS_FICHIERS_IGNORES ci-dessus : hors de tout
+# worktree, jamais suivi par git (voir .gitignore), chemin en constante
+# modifiable pour les tests, créé au premier ajout. Fichier texte lisible et
+# modifiable à la main, une entrée par ligne au format
+# "projet=<nom> | chemin=<chemin>" (le chemin exact affiché sur la page de
+# confirmation, premier niveau de l'arborescence ignorée) — relu à chaque
+# détection (voir `lister_fichiers_ignores_worktree`), jamais mis en cache
+# en mémoire, donc sans redémarrage de relecture_web pour qu'un ajout/retrait
+# prenne effet.
+CHEMIN_LISTE_BRUIT_PROJETS = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "bruit_projets.log"
+)
+
+MOTIF_LIGNE_BRUIT_PROJET = re.compile(r"^projet=(?P<projet>[^|]+?) \| chemin=(?P<chemin>.+)$")
+
+
+def lire_bruit_projets():
+    """Contenu de CHEMIN_LISTE_BRUIT_PROJETS sous la forme
+    {nom_projet: {chemin, chemin, ...}} (issue #119). Dégradation
+    systématique vers la prudence, jamais vers un filtrage supplémentaire
+    non voulu : fichier absent ou illisible -> dict vide (donc plus aucun
+    chemin masqué, exactement le comportement d'avant cette issue) ; une
+    ligne individuellement mal formée est ignorée SEULE, sans faire échouer
+    la lecture des lignes valides voisines."""
+    try:
+        with open(CHEMIN_LISTE_BRUIT_PROJETS, encoding="utf-8") as fichier:
+            lignes = fichier.read().splitlines()
+    except OSError:
+        return {}
+    resultat = {}
+    for ligne in lignes:
+        correspondance = MOTIF_LIGNE_BRUIT_PROJET.match(ligne.strip())
+        if not correspondance:
+            continue
+        nom_projet = correspondance.group("projet").strip()
+        chemin = correspondance.group("chemin").strip()
+        if not nom_projet or not chemin:
+            continue
+        resultat.setdefault(nom_projet, set()).add(chemin)
+    return resultat
+
+
+def ajouter_bruit_projet(nom_projet, chemin):
+    """Ajoute `chemin` à la liste de bruit de `nom_projet` (case « Classer
+    comme bruit pour ce projet » cochée sur confirmation_fichiers_ignores_
+    worktree.html, issue #119) — jamais de doublon pour un même couple
+    projet/chemin déjà présent. Crée CHEMIN_LISTE_BRUIT_PROJETS au premier
+    appel s'il n'existe pas encore. Retourne True si l'entrée est désormais
+    dans le fichier (déjà présente ou ajoutée à l'instant), False si
+    l'écriture a échoué — ne doit jamais bloquer la suppression en cours,
+    seulement être signalée par l'appelant.
+
+    `chemin` est stocké EXACTEMENT tel que reçu (jamais de `rstrip`) :
+    pour une structure de dépôt inchangée, c'est aussi la forme exacte que
+    `lister_fichiers_ignores_worktree` comparera à l'avenir (voir
+    `_entree_ignoree_est_bruit`)."""
+    if chemin in lire_bruit_projets().get(nom_projet, ()):
+        return True
+    try:
+        with open(CHEMIN_LISTE_BRUIT_PROJETS, "a", encoding="utf-8") as fichier:
+            fichier.write(f"projet={nom_projet} | chemin={chemin}\n")
+        return True
+    except OSError:
+        return False
+
+
+def retirer_bruit_projet(nom_projet, chemin):
+    """Retire `chemin` de la liste de bruit de `nom_projet` (bouton «
+    Retirer » du panneau de la page projet, issue #119) — l'avertissement
+    avant suppression de worktree redevient alors actif pour ce chemin,
+    rien n'est supprimé par cet appel. Réécrit le fichier entier sans la
+    ligne correspondante (même principe que `ecrire_lignes_gitignore`).
+    Retourne True si le fichier ne contient plus cette entrée après l'appel
+    (y compris si elle était déjà absente, ou si CHEMIN_LISTE_BRUIT_PROJETS
+    n'existe pas), False si la réécriture a échoué."""
+    try:
+        with open(CHEMIN_LISTE_BRUIT_PROJETS, encoding="utf-8") as fichier:
+            lignes = fichier.read().splitlines()
+    except OSError:
+        return True
+
+    cible = f"projet={nom_projet} | chemin={chemin}"
+    lignes_conservees = [ligne for ligne in lignes if ligne.strip() != cible]
+    if len(lignes_conservees) == len(lignes):
+        return True
+    try:
+        with open(CHEMIN_LISTE_BRUIT_PROJETS, "w", encoding="utf-8") as fichier:
+            fichier.write("".join(ligne + "\n" for ligne in lignes_conservees))
         return True
     except OSError:
         return False

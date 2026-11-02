@@ -35,7 +35,7 @@
   <input type="hidden" name="{{ cle }}" value="{{ valeur }}">
   {% endfor %}
   <input type="hidden" name="ignorer_avertissement_fichiers_ignores" value="on">
-  <input type="hidden" name="origine_decision" id="champ-origine-decision" value="">
+  <input type="hidden" name="bruit_chemins" id="champ-bruit-chemins" value="[]">
 
   {% set ns = namespace(i=0, plats=[]) %}
   <ul class="liste-echecs-suppression">
@@ -77,8 +77,7 @@
   </p>
 
   <div class="zone-actions-confirmation">
-    <button type="submit" id="bouton-annuler-fichiers-ignores" class="bouton bouton--annuler"
-            formaction="{{ url_for('annuler_fichiers_ignores_route', nom_projet=projet.nom) }}" autofocus>Annuler</button>
+    <a href="{{ url_for('projet_route', nom_projet=projet.nom) }}" class="bouton bouton--annuler lien-bouton" autofocus>Annuler</a>
     <button type="submit" id="bouton-confirmer-fichiers-ignores" class="bouton bouton--danger">Confirmer la suppression malgré tout</button>
   </div>
 </form>
@@ -89,21 +88,10 @@
   var COULEUR_PROJET = {{ projet.couleur|tojson }};
   var COULEUR_TEXTE_PROJET = {{ projet.couleur_texte|tojson }};
 
-  // Menu obligatoire « origine de la décision » (issue #116) — sans valeur
-  // présélectionnée, partagé par les fenêtres Annuler et Confirmer
-  // ci-dessous (voir ouvrirConfirmation dans base.html).
-  var MENU_ORIGINE_DECISION = {
-    libelle: "Origine de la décision",
-    choix: [
-      {valeur: "claude_chat", libelle: "Vu avec Claude Chat"},
-      {valeur: "personnelle", libelle: "Décision personnelle"},
-    ],
-  };
-
   var formulaire = document.querySelector(".form-confirmer-fichiers-ignores");
-  var boutonAnnulerSubmit = document.getElementById("bouton-annuler-fichiers-ignores");
   var boutonConfirmerSubmit = document.getElementById("bouton-confirmer-fichiers-ignores");
-  var champOrigine = document.getElementById("champ-origine-decision");
+  var champBruitChemins = document.getElementById("champ-bruit-chemins");
+  var champFichiersJson = document.getElementById("champ-fichiers-json");
   var avertissementGarder = document.getElementById("avertissement-case-a-garder");
   var casesGarder = formulaire.querySelectorAll(".case-a-garder");
 
@@ -138,11 +126,13 @@
 
   // Même mécanique de confirmation forte que les autres actions difficiles
   // à défaire (voir base.html, projet.html, echec_suppression_worktree.html)
-  // — enrichie ici d'un menu obligatoire (issue #116). Les deux boutons de
-  // CE même formulaire (Annuler et Confirmer) partagent un seul événement
-  // "submit" : evenement.submitter indique lequel a réellement été cliqué,
-  // pour ouvrir la bonne fenêtre et ré-émettre vers la bonne route
-  // (formAction du bouton Annuler, action par défaut du formulaire sinon).
+  // — enrichie ici d'une case « Classer comme bruit pour ce projet » par
+  // fichier/dossier listé (issue #119, remplace l'ancien menu obligatoire de
+  // l'issue #116) : décochée par défaut, jamais présélectionnée, le bouton
+  // de validation de la fenêtre reste actif tout de suite. « Annuler » est
+  // redevenu un simple lien (voir le formulaire ci-dessus) : plus rien à
+  // soumettre pour lui, donc plus qu'un seul bouton submit sur ce
+  // formulaire.
   var envoiConfirme = false;
   formulaire.addEventListener("submit", function (evenement) {
     if (envoiConfirme) {
@@ -150,37 +140,31 @@
       return;
     }
     evenement.preventDefault();
-    var cibleAnnuler = evenement.submitter === boutonAnnulerSubmit;
 
-    if (cibleAnnuler) {
-      ouvrirConfirmation({
-        variant: "legere",
-        message: "Annuler — rien n'est supprimé pour aucun worktree du lot, " + NOM_PROJET,
-        menu: MENU_ORIGINE_DECISION,
-        libelleBouton: "Valider et revenir au projet",
-        nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
-        onConfirmer: function (valeurMenu) {
-          champOrigine.value = valeurMenu;
-          envoiConfirme = true;
-          formulaire.requestSubmit(boutonAnnulerSubmit);
-        },
-      });
-    } else {
-      ouvrirConfirmation({
-        variant: "forte",
-        message: "Continuer malgré les fichiers ignorés perdus — " + NOM_PROJET,
-        avertissement: "🔴 Ces fichiers ne sont committés nulle part : ils seront perdus "
-          + "définitivement avec le worktree. Copiez-les avant de confirmer si vous voulez les garder.",
-        menu: MENU_ORIGINE_DECISION,
-        libelleBouton: "Confirmer la suppression malgré tout",
-        nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
-        onConfirmer: function (valeurMenu) {
-          champOrigine.value = valeurMenu;
-          envoiConfirme = true;
-          formulaire.requestSubmit(boutonConfirmerSubmit);
-        },
-      });
-    }
+    var cheminsUniques = [];
+    JSON.parse(champFichiersJson.value).forEach(function (f) {
+      if (cheminsUniques.indexOf(f.chemin) === -1) cheminsUniques.push(f.chemin);
+    });
+
+    ouvrirConfirmation({
+      variant: "forte",
+      message: "Continuer malgré les fichiers ignorés perdus — " + NOM_PROJET,
+      avertissement: "🔴 Ces fichiers ne sont committés nulle part : ils seront perdus "
+        + "définitivement avec le worktree. Copiez-les avant de confirmer si vous voulez les garder.",
+      cases: {
+        libelle: "Classer comme bruit pour ce projet — ce qui est coché ci-dessous disparaîtra "
+          + "désormais SANS AUCUN AVERTISSEMENT avec tout worktree de " + NOM_PROJET
+          + " (pour un dossier : avec tout son contenu) :",
+        items: cheminsUniques.map(function (chemin) { return {valeur: chemin, libelle: chemin}; }),
+      },
+      libelleBouton: "Confirmer la suppression malgré tout",
+      nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
+      onConfirmer: function (cheminsBruitCoches) {
+        champBruitChemins.value = JSON.stringify(cheminsBruitCoches);
+        envoiConfirme = true;
+        formulaire.requestSubmit(boutonConfirmerSubmit);
+      },
+    });
   });
 })();
 </script>

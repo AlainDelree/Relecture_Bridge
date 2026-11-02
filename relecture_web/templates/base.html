@@ -37,9 +37,9 @@
     <p class="modal-confirmation__avertissement" id="modal-confirmation-avertissement" hidden></p>
     <p class="modal-confirmation__titre" id="modal-confirmation-titre"></p>
     <pre class="modal-confirmation__commande" id="modal-confirmation-commande"></pre>
-    <div class="modal-confirmation__menu" id="modal-confirmation-menu" hidden>
-      <label class="modal-confirmation__menu-libelle" for="modal-confirmation-select" id="modal-confirmation-menu-libelle"></label>
-      <select class="modal-confirmation__select" id="modal-confirmation-select"></select>
+    <div class="modal-confirmation__cases" id="modal-confirmation-cases" hidden>
+      <p class="modal-confirmation__cases-libelle" id="modal-confirmation-cases-libelle"></p>
+      <ul class="modal-confirmation__cases-liste" id="modal-confirmation-cases-liste"></ul>
     </div>
     <div class="modal-confirmation__boutons">
       <button type="button" class="bouton bouton--annuler" id="modal-confirmation-annuler">Annuler</button>
@@ -62,21 +62,25 @@
 // le bouton de validation nommé d'après l'action réelle (jamais un OK
 // générique), et le focus par défaut sur Annuler.
 //
-// Menu obligatoire optionnel (options.menu = {libelle, choix: [{valeur,
-// libelle}, ...]}, issue #116) : ajoute un <select> sans aucune valeur
-// présélectionnée au-dessus des boutons, désactive le bouton de
-// validation jusqu'à un choix explicite, et passe la valeur choisie en
-// argument de options.onConfirmer(valeurMenu) — undefined si pas de menu,
-// pour ne rien changer aux appelants existants.
+// Liste de cases à cocher optionnelle (options.cases = {libelle, items:
+// [{valeur, libelle}, ...]}, issue #119, remplace l'ancien menu obligatoire
+// de l'issue #116 — seul appelant, confirmation_fichiers_ignores_worktree.
+// html) : ajoute une case par item sous le texte principal, TOUTES
+// décochées par défaut, jamais de présélection ni de blocage du bouton de
+// validation (contrairement à l'ancien menu). Les valeurs cochées sont
+// passées en argument à options.onConfirmer(valeursCasesCochees) — tableau
+// vide si pas de case cochée ou pas de `cases` du tout, jamais undefined,
+// pour que les appelants existants (qui ignorent cet argument) continuent
+// de fonctionner à l'identique.
 function ouvrirConfirmation(options) {
   var modal = document.getElementById("modal-confirmation");
   var bandeau = document.getElementById("modal-confirmation-bandeau");
   var avertissement = document.getElementById("modal-confirmation-avertissement");
   var titre = document.getElementById("modal-confirmation-titre");
   var texteCommande = document.getElementById("modal-confirmation-commande");
-  var menuConteneur = document.getElementById("modal-confirmation-menu");
-  var menuLibelle = document.getElementById("modal-confirmation-menu-libelle");
-  var menuSelect = document.getElementById("modal-confirmation-select");
+  var casesConteneur = document.getElementById("modal-confirmation-cases");
+  var casesLibelle = document.getElementById("modal-confirmation-cases-libelle");
+  var casesListe = document.getElementById("modal-confirmation-cases-liste");
   var boutonAnnuler = document.getElementById("modal-confirmation-annuler");
   var boutonConfirmer = document.getElementById("modal-confirmation-confirmer");
 
@@ -104,31 +108,25 @@ function ouvrirConfirmation(options) {
   boutonConfirmer.textContent = options.libelleBouton;
   boutonConfirmer.className = "bouton " + (estForte ? "bouton--danger" : "bouton--confirmer-legere");
 
-  function surChangementMenu() {
-    boutonConfirmer.disabled = !menuSelect.value;
-  }
+  boutonConfirmer.disabled = false;
 
-  if (options.menu) {
-    menuLibelle.textContent = options.menu.libelle || "";
-    menuSelect.innerHTML = "";
-    var optionVide = document.createElement("option");
-    optionVide.value = "";
-    optionVide.textContent = "— Choisir —";
-    optionVide.disabled = true;
-    optionVide.selected = true;
-    menuSelect.appendChild(optionVide);
-    (options.menu.choix || []).forEach(function (choix) {
-      var option = document.createElement("option");
-      option.value = choix.valeur;
-      option.textContent = choix.libelle;
-      menuSelect.appendChild(option);
+  if (options.cases) {
+    casesLibelle.textContent = options.cases.libelle || "";
+    casesListe.innerHTML = "";
+    (options.cases.items || []).forEach(function (item) {
+      var ligne = document.createElement("li");
+      var etiquette = document.createElement("label");
+      var case_ = document.createElement("input");
+      case_.type = "checkbox";
+      case_.value = item.valeur;
+      etiquette.appendChild(case_);
+      etiquette.appendChild(document.createTextNode(" " + item.libelle));
+      ligne.appendChild(etiquette);
+      casesListe.appendChild(ligne);
     });
-    menuConteneur.hidden = false;
-    boutonConfirmer.disabled = true;
-    menuSelect.addEventListener("change", surChangementMenu);
+    casesConteneur.hidden = false;
   } else {
-    menuConteneur.hidden = true;
-    boutonConfirmer.disabled = false;
+    casesConteneur.hidden = true;
   }
 
   function fermer() {
@@ -136,12 +134,16 @@ function ouvrirConfirmation(options) {
     boutonConfirmer.removeEventListener("click", surConfirmer);
     boutonAnnuler.removeEventListener("click", surAnnuler);
     document.removeEventListener("keydown", surTouche);
-    menuSelect.removeEventListener("change", surChangementMenu);
   }
   function surConfirmer() {
-    var valeurMenu = options.menu ? menuSelect.value : undefined;
+    var valeursCasesCochees = options.cases
+      ? Array.prototype.filter.call(
+          casesListe.querySelectorAll("input[type=checkbox]"),
+          function (c) { return c.checked; }
+        ).map(function (c) { return c.value; })
+      : [];
     fermer();
-    options.onConfirmer(valeurMenu);
+    options.onConfirmer(valeursCasesCochees);
   }
   function surAnnuler() {
     fermer();

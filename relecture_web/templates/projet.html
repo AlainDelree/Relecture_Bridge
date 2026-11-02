@@ -766,6 +766,31 @@
       {% endif %}
     </div>
   </details>
+
+  <details class="panneau-bruit" id="details-bruit">
+    <summary>🔇 Bruit ignoré pour ce projet</summary>
+    <div class="panneau-bruit__corps">
+      {% if projet.bruit_entrees %}
+      <ul class="liste-bruit">
+        {% for chemin in projet.bruit_entrees %}
+        <li class="ligne-bruit">
+          <code class="bruit-texte">{{ chemin }}</code>
+          <form method="post" action="{{ url_for('retirer_bruit_projet_route', nom_projet=projet.nom) }}" class="form-retirer-bruit">
+            <input type="hidden" name="chemin" value="{{ chemin }}">
+            <button type="submit" class="bouton bouton--supprimer" title="Rétablir l'avertissement pour ce chemin">Retirer</button>
+          </form>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="statut">
+        Aucune entrée classée comme bruit pour ce projet — cochez « Classer comme bruit
+        pour ce projet » dans la fenêtre de confirmation avant suppression d'un worktree
+        pour en ajouter une.
+      </p>
+      {% endif %}
+    </div>
+  </details>
 </section>
 
 <script>

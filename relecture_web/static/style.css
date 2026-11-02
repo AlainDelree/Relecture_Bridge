@@ -786,21 +786,31 @@ pre.brut {
   margin: 0 0 1rem 0;
 }
 
-/* Menu obligatoire optionnel (options.menu, issue #116) — sans valeur
-   présélectionnée, le bouton de validation reste désactivé (voir
-   ouvrirConfirmation) jusqu'à un choix explicite. */
-.modal-confirmation__menu {
+/* Liste de cases à cocher optionnelle (options.cases, issue #119, remplace
+   l'ancien menu obligatoire de l'issue #116) — jamais présélectionnée,
+   jamais de blocage du bouton de validation (voir ouvrirConfirmation). */
+.modal-confirmation__cases {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
   margin: 0 0 1rem 0;
 }
-.modal-confirmation__menu-libelle { font-size: 0.82rem; font-weight: 600; color: #3a4550; }
-.modal-confirmation__select {
-  font-size: 0.85rem;
-  padding: 0.35rem 0.5rem;
-  border: 1px solid #d7dde5;
-  border-radius: 5px;
+.modal-confirmation__cases-libelle { font-size: 0.82rem; font-weight: 600; color: #3a4550; }
+.modal-confirmation__cases-liste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 10rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.modal-confirmation__cases-liste label {
+  font-size: 0.82rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
 }
 
 .modal-confirmation__boutons {
@@ -906,6 +916,34 @@ pre.brut {
   border: 1px solid #d7dde5;
   border-radius: 5px;
 }
+
+/* Panneau repliable « Bruit ignoré pour ce projet » (issue #119), même
+   principe que .panneau-gitignore ci-dessus — fermé par défaut. */
+.panneau-bruit {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.85rem;
+}
+.panneau-bruit summary { cursor: pointer; font-weight: 600; color: #3a4550; }
+.panneau-bruit__corps { margin-top: 0.75rem; }
+
+.liste-bruit { list-style: none; padding: 0; margin: 0; }
+.ligne-bruit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+.ligne-bruit .bruit-texte {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+.form-retirer-bruit { display: inline; }
 
 .gitignore-non-suivis .sous-titre { margin: 0 0 0.3rem 0; font-size: 0.8rem; }
 .liste-gitignore-non-suivis { list-style: none; padding: 0; margin: 0; }

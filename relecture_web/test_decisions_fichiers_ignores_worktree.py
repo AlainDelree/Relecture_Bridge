@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """Tests de la décision par fichier et du journal des décisions sur
-confirmation_fichiers_ignores_worktree.html (issue #116, suite de #113) :
+confirmation_fichiers_ignores_worktree.html (issue #116, suite de #113,
+menu obligatoire et journalisation à l'annulation retirés par l'issue #119
+— voir test_bruit_fichiers_ignores_projets.py pour le classement en bruit
+par projet introduit à leur place) :
 
 - une case « à garder » par fichier/dossier listé, décochée par défaut,
   jamais présélectionnée — et un moyen de tout cocher/décocher d'un seul
   geste par worktree (la suppression reste toujours par worktree entier) ;
 - « Confirmer la suppression malgré tout » refusé CÔTÉ SERVEUR (pas
-  seulement désactivé dans la page) si au moins une case est cochée, ou si
-  le menu obligatoire « origine de la décision » (Vu avec Claude Chat /
-  Décision personnelle, sans valeur présélectionnée) n'a pas été rempli ;
+  seulement désactivé dans la page) si au moins une case est cochée ;
   sinon, chaque fichier listé est journalisé « supprimer » puis la
   suppression a lieu comme avant ;
-- « Annuler » n'est plus un simple lien : il impose le même menu
-  obligatoire, journalise « garder »/« supprimer (pas encore fait) » par
-  fichier selon les cases cochées, et ne supprime jamais rien — contraire
-  à « Précédent », au fil d'Ariane ou à tout lien vers un autre projet, qui
-  n'envoient toujours aucune requête et n'enregistrent donc rien ;
+- « Annuler » est redevenu un simple lien (issue #119) : aucune requête,
+  donc aucun enregistrement — contraire à « Précédent », au fil d'Ariane ou
+  à tout lien vers un autre projet, qui n'envoient toujours aucune requête
+  non plus ;
 - le journal (`git_info.CHEMIN_JOURNAL_DECISIONS_FICHIERS_IGNORES`) est un
   fichier texte en ajout, hors de tout worktree, ignoré par git, dont une
   écriture impossible n'empêche jamais l'action en cours (avertissement
@@ -111,6 +111,11 @@ class BaseDecisionsTestCase(unittest.TestCase):
         git_info.CHEMIN_JOURNAL_DECISIONS_FICHIERS_IGNORES = self.chemin_journal
         self.addCleanup(self._restaurer_journal)
 
+        self.chemin_bruit = os.path.join(self.scratch, "bruit_projets.log")
+        self._bruit_original = git_info.CHEMIN_LISTE_BRUIT_PROJETS
+        git_info.CHEMIN_LISTE_BRUIT_PROJETS = self.chemin_bruit
+        self.addCleanup(self._restaurer_bruit)
+
         projets = [{
             "nom": "projet_local", "depot": "projet_local",
             "repertoire": self.repertoire, "couleur": None, "couleur_texte": None,
@@ -129,6 +134,9 @@ class BaseDecisionsTestCase(unittest.TestCase):
 
     def _restaurer_journal(self):
         git_info.CHEMIN_JOURNAL_DECISIONS_FICHIERS_IGNORES = self._journal_original
+
+    def _restaurer_bruit(self):
+        git_info.CHEMIN_LISTE_BRUIT_PROJETS = self._bruit_original
 
     def _restaurer_fetch_projets(self):
         git_info.fetch_projets = self._original_fetch_projets
@@ -169,7 +177,7 @@ class BaseDecisionsTestCase(unittest.TestCase):
         return reponse.get_data(as_text=True)
 
 
-class PageCasesEtMenuTestCase(BaseDecisionsTestCase):
+class PageCasesTestCase(BaseDecisionsTestCase):
     def test_une_case_par_fichier_jamais_presaisie(self):
         # Deux ENTRÉES ignorées distinctes (git réduit un dossier ignoré
         # entier à son seul nom, voir lister_fichiers_ignores_worktree) :
@@ -184,15 +192,6 @@ class PageCasesEtMenuTestCase(BaseDecisionsTestCase):
         texte = self._obtenir_confirmation(["feature-build"])
         cases = _extraire_cases_garder(texte)
         self.assertEqual(len(cases), 2)
-
-    def test_origine_decision_sans_valeur_presaisie(self):
-        worktree = self._creer_branche_worktree("feature-build")
-        _ajouter_et_committer_gitignore(worktree, ["installeur/output/"])
-        _creer_fichier(worktree, "installeur/output/app.exe")
-        self._fusionner_branche("feature-build")
-
-        texte = self._obtenir_confirmation(["feature-build"])
-        self.assertIn('name="origine_decision" id="champ-origine-decision" value="">', texte)
 
     def test_bouton_tout_cocher_et_tout_decocher_presents_par_worktree(self):
         worktree = self._creer_branche_worktree("feature-build")
@@ -220,14 +219,28 @@ class PageCasesEtMenuTestCase(BaseDecisionsTestCase):
         self.assertEqual(fichiers[0]["branche"], "feature-build")
         self.assertTrue(fichiers[0]["chemin"].startswith("installeur"))
 
+    def test_annuler_est_un_simple_lien_sans_menu(self):
+        """Issue #119 : plus de menu obligatoire, plus de bouton `submit`
+        pour Annuler — un simple lien <a> vers la page du projet, comme
+        avant l'issue #116."""
+        worktree = self._creer_branche_worktree("feature-build")
+        _ajouter_et_committer_gitignore(worktree, ["installeur/output/"])
+        _creer_fichier(worktree, "installeur/output/app.exe")
+        self._fusionner_branche("feature-build")
+
+        texte = self._obtenir_confirmation(["feature-build"])
+        self.assertNotIn("origine_decision", texte)
+        self.assertNotIn("Vu avec Claude Chat", texte)
+        self.assertIn(f'<a href="/projet/projet_local" class="bouton bouton--annuler', texte)
+
 
 class LiensSansEffetTestCase(BaseDecisionsTestCase):
     """Précédent, le fil d'Ariane, un lien vers un autre projet, le bouton
-    retour du navigateur : toujours de simples liens <a> (jamais soumis),
-    donc aucune requête d'enregistrement n'est même possible — vérifié ici
-    en constatant qu'une navigation GET supplémentaire (équivalente à l'un
-    de ces liens, ou au retour navigateur) ne touche jamais le journal ni
-    le worktree."""
+    retour du navigateur, et désormais Annuler lui-même (issue #119) :
+    toujours de simples liens <a> (jamais soumis), donc aucune requête
+    d'enregistrement n'est même possible — vérifié ici en constatant qu'une
+    navigation GET supplémentaire (équivalente à l'un de ces liens) ne
+    touche jamais le journal ni le worktree."""
 
     def test_navigation_get_apres_la_page_necrit_rien(self):
         worktree = self._creer_branche_worktree("feature-build")
@@ -239,57 +252,6 @@ class LiensSansEffetTestCase(BaseDecisionsTestCase):
         for chemin in ("/projet/projet_local", "/"):
             reponse = self.client.get(chemin)
             self.assertIn(reponse.status_code, (200, 302))
-        self.assertEqual(self._lire_journal(), [])
-        self.assertTrue(self._worktree_existe(worktree))
-        self.assertTrue(self._branche_existe("feature-build"))
-
-
-class AnnulerAvecMenuTestCase(BaseDecisionsTestCase):
-    def test_annuler_avec_menu_journalise_et_ne_supprime_rien(self):
-        worktree = self._creer_branche_worktree("feature-build")
-        _ajouter_et_committer_gitignore(worktree, ["installeur/output/", "cache/"])
-        _creer_fichier(worktree, "installeur/output/app.exe")
-        _creer_fichier(worktree, "cache/tmp.bin")
-        self._fusionner_branche("feature-build")
-
-        texte = self._obtenir_confirmation(["feature-build"])
-        fichiers_json = _extraire_fichiers_json(texte)
-        cases = _extraire_cases_garder(texte)
-        self.assertEqual(len(cases), 2)
-        # Coche la première case « à garder » (installeur), laisse l'autre
-        # (cache) décochée.
-        index_garde = cases[0][0]
-
-        reponse = self.client.post("/projet/projet_local/fichiers-ignores/annuler", data={
-            "fichiers_json": fichiers_json,
-            "garder": [index_garde],
-            "origine_decision": "claude_chat",
-        })
-        self.assertEqual(reponse.status_code, 302)
-        self.assertTrue(self._worktree_existe(worktree))
-        self.assertTrue(self._branche_existe("feature-build"))
-
-        lignes = self._lire_journal()
-        self.assertEqual(len(lignes), 2)
-        self.assertTrue(any("decision=garder" in l and "bouton=annuler" in l for l in lignes))
-        self.assertTrue(any("decision=supprimer (pas encore fait)" in l and "bouton=annuler" in l for l in lignes))
-        self.assertTrue(all("origine=claude_chat" in l for l in lignes))
-        self.assertTrue(all("projet=projet_local" in l and "branche=feature-build" in l for l in lignes))
-
-    def test_annuler_sans_menu_refuse_cote_serveur(self):
-        worktree = self._creer_branche_worktree("feature-build")
-        _ajouter_et_committer_gitignore(worktree, ["installeur/output/"])
-        _creer_fichier(worktree, "installeur/output/app.exe")
-        self._fusionner_branche("feature-build")
-
-        texte = self._obtenir_confirmation(["feature-build"])
-        fichiers_json = _extraire_fichiers_json(texte)
-
-        reponse = self.client.post("/projet/projet_local/fichiers-ignores/annuler", data={
-            "fichiers_json": fichiers_json,
-            # Pas de origine_decision du tout — menu non rempli.
-        })
-        self.assertEqual(reponse.status_code, 302)
         self.assertEqual(self._lire_journal(), [])
         self.assertTrue(self._worktree_existe(worktree))
         self.assertTrue(self._branche_existe("feature-build"))
@@ -316,15 +278,14 @@ class ConfirmerCoteServeurTestCase(BaseDecisionsTestCase):
         cases = _extraire_cases_garder(texte)
 
         reponse = self.client.post("/projet/projet_local/supprimer", data=self._donnees_confirmation(
-            ["feature-build"], fichiers_json,
-            garder=[cases[0][0]], origine_decision="personnelle",
+            ["feature-build"], fichiers_json, garder=[cases[0][0]],
         ))
         self.assertEqual(reponse.status_code, 302)
         self.assertEqual(self._lire_journal(), [])
         self.assertTrue(self._worktree_existe(worktree))
         self.assertTrue(self._branche_existe("feature-build"))
 
-    def test_confirmer_sans_case_cochee_mais_sans_menu_refuse(self):
+    def test_confirmer_sans_case_cochee_supprime_et_journalise(self):
         worktree = self._creer_branche_worktree("feature-build")
         _ajouter_et_committer_gitignore(worktree, ["installeur/output/"])
         _creer_fichier(worktree, "installeur/output/app.exe")
@@ -335,23 +296,6 @@ class ConfirmerCoteServeurTestCase(BaseDecisionsTestCase):
 
         reponse = self.client.post("/projet/projet_local/supprimer", data=self._donnees_confirmation(
             ["feature-build"], fichiers_json,
-        ))
-        self.assertEqual(reponse.status_code, 302)
-        self.assertEqual(self._lire_journal(), [])
-        self.assertTrue(self._worktree_existe(worktree))
-        self.assertTrue(self._branche_existe("feature-build"))
-
-    def test_confirmer_sans_case_cochee_avec_menu_supprime_et_journalise(self):
-        worktree = self._creer_branche_worktree("feature-build")
-        _ajouter_et_committer_gitignore(worktree, ["installeur/output/"])
-        _creer_fichier(worktree, "installeur/output/app.exe")
-        self._fusionner_branche("feature-build")
-
-        texte = self._obtenir_confirmation(["feature-build"])
-        fichiers_json = _extraire_fichiers_json(texte)
-
-        reponse = self.client.post("/projet/projet_local/supprimer", data=self._donnees_confirmation(
-            ["feature-build"], fichiers_json, origine_decision="personnelle",
         ))
         self.assertEqual(reponse.status_code, 302)
         self.assertFalse(self._worktree_existe(worktree))
@@ -360,9 +304,8 @@ class ConfirmerCoteServeurTestCase(BaseDecisionsTestCase):
         lignes = self._lire_journal()
         self.assertEqual(len(lignes), 1)
         self.assertIn("decision=supprimer", lignes[0])
-        self.assertNotIn("decision=supprimer (pas encore fait)", lignes[0])
-        self.assertIn("bouton=confirmer", lignes[0])
-        self.assertIn("origine=personnelle", lignes[0])
+        self.assertNotIn("origine=", lignes[0])
+        self.assertNotIn("bouton=", lignes[0])
         self.assertIn("fichier=installeur", lignes[0])
 
     def test_plusieurs_worktrees_confirmation_supprime_et_journalise_chacun(self):
@@ -381,7 +324,7 @@ class ConfirmerCoteServeurTestCase(BaseDecisionsTestCase):
         self.assertEqual({f["branche"] for f in fichiers}, {"feature-a", "feature-b"})
 
         reponse = self.client.post("/projet/projet_local/supprimer", data=self._donnees_confirmation(
-            ["feature-a", "feature-b"], fichiers_json, origine_decision="claude_chat",
+            ["feature-a", "feature-b"], fichiers_json,
         ))
         self.assertEqual(reponse.status_code, 302)
         self.assertFalse(self._worktree_existe(worktree_a))
@@ -391,7 +334,7 @@ class ConfirmerCoteServeurTestCase(BaseDecisionsTestCase):
         self.assertEqual(len(lignes), 2)
         self.assertTrue(any("branche=feature-a" in l for l in lignes))
         self.assertTrue(any("branche=feature-b" in l for l in lignes))
-        self.assertTrue(all("decision=supprimer" in l and "bouton=confirmer" in l for l in lignes))
+        self.assertTrue(all("decision=supprimer" in l for l in lignes))
 
 
 class JournalNonInscriptibleTestCase(BaseDecisionsTestCase):
@@ -418,7 +361,6 @@ class JournalNonInscriptibleTestCase(BaseDecisionsTestCase):
             "branches": ["feature-build"],
             "ignorer_avertissement_fichiers_ignores": "on",
             "fichiers_json": fichiers_json,
-            "origine_decision": "personnelle",
         }, follow_redirects=True)
         self.assertEqual(reponse.status_code, 200)
         # L'action (suppression) n'est jamais bloquée par l'échec d'écriture
@@ -453,7 +395,7 @@ class ProjetDistantFauxSshTestCase(BaseDecisionsTestCase):
     """Même comportement pour un projet distant (PC fixe CCW) : chaque
     commande git est routée via un faux `_lancer_git_distant` (jamais de
     vrai ssh), et `lister_fichiers_ignores_worktree` ne calcule jamais de
-    taille par SSH (issue #109, inchangé) — `taille_affichee` reste "taille
+    taille par SSH (issue #109, inchangé). `taille_affichee` reste "taille
     non calculée", reportée telle quelle dans le journal."""
 
     def setUp(self):
@@ -467,6 +409,11 @@ class ProjetDistantFauxSshTestCase(BaseDecisionsTestCase):
         self._journal_original = git_info.CHEMIN_JOURNAL_DECISIONS_FICHIERS_IGNORES
         git_info.CHEMIN_JOURNAL_DECISIONS_FICHIERS_IGNORES = self.chemin_journal
         self.addCleanup(self._restaurer_journal)
+
+        self.chemin_bruit = os.path.join(self.scratch, "bruit_projets.log")
+        self._bruit_original = git_info.CHEMIN_LISTE_BRUIT_PROJETS
+        git_info.CHEMIN_LISTE_BRUIT_PROJETS = self.chemin_bruit
+        self.addCleanup(self._restaurer_bruit)
 
         self.repertoire = "C:\\CCW\\projet_distant"
         self.worktree_feature = "C:\\CCW\\projet_distant_worktree_feature-distant"
@@ -527,6 +474,9 @@ class ProjetDistantFauxSshTestCase(BaseDecisionsTestCase):
         app_module.app.config["MDP_EXIGE"] = False
         self.client = app_module.app.test_client()
 
+    def _restaurer_bruit(self):
+        git_info.CHEMIN_LISTE_BRUIT_PROJETS = self._bruit_original
+
     def _restaurer_git_info(self):
         git_info.fetch_projets = self._original_fetch_projets
         git_info.charger_config_ccw = self._original_charger_config_ccw
@@ -546,7 +496,6 @@ class ProjetDistantFauxSshTestCase(BaseDecisionsTestCase):
             "branches": ["feature-distant"],
             "ignorer_avertissement_fichiers_ignores": "on",
             "fichiers_json": fichiers_json,
-            "origine_decision": "personnelle",
         })
         self.assertEqual(reponse.status_code, 302)
 
