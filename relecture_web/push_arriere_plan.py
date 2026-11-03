@@ -34,6 +34,7 @@ une seule fois au lancement de `app.py`.
 
 import json
 import os
+import re
 import signal
 import subprocess
 import tempfile
@@ -56,6 +57,42 @@ TIMEOUT_PUSH_ARRIERE_PLAN = 600
 # fichier d'état.
 MAX_LIGNES_SORTIE_PUSH = 60
 MAX_CARACTERES_SORTIE_PUSH = 20000
+
+# Filtrage des secrets (issue #127, point 4), appliqué AVANT troncature (voir
+# `_tronquer_sortie`) donc avant tout affichage, succès comme échecs — un
+# filet de sécurité au mieux des cas courants, PAS une garantie :
+# - identifiants (utilisateur, et mot de passe s'il y en a un) dans une URL
+#   de dépôt (`https://user:token@host/...`) ;
+# - jetons GitHub reconnaissables par leur préfixe (classiques `ghp_`/
+#   `gho_`/`ghu_`/`ghs_`/`ghr_`, ou fine-grained `github_pat_`) ;
+# - valeur d'un en-tête `Authorization:` (ligne entière après les deux
+#   points, qu'elle commence par `Bearer`/`Basic`/`token` ou non).
+# Ceci ne peut PAS deviner un secret de forme arbitraire qu'un test ou le
+# crochet imprimerait sans ce format reconnaissable (mot de passe en clair
+# sans contexte, clé API maison...) : la vraie protection reste que le
+# crochet et les tests n'impriment eux-mêmes aucun secret, jamais ce
+# filtrage après coup.
+_MARQUEUR_SECRET = "***secret masqué***"
+_RE_IDENTIFIANTS_URL = re.compile(r"://[^/\s:@]+(?::[^/\s@]*)?@")
+_RE_JETON_GITHUB = re.compile(
+    r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b"
+)
+_RE_AUTORISATION = re.compile(r"(?im)^(.*\bAuthorization\s*:\s*)\S.*$")
+
+
+def _filtrer_secrets(texte):
+    """Remplace, dans `texte`, les formes de secrets reconnues ci-dessus par
+    `_MARQUEUR_SECRET` — ne touche jamais au reste de la ligne (le `host`
+    d'une URL, le nom de l'en-tête, le texte autour d'un jeton restent
+    lisibles), pour que le diagnostic (lignes de comptage des tests...)
+    reste possible."""
+    if not texte:
+        return texte
+    texte = _RE_IDENTIFIANTS_URL.sub("://" + _MARQUEUR_SECRET + "@", texte)
+    texte = _RE_JETON_GITHUB.sub(_MARQUEUR_SECRET, texte)
+    texte = _RE_AUTORISATION.sub(r"\1" + _MARQUEUR_SECRET, texte)
+    return texte
+
 
 # Fichier local, ignoré par git comme les autres journaux de ce dossier
 # (`changelog_fusion.log`, `decisions_fichiers_ignores.log`,
@@ -116,9 +153,14 @@ def _ecrire_etat_brut(etat, chemin_etat):
 def _tronquer_sortie(texte):
     """Fin de la sortie seulement, taille bornée (issue #122, point 4) :
     d'abord un plafond de caractères (pour qu'une seule ligne géante ne
-    contourne pas le plafond de lignes), puis un plafond de lignes."""
+    contourne pas le plafond de lignes), puis un plafond de lignes. Filtrage
+    des secrets (issue #127, point 4, voir `_filtrer_secrets`) appliqué EN
+    PREMIER, sur le texte complet avant toute coupe — pour qu'un identifiant
+    ou un jeton ne soit jamais tronqué au milieu d'une façon qui le
+    laisserait partiellement lisible."""
     if not texte:
         return ""
+    texte = _filtrer_secrets(texte)
     if len(texte) > MAX_CARACTERES_SORTIE_PUSH:
         texte = texte[-MAX_CARACTERES_SORTIE_PUSH:]
     lignes = texte.splitlines()
@@ -152,6 +194,20 @@ def marquer_vu(nom_projet, chemin_etat=None):
     return ecrire_entree(nom_projet, chemin_etat=chemin_etat, vu=True)
 
 
+def marquer_masque(nom_projet, chemin_etat=None):
+    """Ferme explicitement, sur la page projet, le panneau d'un push abouti
+    (bouton « Masquer », issue #127, point 2) — champ dédié `masque`,
+    DIFFÉRENT de `vu` : un push abouti reçoit déjà `vu=True` automatiquement
+    dès la fin du thread (voir `_executer_push_arriere_plan`), consommé par
+    la barre latérale/la route de sondage/la fenêtre globale (#123) pour ne
+    plus jamais signaler ce succès ailleurs — `masque` n'a AUCUN effet sur
+    ces trois-là (ils ignorent ce champ, voir `etats_a_signaler`), seulement
+    sur `entree_affichable` ci-dessous. N'est utilisé par l'interface que
+    pour un push abouti ; appelé sur un autre état, il est simplement sans
+    effet visible (voir `entree_affichable`)."""
+    return ecrire_entree(nom_projet, chemin_etat=chemin_etat, masque=True)
+
+
 # Champs exposés par `etats_a_signaler` (issue #123) à la route de sondage
 # HTTP et à la barre latérale — jamais `repertoire` ni `pid`, propres à
 # cette machine et sans intérêt pour l'affichage.
@@ -166,7 +222,11 @@ def _affichable(entree):
     écriture (voir `_executer_push_arriere_plan`) — considéré vu à la
     fermeture de sa fenêtre de résultat (#123), jamais retenu ici une fois
     terminé. Un refus/interruption/indétermination, en revanche, reste
-    affichable tant que personne n'a cliqué « Vu »."""
+    affichable tant que personne n'a cliqué « Vu ». Cette règle reste
+    inchangée par l'issue #127 : l'exception qu'elle introduit pour un push
+    abouti (sortie visible malgré `vu=True`) ne vaut QUE pour le panneau de
+    la page projet, via `entree_affichable` ci-dessous — jamais ici, donc
+    jamais pour la barre latérale/la route de sondage/la fenêtre globale."""
     return entree.get("etat") == "en_cours" or not entree.get("vu")
 
 
@@ -191,16 +251,36 @@ def etats_a_signaler(chemin_etat=None):
 
 def entree_affichable(nom_projet, chemin_etat=None):
     """Entrée de `nom_projet` à afficher dans le panneau « Dernier push »
-    de la page projet (issue #125), ou `None` si elle doit rester masquée
-    — même règle que `etats_a_signaler` (`_affichable`), pour que le
-    panneau et la barre latérale/fenêtre globale (#123) restent cohérents
-    entre eux. L'entrée elle-même n'est jamais modifiée ni purgée : elle
-    reste lisible par `lire_entree` (debug, autre appelant), seul son
+    de la page projet, ou `None` si le panneau doit rester masqué.
+
+    Pour tout état AUTRE que `pousse`, même règle que `etats_a_signaler`
+    (`_affichable`, issue #125) : affichable tant qu'un push est en cours,
+    ou que son résultat n'a pas encore été acquitté (`vu` faux) — cohérent
+    avec la barre latérale/fenêtre globale (#123).
+
+    EXCEPTION délibérée pour un push abouti (`etat == "pousse"`, issue
+    #127, point 2) : il reçoit `vu=True` automatiquement dès la fin du
+    thread (voir `_executer_push_arriere_plan`), ce qui suffit à ce qu'il
+    ne soit plus jamais signalé dans la barre latérale, la route de
+    sondage ou la fenêtre globale (#123, tous trois basés sur
+    `etats_a_signaler`/`vu`, qui ignorent cette exception — voir
+    `_affichable`). Mais SUR CETTE SEULE PAGE, il reste affichable — avec
+    la fin de sa sortie (lignes de comptage des tests du crochet) — jusqu'au
+    push suivant (nouvelle entrée écrite par `demarrer_push_arriere_plan`,
+    sans le champ `masque`) ou jusqu'au clic explicite sur le bouton
+    « Masquer » (`marquer_masque`, champ dédié `masque`, SÉPARÉ de `vu`
+    précisément pour que l'ancien bouton « Vu » — déjà sans effet puisque
+    `vu` est déjà vrai — ne masque jamais ce panneau).
+
+    L'entrée elle-même n'est jamais modifiée ni purgée par cette fonction :
+    elle reste lisible par `lire_entree` (debug, autre appelant), seul son
     affichage ici est conditionné."""
     entree = lire_entree(nom_projet, chemin_etat)
-    if not entree or not _affichable(entree):
+    if not entree:
         return None
-    return entree
+    if entree.get("etat") == "pousse":
+        return None if entree.get("masque") else entree
+    return entree if _affichable(entree) else None
 
 
 def projet_verrouille_par_push(nom_projet, chemin_etat=None):

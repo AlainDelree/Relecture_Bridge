@@ -1425,7 +1425,10 @@ pourrait même être faux (même piège que l'issue #66, mais plus probable
 avec un crochet qui allonge franchement chaque push). Cette issue pose le
 moteur et l'affichage sur la page du projet ; l'affichage sur les AUTRES
 pages (pastille, panneau « Attention Refus », fenêtre de résultat) est
-traité par l'issue #123, voir la fin de cette section.
+traité par l'issue #123, voir la fin de cette section. L'issue #127
+ajoute, pour un push abouti seulement, l'affichage de la fin de sa sortie
+(repliable) et un filtrage des secrets avant tout stockage — voir les
+deux derniers paragraphes avant « Pas de contournement ».
 
 **Détection du crochet (`git_info.chemin_hook_pre_push`/
 `projet_equipe_hook_pre_push`) :** un projet est « équipé » si un crochet
@@ -1513,22 +1516,28 @@ comme `changelog_fusion.log`/`decisions_fichiers_ignores.log`/
 `bruit_projets.log`) : un objet JSON, une entrée par projet, avec `etat`
 (une des cinq valeurs ci-dessus), `branches` (liste), `repertoire`,
 `debut`/`fin` (horodatages ISO), `sortie` (fin de la sortie combinée du
-crochet et de git, plafonnée à `MAX_LIGNES_SORTIE_PUSH` = 60 lignes ET
-`MAX_CARACTERES_SORTIE_PUSH` = 20000 caractères), `vu` (bool, voir « Vu »
-ci-dessous), `pid` (celui du process git, donc du groupe de processus,
-tant qu'il tourne — None sinon), et `resultats` (détail par branche,
-même forme que `git_info.verifier_push_apres_timeout`). Écrit au
-lancement (`etat = "en_cours"`) et à la fin du thread ; relu à chaque
-affichage de la page projet (`push_arriere_plan.lire_entree`), jamais mis
-en cache. Écriture atomique (fichier temporaire puis `os.replace`), pour
-qu'un lecteur concurrent ne voie jamais un JSON à moitié écrit. **Fichier
-absent ou illisible (JSON corrompu, ou contenu qui n'est pas un objet) :
-traité comme vide, sans erreur affichée** — dégradation systématique,
-même principe que `bruit_projets.log`/`decisions_fichiers_ignores.log`.
-**Une écriture impossible (dossier en lecture seule, disque plein...) ne
-bloque jamais le push lui-même** (garde-fou explicite de l'issue) : le
-push démarre malgré tout, avec un message flash d'avertissement signalant
-que son résultat ne sera pas affiché.
+crochet et de git, **filtrée des secrets les plus courants puis**
+plafonnée à `MAX_LIGNES_SORTIE_PUSH` = 60 lignes ET
+`MAX_CARACTERES_SORTIE_PUSH` = 20000 caractères — voir « Filtrage des
+secrets » plus bas), `vu` (bool, voir « Vu » ci-dessous), `masque` (bool,
+optionnel, issue #127 — voir « Affichage sur la page du projet » plus
+bas, sans effet ailleurs), `pid` (celui du process git, donc du groupe de
+processus, tant qu'il tourne — None sinon), et `resultats` (détail par
+branche, même forme que `git_info.verifier_push_apres_timeout`). Écrit au
+lancement (`etat = "en_cours"`, qui repart toujours sans `masque`) et à la
+fin du thread ; relu à chaque affichage de la page projet
+(`push_arriere_plan.entree_affichable`), jamais mis en cache. Écriture
+atomique (fichier temporaire puis `os.replace`), pour qu'un lecteur
+concurrent ne voie jamais un JSON à moitié écrit. **Fichier absent ou
+illisible (JSON corrompu, ou contenu qui n'est pas un objet) : traité
+comme vide, sans erreur affichée** — dégradation systématique, même
+principe que `bruit_projets.log`/`decisions_fichiers_ignores.log`. Un
+fichier existant d'avant l'issue #127 (sans le champ `masque`) continue à
+s'afficher sans erreur — ce champ n'est jamais obligatoire. **Une écriture
+impossible (dossier en lecture seule, disque plein...) ne bloque jamais le
+push lui-même** (garde-fou explicite de l'issue) : le push démarre malgré
+tout, avec un message flash d'avertissement signalant que son résultat ne
+sera pas affiché.
 
 **Redémarrage de relecture_web pendant un push** (`push_arriere_plan.
 reconcilier_au_demarrage`, appelée une seule fois juste avant
@@ -1543,35 +1552,81 @@ branche (même fonction que pour un dépassement de délai, résultat réel
 noté dans `resultats`).
 
 **Affichage sur la page du projet (panneau « Dernier push »,
-`projet.html`) :** n'apparaît que dans deux cas (issue #125,
-`push_arriere_plan.entree_affichable`, même règle que l'affichage global
-ci-dessous) — un push en cours (`etat == "en_cours"`), ou un résultat pas
-encore acquitté (`vu` faux : refusé, interrompu, indéterminé). Un push
-abouti (`etat == "pousse"`) reçoit `vu = True` automatiquement dès l'écriture
-de son entrée (voir `_executer_push_arriere_plan`) — considéré vu dès la fin
-du thread, comme à la fermeture de sa fenêtre de résultat globale (#123) —
-et n'est donc jamais affiché ici une fois terminé. Montre l'état avec son
-libellé (⏳ En cours / ❌ Refusé / ⚠️ Interrompu / ❓ Indéterminé), les
-branches concernées, les horaires de début/fin, le détail par branche
-quand disponible, et la fin de la sortie du crochet et de git. Pendant
-l'exécution : un compteur de secondes écoulées calculé côté navigateur
-(`Date.now()` moins l'horodatage de début) et un rafraîchissement
-automatique léger — un simple rechargement de la page toutes les 4
-secondes, jamais d'appel réseau supplémentaire ni d'API JSON, cohérent
-avec le reste de cette page — pour relire l'état réel une fois le push
-terminé (panneau alors absent s'il a abouti, ou toujours présent avec un
-bouton « Vu » sinon). Le bouton « Vu » (`POST /projet/<nom>/push/vu`,
-`push_arriere_plan.marquer_vu` — ne change que le champ `vu`, jamais
-`etat` : un refus déjà affiché reste un refus) fait disparaître le panneau
-de cette page dès le prochain affichage ; l'entrée elle-même reste dans le
-fichier d'état (non purgée), mais n'est plus signalée nulle part. Un
-résultat non acquitté n'est jamais masqué par un push réussi survenu entre
-temps par un autre chemin (ligne de commande, autre worktree) : seule
-l'entrée elle-même, propre à `push_arriere_plan`, détermine l'affichage.
+`projet.html`) :** pour tout état AUTRE que `pousse`, n'apparaît que dans
+deux cas (issue #125, `push_arriere_plan.entree_affichable`, même règle
+que l'affichage global ci-dessous) — un push en cours (`etat ==
+"en_cours"`), ou un résultat pas encore acquitté (`vu` faux : refusé,
+interrompu, indéterminé). Montre l'état avec son libellé (⏳ En cours / ❌
+Refusé / ⚠️ Interrompu / ❓ Indéterminé), les branches concernées, les
+horaires de début/fin, le détail par branche quand disponible, et — pour
+un refus/interrompu/indéterminé — la fin de la sortie du crochet et de
+git directement (`<pre>`, jamais repliée), affichage **inchangé par
+l'issue #127**. Pendant l'exécution : un compteur de secondes écoulées
+calculé côté navigateur (`Date.now()` moins l'horodatage de début) et un
+rafraîchissement automatique léger — un simple rechargement de la page
+toutes les 4 secondes, jamais d'appel réseau supplémentaire ni d'API
+JSON, cohérent avec le reste de cette page — pour relire l'état réel une
+fois le push terminé ; rien de plus n'est affiché pendant cette phase. Le
+bouton « Vu » (`POST /projet/<nom>/push/vu`, `push_arriere_plan.
+marquer_vu` — ne change que le champ `vu`, jamais `etat` : un refus déjà
+affiché reste un refus) fait disparaître le panneau de cette page dès le
+prochain affichage ; l'entrée elle-même reste dans le fichier d'état (non
+purgée), mais n'est plus signalée nulle part. Un résultat non acquitté
+n'est jamais masqué par un push réussi survenu entre temps par un autre
+chemin (ligne de commande, autre worktree) : seule l'entrée elle-même,
+propre à `push_arriere_plan`, détermine l'affichage.
+
+**Pour un push abouti (`etat == "pousse"`, issue #127, points 1 et 2) :**
+`vu` est mis à `True` automatiquement dès la fin du thread, comme avant
+cette issue — ce qui suffit à ce qu'un succès ne soit plus jamais signalé
+dans la barre latérale, la route de sondage ou la fenêtre globale (#123,
+tous trois basés sur `etats_a_signaler`/`vu`, voir plus bas). Mais SUR
+CETTE PAGE SEULEMENT, le panneau reste affiché malgré ce `vu=True`, avec
+la fin de la sortie (donc les lignes de comptage que le crochet imprime)
+dans un bloc repliable « Sortie du push (tests du crochet) », fermé par
+défaut (`<details>` sans attribut `open`) — absent si la sortie est vide.
+C'est une exception délibérée au principe « un résultat acquitté
+disparaît du panneau » : `push_arriere_plan.entree_affichable` retourne
+l'entrée telle quelle pour tout état autre que `pousse`, mais la masque
+(retourne `None`, donc aucun panneau) si `etat == "pousse"` ET que le
+champ dédié `masque` est vrai. Ce champ est SÉPARÉ de `vu` précisément
+pour cette raison : poser `vu=True` (ce que fait déjà le moteur à la
+réussite, et ce que referait sans effet un appel à l'ancien bouton/route
+« Vu ») ne masque jamais ce panneau — seul un clic explicite sur le
+nouveau bouton « Masquer » (`POST /projet/<nom>/push/masquer`,
+`push_arriere_plan.marquer_masque`, qui pose `masque=True` et ne touche à
+rien d'autre) le fait disparaître. Le panneau réapparaît normalement au
+push suivant : `demarrer_push_arriere_plan` remplace entièrement l'entrée
+par une nouvelle, sans le champ `masque`. Comme `masque` n'entre dans
+aucun des champs exposés par `etats_a_signaler` (`_CHAMPS_ETAT_PUBLIC`) et
+n'est lu par aucune autre route ni aucun autre template, cette
+conservation n'a AUCUN effet ailleurs : rien dans la barre latérale, pas
+de réapparition de la fenêtre verte « Poussé » (#123, purement
+transitoire, jamais rejouée), pas de préfixe persistant dans le titre de
+l'onglet.
 
 **Pas de contournement :** aucun bouton ni option `--no-verify` n'est
 exposé dans l'interface — contourner les tests reste possible dans un
 terminal, volontairement, mais jamais depuis `relecture_web`.
+
+**Filtrage des secrets (issue #127, point 4,
+`push_arriere_plan._filtrer_secrets`) :** appliqué par `_tronquer_sortie`
+— donc avant toute troncature, et donc avant tout affichage ou écriture
+dans l'état persistant, succès comme échecs. Reconnaît et remplace par un
+marqueur neutre (`***secret masqué***`), sans toucher au reste de la
+ligne, trois formes courantes : les identifiants (utilisateur, et mot de
+passe/jeton s'il y en a un) dans une URL de dépôt
+(`https://utilisateur:jeton@hôte/...`) ; les jetons GitHub reconnaissables
+par leur préfixe (classiques `ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_`, ou
+fine-grained `github_pat_`) ; la valeur d'une ligne `Authorization:` (en
+entier, quel que soit son schéma — `Bearer`, `Basic`, ou autre). **Limite
+assumée, documentée volontairement ici plutôt que cachée :** ce filtrage
+ne peut PAS deviner un secret de forme arbitraire qu'un test ou le crochet
+imprimerait sans l'un de ces formats reconnaissables (mot de passe en
+clair sans contexte, clé API maison, variable d'environnement affichée
+brute...). C'est un filet de sécurité en plus, jamais une garantie — la
+vraie protection reste que le crochet et les tests n'impriment eux-mêmes
+aucun secret dans leur sortie.
 
 **Garde-fous :** les projets du PC fixe (`_ccw`) et tout projet sans
 crochet `pre-push` exécutable : aucun changement de comportement.

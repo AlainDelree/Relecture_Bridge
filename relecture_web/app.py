@@ -1297,11 +1297,16 @@ def projet_route(nom_projet):
     # chaque affichage de cette page (jamais mis en cache), fichier
     # absent/corrompu -> None, panneau simplement absent. N'apparaît plus une
     # fois le résultat acquitté (issue #125, `entree_affichable`) : même règle
-    # que la barre latérale/fenêtre globale (#123), pour qu'un refus vu ou un
-    # push abouti ne reste pas affiché indéfiniment. `equipe_hook_pre_push`
-    # conditionne à la fois ce panneau et le texte de la confirmation avant
-    # Push (voir projet.html) — jamais calculé pour un projet distant (PC fixe
-    # CCW, voir `projet_equipe_hook_pre_push`).
+    # que la barre latérale/fenêtre globale (#123), pour qu'un refus vu ne
+    # reste pas affiché indéfiniment — SAUF un push abouti (`etat ==
+    # "pousse"`), qui reste affiché ici malgré `vu=True` (déjà consommé par
+    # la barre latérale/la fenêtre globale) jusqu'au push suivant ou jusqu'à
+    # la fermeture explicite du bouton « Masquer » (issue #127, point 2 —
+    # voir le docstring de `entree_affichable` pour le détail de cette
+    # exception). `equipe_hook_pre_push` conditionne à la fois ce panneau et
+    # le texte de la confirmation avant Push (voir projet.html) — jamais
+    # calculé pour un projet distant (PC fixe CCW, voir
+    # `projet_equipe_hook_pre_push`).
     projet["dernier_push"] = push_arriere_plan.entree_affichable(nom_projet)
     projet["equipe_hook_pre_push"] = (
         projet["statut"] == "ok" and projet_equipe_hook_pre_push(projet["repertoire"])
@@ -2007,6 +2012,20 @@ def acquitter_push_route(nom_projet):
     seulement marqué vu. Projet introuvable ou sans entrée : rien à faire,
     pas d'erreur (la page a pu changer entre l'affichage et le clic)."""
     push_arriere_plan.marquer_vu(nom_projet)
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+
+@app.route("/projet/<nom_projet>/push/masquer", methods=["POST"])
+@login_requis
+def masquer_push_route(nom_projet):
+    """Ferme explicitement (bouton « Masquer », issue #127, point 2) le
+    panneau d'un push abouti affiché sur la page projet — jamais utilisé
+    pour un échec, qui garde son bouton « Vu » existant
+    (`acquitter_push_route`) inchangé. N'affecte que l'affichage de ce
+    panneau sur cette page, jamais la barre latérale, la fenêtre globale ou
+    le titre de l'onglet (voir `push_arriere_plan.marquer_masque`). Projet
+    introuvable ou sans entrée : rien à faire, pas d'erreur."""
+    push_arriere_plan.marquer_masque(nom_projet)
     return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 

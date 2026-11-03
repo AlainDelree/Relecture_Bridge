@@ -58,10 +58,19 @@
   {% if dp.sortie and dp.etat not in ("pousse", "en_cours") %}
   <p class="panneau-push__sortie-titre">Fin de la sortie du crochet et de git :</p>
   <pre class="panneau-push__sortie">{{ dp.sortie }}</pre>
+  {% elif dp.sortie and dp.etat == "pousse" %}
+  <details class="panneau-push__sortie-repliable">
+    <summary>Sortie du push (tests du crochet)</summary>
+    <pre class="panneau-push__sortie">{{ dp.sortie }}</pre>
+  </details>
   {% endif %}
   {% if dp.etat not in ("pousse", "en_cours") and not dp.vu %}
   <form method="post" action="{{ url_for('acquitter_push_route', nom_projet=projet.nom) }}" id="form-vu-push">
     <button type="submit" class="bouton">Vu</button>
+  </form>
+  {% elif dp.etat == "pousse" %}
+  <form method="post" action="{{ url_for('masquer_push_route', nom_projet=projet.nom) }}" id="form-masquer-push">
+    <button type="submit" class="bouton">Masquer</button>
   </form>
   {% endif %}
 </section>

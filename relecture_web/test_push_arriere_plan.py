@@ -21,8 +21,18 @@ Couvre :
 - Issue #125 : le panneau « Dernier push » de la page projet n'apparaît
   que pour un push en cours ou un résultat pas encore acquitté — absent
   sans état, présent en cours, présent pour un refus non acquitté, absent
-  après acquittement ou après un push abouti (vu immédiatement), et un
-  refus non vu n'est jamais effacé par un push réussi par un autre chemin.
+  après acquittement, et un refus non vu n'est jamais effacé par un push
+  réussi par un autre chemin.
+- Issue #127 : EXCEPTION à la règle ci-dessus pour un push abouti (`etat ==
+  "pousse"`) — reste affiché sur la page projet malgré `vu=True` (déjà posé
+  automatiquement, toujours suffisant pour que la barre latérale/la route
+  de sondage/la fenêtre globale #123 ne le signalent plus), avec un bloc
+  repliable « Sortie du push (tests du crochet) » (fermé par défaut, absent
+  si la sortie est vide), jusqu'au push suivant ou jusqu'au clic sur un
+  nouveau bouton « Masquer » (champ dédié `masque`, séparé de `vu`, sans
+  effet ailleurs). Affichage d'un échec inchangé. Filtrage des secrets
+  (`push_arriere_plan._filtrer_secrets`) appliqué avant toute troncature,
+  succès comme échecs.
 
 Pas de framework de test externe dans ce dépôt (voir #107) : fichier
 `unittest` autonome (stdlib uniquement), lançable par
@@ -513,10 +523,11 @@ class AcquittementVuTestCase(BasePushTestCase):
 class PanneauPagePushTestCase(BasePushTestCase):
     """Issue #125 : le panneau « Dernier push » de la page projet
     (`#panneau-dernier-push`) n'apparaît que pour un push en cours ou un
-    résultat pas encore acquitté — jamais pour un résultat déjà vu, qu'il
-    s'agisse d'un acquittement explicite (« Vu ») ou d'un push abouti
-    (acquitté automatiquement dès l'écriture de son entrée, voir
-    `push_arriere_plan._executer_push_arriere_plan`)."""
+    résultat pas encore acquitté — jamais pour un résultat déjà vu via un
+    acquittement explicite (« Vu »). Un push abouti (`etat == "pousse"`,
+    acquitté automatiquement dès l'écriture de son entrée) fait EXCEPTION
+    depuis l'issue #127 — voir `PanneauPousseTestCase` ci-dessous pour son
+    comportement propre (bloc repliable, bouton « Masquer »)."""
 
     def test_panneau_absent_sans_etat(self):
         html = self.client.get("/projet/projet_local").get_data(as_text=True)
@@ -555,7 +566,9 @@ class PanneauPagePushTestCase(BasePushTestCase):
         html = self.client.get("/projet/projet_local").get_data(as_text=True)
         self.assertNotIn("panneau-dernier-push", html)
 
-    def test_panneau_absent_apres_un_push_reussi(self):
+    def test_panneau_reste_present_apres_un_push_reussi(self):
+        """Depuis l'issue #127, un push abouti fait exception : le panneau
+        reste affiché malgré `vu=True` (voir `PanneauPousseTestCase`)."""
         _installer_hook_pre_push(self.repertoire, "#!/bin/sh\nexit 0\n")
         _creer_branche(self.repertoire, "feature-a")
         self._poster_push(["feature-a"])
@@ -563,7 +576,7 @@ class PanneauPagePushTestCase(BasePushTestCase):
         self.assertEqual(entree["etat"], "pousse")
 
         html = self.client.get("/projet/projet_local").get_data(as_text=True)
-        self.assertNotIn("panneau-dernier-push", html)
+        self.assertIn("panneau-dernier-push", html)
 
     def test_refus_non_vu_reste_affiche_malgre_un_push_reussi_par_un_autre_chemin(self):
         _creer_branche(self.repertoire, "feature-a")
@@ -582,6 +595,188 @@ class PanneauPagePushTestCase(BasePushTestCase):
         html = self.client.get("/projet/projet_local").get_data(as_text=True)
         self.assertIn("panneau-dernier-push", html)
         self.assertIn("ÉCHEC_ANCIEN", html)
+
+
+class PanneauPousseTestCase(BasePushTestCase):
+    """Issue #127, points 1 à 3 : bloc repliable « Sortie du push (tests du
+    crochet) » pour un push abouti, qui reste affichable sur la page projet
+    malgré `vu=True` (mis d'office à la réussite, déjà consommé par la
+    barre latérale et la fenêtre globale, #123) jusqu'au push suivant ou
+    jusqu'au clic sur le nouveau bouton « Masquer ». Aucun changement à
+    l'affichage d'un échec (même bloc, mêmes libellés)."""
+
+    def setUp(self):
+        super().setUp()
+        _installer_hook_pre_push(
+            self.repertoire,
+            "#!/bin/sh\necho '3 fichiers de tests Python réussis'\necho '42 tests JavaScript réussis'\nexit 0\n",
+        )
+        _creer_branche(self.repertoire, "feature-a")
+
+    def test_bloc_sortie_affiche_pour_push_abouti(self):
+        self._poster_push(["feature-a"])
+        entree = self._attendre_fin_push()
+        self.assertEqual(entree["etat"], "pousse")
+
+        page = self.client.get("/projet/projet_local").get_data(as_text=True)
+        self.assertIn("Sortie du push (tests du crochet)", page)
+        self.assertIn("3 fichiers de tests Python réussis", page)
+        self.assertIn("42 tests JavaScript réussis", page)
+        # Bloc repliable fermé par défaut : balise <details> sans attribut `open`.
+        debut = page.index("<details")
+        fin_balise_ouvrante = page.index(">", debut)
+        self.assertNotIn("open", page[debut:fin_balise_ouvrante])
+
+    def test_pas_de_bloc_si_sortie_vide(self):
+        push_arriere_plan.ecrire_entree(
+            "projet_local", etat="pousse", branches=["feature-a"], repertoire=self.repertoire,
+            debut="2026-11-04T10:00:00", fin="2026-11-04T10:01:00", sortie="", vu=True,
+            pid=None, resultats={"feature-a": {"ok": True}},
+        )
+        page = self.client.get("/projet/projet_local").get_data(as_text=True)
+        self.assertIn("Dernier push", page)
+        self.assertNotIn("Sortie du push (tests du crochet)", page)
+        self.assertNotIn("panneau-push__sortie-repliable", page)
+
+    def test_echec_affichage_inchange(self):
+        push_arriere_plan.ecrire_entree(
+            "projet_local", etat="refuse", branches=["feature-a"], repertoire=self.repertoire,
+            debut="2026-11-04T10:00:00", fin="2026-11-04T10:01:00", sortie="ÉCHEC_TEST_FACTICE", vu=False,
+            pid=None, resultats={"feature-a": {"ok": False}},
+        )
+        page = self.client.get("/projet/projet_local").get_data(as_text=True)
+        self.assertIn("Fin de la sortie du crochet et de git :", page)
+        self.assertIn("ÉCHEC_TEST_FACTICE", page)
+        self.assertNotIn("panneau-push__sortie-repliable", page)
+        self.assertNotIn("Masquer", page)
+        self.assertIn('action="/projet/projet_local/push/vu"', page)
+
+    def test_resultat_abouti_non_masque_par_lancien_bouton_vu(self):
+        push_arriere_plan.ecrire_entree(
+            "projet_local", etat="pousse", branches=["feature-a"], repertoire=self.repertoire,
+            debut="2026-11-04T10:00:00", fin="2026-11-04T10:01:00", sortie="3 fichiers réussis", vu=True,
+            pid=None, resultats={"feature-a": {"ok": True}},
+        )
+        # L'ancien bouton « Vu » (issues #122/#123) ne change que `vu`, déjà
+        # True pour un push abouti — ne doit pas masquer le panneau ici.
+        self.client.post("/projet/projet_local/push/vu")
+        page = self.client.get("/projet/projet_local").get_data(as_text=True)
+        self.assertIn("Sortie du push (tests du crochet)", page)
+
+        self.client.post("/projet/projet_local/push/masquer")
+        page_apres = self.client.get("/projet/projet_local").get_data(as_text=True)
+        self.assertNotIn("Sortie du push (tests du crochet)", page_apres)
+        self.assertNotIn("panneau-push", page_apres)
+
+        entree = push_arriere_plan.lire_entree("projet_local")
+        self.assertEqual(entree["etat"], "pousse")
+        self.assertTrue(entree["masque"])
+
+    def test_nouveau_push_reaffiche_apres_masquage(self):
+        push_arriere_plan.ecrire_entree(
+            "projet_local", etat="pousse", branches=["feature-a"], repertoire=self.repertoire,
+            debut="2026-11-04T10:00:00", fin="2026-11-04T10:01:00", sortie="ancien", vu=True, masque=True,
+            pid=None, resultats={"feature-a": {"ok": True}},
+        )
+        self.assertIsNone(push_arriere_plan.entree_affichable("projet_local"))
+
+        self._poster_push(["feature-a"])
+        entree = self._attendre_fin_push()
+        self.assertEqual(entree["etat"], "pousse")
+        self.assertNotIn("masque", entree)
+        self.assertIsNotNone(push_arriere_plan.entree_affichable("projet_local"))
+
+    def test_masque_sans_effet_sur_etats_a_signaler_et_barre_laterale(self):
+        push_arriere_plan.ecrire_entree(
+            "projet_local", etat="pousse", branches=["feature-a"], repertoire=self.repertoire,
+            debut="2026-11-04T10:00:00", fin="2026-11-04T10:01:00", sortie="3 fichiers réussis", vu=True,
+            masque=True, pid=None, resultats={"feature-a": {"ok": True}},
+        )
+        self.assertNotIn("projet_local", push_arriere_plan.etats_a_signaler())
+        self.assertEqual(self.client.get("/push/etat").get_json(), {"projets": {}})
+
+        page_accueil = self.client.get("/").get_data(as_text=True)
+        debut = page_accueil.index('<nav class="barre-laterale">')
+        fin = page_accueil.index("</nav>", debut)
+        barre = page_accueil[debut:fin]
+        self.assertNotIn("panneau-sidebar-push", barre)
+        self.assertNotIn("indicateur-push-en-cours", barre)
+
+    def test_champ_masque_jamais_expose_par_la_route_de_sondage(self):
+        push_arriere_plan.ecrire_entree(
+            "projet_local", etat="refuse", branches=["feature-a"], repertoire=self.repertoire,
+            debut="2026-11-04T10:00:00", fin="2026-11-04T10:01:00", sortie="ÉCHEC", vu=False,
+            masque=True, pid=None, resultats={"feature-a": {"ok": False}},
+        )
+        donnees = self.client.get("/push/etat").get_json()
+        self.assertNotIn("masque", donnees["projets"]["projet_local"])
+
+
+class FiltrageSecretsTestCase(unittest.TestCase):
+    """Issue #127, point 4 : filtrage au mieux des cas courants
+    (`push_arriere_plan._filtrer_secrets`), appliqué par `_tronquer_sortie`
+    avant toute troncature — donc avant tout affichage, succès comme
+    échecs. Ne doit jamais altérer une sortie ordinaire."""
+
+    def test_identifiants_url_avec_mot_de_passe(self):
+        texte = "fatal: impossible : https://alice:s3cr3t-token@example.com/depot.git"
+        resultat = push_arriere_plan._filtrer_secrets(texte)
+        self.assertNotIn("alice", resultat)
+        self.assertNotIn("s3cr3t-token", resultat)
+        self.assertIn("https://***secret masqué***@example.com/depot.git", resultat)
+
+    def test_identifiants_url_sans_mot_de_passe(self):
+        texte = "remote: https://ghp_abcdefghijklmnopqrst@github.com/org/depot.git"
+        resultat = push_arriere_plan._filtrer_secrets(texte)
+        self.assertNotIn("ghp_abcdefghijklmnopqrst", resultat)
+        self.assertIn("@github.com/org/depot.git", resultat)
+
+    def test_jeton_github_classique(self):
+        texte = "token trouvé : ghp_AbCdEfGhIjKlMnOpQrStUvWxYz012345 dans la sortie"
+        resultat = push_arriere_plan._filtrer_secrets(texte)
+        self.assertNotIn("ghp_AbCdEfGhIjKlMnOpQrStUvWxYz012345", resultat)
+        self.assertIn("token trouvé :", resultat)
+        self.assertIn("dans la sortie", resultat)
+
+    def test_jeton_github_fine_grained(self):
+        texte = "github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        resultat = push_arriere_plan._filtrer_secrets(texte)
+        self.assertNotIn("github_pat_", resultat)
+
+    def test_en_tete_autorisation(self):
+        texte = "requête : GET /api\nAuthorization: Bearer abcdef0123456789\nsuite"
+        resultat = push_arriere_plan._filtrer_secrets(texte)
+        self.assertNotIn("abcdef0123456789", resultat)
+        self.assertIn("Authorization: ***secret masqué***", resultat)
+        self.assertIn("suite", resultat)
+
+    def test_sortie_ordinaire_non_alteree(self):
+        texte = "3 fichiers de tests Python réussis\n42 tests JavaScript réussis\ngit@github.com:org/depot.git"
+        self.assertEqual(push_arriere_plan._filtrer_secrets(texte), texte)
+
+    def test_tronquer_sortie_filtre_aussi(self):
+        texte = "Authorization: Bearer abcdef0123456789\n3 fichiers de tests Python réussis"
+        resultat = push_arriere_plan._tronquer_sortie(texte)
+        self.assertNotIn("abcdef0123456789", resultat)
+        self.assertIn("3 fichiers de tests Python réussis", resultat)
+
+
+class FiltrageSecretsIntegrationTestCase(BasePushTestCase):
+    """Même filtrage, mais vérifié de bout en bout sur la sortie réelle
+    d'un push (crochet + git), pas seulement sur la fonction pure."""
+
+    def test_secret_du_crochet_filtre_dans_lentree_reelle(self):
+        _installer_hook_pre_push(
+            self.repertoire,
+            "#!/bin/sh\necho 'Authorization: Bearer abcdef0123456789'\n"
+            "echo '3 fichiers de tests Python réussis'\nexit 0\n",
+        )
+        _creer_branche(self.repertoire, "feature-a")
+
+        self._poster_push(["feature-a"])
+        entree = self._attendre_fin_push()
+        self.assertNotIn("abcdef0123456789", entree["sortie"])
+        self.assertIn("3 fichiers de tests Python réussis", entree["sortie"])
 
 
 if __name__ == "__main__":
