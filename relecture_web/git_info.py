@@ -2780,6 +2780,45 @@ def verifier_push_apres_timeout(repertoire, branche):
     return {"ok": hash_distant == hash_local, "hash_local": hash_local, "hash_distant": hash_distant, "erreur": None}
 
 
+def chemin_hook_pre_push(repertoire):
+    """Emplacement réel du crochet `pre-push` de `repertoire`, résolu par git
+    lui-même (`git rev-parse --git-path hooks/pre-push`) — respecte un
+    éventuel `core.hooksPath` personnalisé, et fonctionne aussi bien pour le
+    dossier principal d'un dépôt que pour un de ses worktrees (dont le
+    crochet vit toujours dans le dépôt commun, jamais dupliqué par
+    worktree ; git renvoie alors directement un chemin absolu, par
+    opposition au chemin relatif habituel `.git/hooks/pre-push`).
+
+    Retourne None pour un projet distant (PC fixe CCW, issue #94) — le push
+    en arrière-plan de cette issue est strictement local, aucun accès SSH
+    supplémentaire n'est introduit pour détecter un crochet sur le PC fixe.
+    Retourne aussi None si la commande git échoue (dépôt introuvable...),
+    sans jamais lever d'exception."""
+    if est_projet_distant(repertoire):
+        return None
+    resultat = _lancer_git(repertoire, "rev-parse", "--git-path", "hooks/pre-push")
+    if resultat.returncode != 0:
+        return None
+    chemin = resultat.stdout.strip()
+    if not chemin:
+        return None
+    if not os.path.isabs(chemin):
+        chemin = os.path.join(repertoire, chemin)
+    return os.path.normpath(chemin)
+
+
+def projet_equipe_hook_pre_push(repertoire):
+    """True si `repertoire` a un crochet `pre-push` exécutable à son
+    emplacement réel (voir `chemin_hook_pre_push`) — seul critère pour
+    qu'un push bascule en arrière-plan (issue #122). Un fichier présent
+    mais non exécutable (`chmod +x` oublié) compte comme non équipé, exactement
+    comme git lui-même l'ignorerait au moment du push."""
+    chemin = chemin_hook_pre_push(repertoire)
+    if not chemin:
+        return False
+    return os.path.isfile(chemin) and os.access(chemin, os.X_OK)
+
+
 def get_commits_en_attente(chemin_worktree):
     """Commits locaux non poussés vers la branche amont configurée."""
     amont = _lancer_git(

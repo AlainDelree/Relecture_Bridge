@@ -521,7 +521,7 @@ quand il y en a une, ou visible sur la page elle-même sinon).
 | Action | Portée | Commande équivalente | Garde-fou |
 |---|---|---|---|
 | **Revert** | Un commit précis, sur la page d'une branche. | `git revert --no-edit <hash>` | **Aucune confirmation** (issue #71). Crée un nouveau commit d'annulation, ne réécrit pas l'historique — réversible (revert du revert, ou reset tant qu'il n'est pas poussé). |
-| **Push** | Une ou plusieurs branches sélectionnées (cases à cocher, niveau « branches d'un projet »). | `git push <remote> <branche>` | **Confirmation forte** (issue #71) — le push quitte la machine. Cible toujours une branche entière jusqu'à son dernier commit, jamais une sélection de commits épars. Timeout de 120s (dépôt volumineux, connexion lente) ; en cas de dépassement, l'état réel est revérifié automatiquement (`git ls-remote` comparé au commit local) plutôt que de renvoyer Alain vers une vérification manuelle — le message flash final indique explicitement si le push a bien abouti, a échoué, ou si l'état n'a pu être déterminé (issue #66 ; issue #39). Après la confirmation, une fenêtre superposée « Push en cours... Ns » (compteur de secondes) reste affichée jusqu'au rechargement de la page avec le résultat — purement visuel côté navigateur, aucun changement serveur (issue #49). |
+| **Push** | Une ou plusieurs branches sélectionnées (cases à cocher, niveau « branches d'un projet »). | `git push <remote> <branche>` (une seule commande pour toutes les branches cochées si le projet est équipé d'un crochet pre-push, voir section 13) | **Confirmation forte** (issue #71) — le push quitte la machine. Cible toujours une branche entière jusqu'à son dernier commit, jamais une sélection de commits épars. **Projet NON équipé d'un crochet `pre-push` (comportement inchangé) :** timeout de 120s (dépôt volumineux, connexion lente) ; en cas de dépassement, l'état réel est revérifié automatiquement (`git ls-remote` comparé au commit local) plutôt que de renvoyer Alain vers une vérification manuelle — le message flash final indique explicitement si le push a bien abouti, a échoué, ou si l'état n'a pu être déterminé (issue #66 ; issue #39). Après la confirmation, une fenêtre superposée « Push en cours... Ns » (compteur de secondes) reste affichée jusqu'au rechargement de la page avec le résultat — purement visuel côté navigateur, aucun changement serveur (issue #49). **Projet équipé d'un crochet `pre-push` exécutable (issue #122, section 13) :** le push part en arrière-plan dans un thread du serveur dès la confirmation — la requête revient tout de suite, sans fenêtre « ... en cours... Ns » bloquante (elle n'a plus de sens, la page ne reste jamais en attente) ; le résultat réel se suit dans le panneau « Dernier push » de la page projet. Jamais pour un projet distant du PC fixe (`_ccw`, section 11) : toujours le comportement synchrone ci-dessus. |
 | **Merger** | Une ou plusieurs branches sélectionnées. | `git merge <branche>` (avec bascule temporaire si la branche cible n'a pas de worktree dédié) | **Confirmation légère** (issue #71 ; fenêtre maison depuis l'issue #73, plus `confirm()` natif) — modifie la branche cible mais reste local et annulable tant que le merge n'est pas finalisé (section 10). Refusé si la branche est déjà la branche cible, ou si le diagnostic « doublons uniquement » (section 4) indique qu'elle n'apporterait aucun contenu nouveau. **Garde-fou avant tout merge (issue #74) : refusé par message flash explicite si le dossier de la branche cible contient des modifications non committées (fichiers suivis modifiés, ou fichiers non suivis non ignorés — `git status --porcelain`)** — un tel état peut signaler qu'une tâche CCL y travaille encore, repliée sur ce même dossier faute de worktree dédié disponible (voir issue #73, où l'intégration automatique du CHANGELOG avait alors committé ce travail en cours par-dessus) ; aucune tentative de fusion n'est même lancée dans ce cas. **Depuis l'issue #117**, le message nomme explicitement les fichiers concernés avec leur statut (`chemin (modifié|non suivi|supprimé|renommé|copié|ajouté|conflit)` — `git_info.get_modifications_non_committees_detaillees`/`decrire_modifications_non_committees`), plafonné à une dizaine d'entrées puis « … et N autres », en rappelant qu'il s'agit du dossier principal du projet et que ces fichiers peuvent être non suivis par git — avant cette issue, le message ne donnait qu'un décompte (« N fichier(s) concerné(s) »), et avait été confondu à tort avec le panneau .gitignore affiché juste en dessous à l'époque (voir la ligne « Panneau .gitignore » plus bas pour le détail de ce malentendu et son autre correction, le déplacement du panneau). Un conflit (une fois le merge lancé) laisse volontairement le dépôt en état de fusion non résolue (pas de rollback automatique), pour ne pas perdre l'information. Même timeout étendu (120s) que Push (issue #39) ; en cas de dépassement, l'état réel est revérifié automatiquement (branche source devenue ancêtre de la cible ? fusion arrêtée sur des conflits ? ni l'un ni l'autre ?) et le message flash final le reflète explicitement, plutôt qu'un renvoi systématique vers une vérification manuelle (issue #66). Projet à plusieurs cibles configurées (section 7, issue #52) : un sélecteur « Cible du merge » apparaît dans le panneau d'actions — aucune cible n'est devinée, refus par message flash si aucune n'est choisie explicitement. Même indicateur « Fusion en cours... Ns » que Push après confirmation (issue #49). Si le merge introduit un ou plusieurs `CHANGELOG-<N>.md` à la racine du dépôt, une intégration automatique dans `CHANGELOG.md` est tentée juste après (issue #51) ; succès ou échec est rapporté par message flash **et** journalisé dans `relecture_web/changelog_fusion.log` (date/heure, projet, commande, résultat, erreur éventuelle) — consultable après coup même si le flash est passé inaperçu (issue #62). **Le script utilisé est toujours celui de relecture_bridge (`scripts/fusionner_changelog.py`, ce dépôt), jamais une copie du projet fusionné (issue #87)** — résolu à partir de l'emplacement de `relecture_web/git_info.py` lui-même, puis lancé avec `--repo <dépôt fusionné>` ; auparavant, seuls quelques projets équipés d'une copie locale du script bénéficiaient de cette intégration, les autres échouaient avec « script introuvable ». Ce script reste robuste à un `CHANGELOG.md` cible qui ne suit pas la convention « Convention d'ajout : ... » de relecture_bridge (issue #252) : en-tête absent -> insertion après le premier titre de niveau 1 trouvé, ou en tête de fichier si aucun titre ; `CHANGELOG.md` absent -> créé avec pour seul contenu les entrées fusionnées ; contenu existant jamais perdu, quelle que soit la forme du fichier cible. Si un `CHANGELOG-<N>.md` commence par sa ligne de titre d'échange (« # CHANGELOG-N — à fusionner dans CHANGELOG.md », tiret cadratin ou simple), cette ligne et les lignes vides qui la suivent directement sont retirées avant insertion — elle ne décrit que le fichier temporaire, pas l'entrée de changelog (issue #104) ; absente, rien n'est retiré. **Portée strictement limitée à `CHANGELOG.md` et aux `CHANGELOG-<N>.md` consommés (issue #74)** : le commit d'intégration (`git add -- CHANGELOG.md CHANGELOG-<N>.md... && git commit -- <mêmes chemins>`) ne touche jamais que ces fichiers précis — jamais un `git commit -a`/`git add -A`, qui aurait embarqué toute autre modification présente dans l'arbre (cause du commit 0c477c0 pendant l'issue #73, qui avait ainsi committé le travail inachevé d'une tâche CCL repliée sur ce même dossier). |
 | **Merger et supprimer** (issue #88) | Une ou plusieurs branches sélectionnées, en un seul clic. | `git merge <branche>` (avec bascule temporaire comme pour Merger seul) **puis**, seulement si le merge réussit, la même commande que « Supprimer la/les branche(s) fusionnée(s) » ci-dessous. | **Confirmation légère unique pour l'ensemble** décrivant les deux étapes qui vont s'enchaîner. Même garde-fou « modifications non committées » que Merger seul (ligne ci-dessus, issue #74, message nommant les fichiers concernés depuis l'issue #117). Mêmes deux conditions d'éligibilité que Merger seul (branche pas la cible, pas « doublons uniquement ») — **PLUS** refus explicite par message flash si le badge « ⚠ CCL travaille ici » (section 4) est actif pour cette branche, contrairement à Merger seul qui reste autorisé même avec ce badge affiché (l'utilisateur peut savoir ce qu'il fait délibérément). Si le merge échoue (conflit, timeout non confirmé abouti, erreur) : comportement identique à Merger seul, **aucune suppression n'est tentée**. Si le merge réussit mais que la suppression échoue ensuite (modifications non commitées détectées entre-temps par git, cas rare mais réel) : les deux résultats sont rapportés séparément dans le message flash — le merge a eu lieu, la suppression non, avec la raison. Les boutons Merger et Supprimer existants restent inchangés à côté de celui-ci pour un enchaînement en deux clics séparés si préféré. |
 | **Avertissement verrou Bridge_Agent avant fusion** (issue #118) | « Merger » et « Merger et supprimer » (lignes ci-dessus), déclenché avant toute tentative de fusion — y compris l'intégration automatique du CHANGELOG qui la suit, puisqu'elle fait partie du même geste. | Aucune commande destructrice : relit `logs/verrous/*.lock` (même source et même tolérance de format que le badge « ⚠ CCL travaille ici », section 4, étendue aux champs `projet=`/`mode=` — `git_info.lire_verrous_actifs`/`verrous_sur_dossier`), en lecture seule — jamais de verrou créé, modifié ou supprimé depuis `relecture_web`. | **Confirmation forte, page dédiée** (`confirmation_verrou_fusion.html`), déclenchée si au moins un verrou Bridge_Agent actif (pid vivant — signal 0 ou présence dans `/proc` ; un pid vivant appartenant à un autre utilisateur compte comme vivant) correspond, par son `rep=` résolu en chemin réel, au dossier où CE merge va réellement s'exécuter : le worktree dédié de la branche cible choisie s'il en a un, sinon le dossier principal du projet (jamais les worktrees des AUTRES branches du même projet — une issue qui y travaille ne gêne en rien ce merge précis, cas normal qui ne doit déclencher aucun avertissement). Motivé par un angle mort du garde-fou « modifications non committées » (#74/#117, ligne Merger ci-dessus) : un dossier peut être parfaitement propre au moment du clic si l'issue qui y travaille est encore en lecture, ou n'a pas encore écrit — un merge (surtout avec conflits) ou un `git pull` survenant pendant qu'elle tourne serait alors vu par son propre contrôle d'écriture comme une modification extérieure et restauré, avec échec définitif de cette issue (cas réel visé : un audit à périmètre dynamique dont le `REPO_CIBLE` est justement le dépôt où l'on fusionne). La page nomme, pour chaque verrou concerné, le projet et le mode (lecture/écriture) de l'issue — les deux modes sont concernés, pas seulement l'écriture. Deux actions : **Annuler** (lien simple vers la page du projet, focus par défaut, rien n'est soumis, même pattern que `echec_suppression_worktree.html`) ou **« Fusionner quand même »**, qui réémet la requête d'origine (toutes sélections comprises) avec un champ caché `forcer_malgre_verrou=on` — la fenêtre de confirmation forte habituelle (`#modal-confirmation`, bandeau rouge, focus par défaut sur Annuler) s'intercale encore avant l'envoi réel. **Jamais mémorisé d'une requête à l'autre ni d'un rechargement à l'autre** (même leçon que la case « Purger », issue #102) : ce champ caché n'existe que dans le formulaire de cette page précise, jamais une case cochée qui survivrait. **Revérifié côté serveur à l'exécution**, pas seulement à l'affichage de la page projet : le test relit l'état réel des verrous à chaque requête (une issue peut démarrer entre l'ouverture de la page et le clic), et n'accepte le contournement que si `forcer_malgre_verrou=on` est explicitement présent dans CETTE requête. S'ajoute au refus « modifications non committées » (#74/#117) et au refus du badge « ⚠ CCL travaille ici » de « Merger et supprimer » (ligne ci-dessus) sans les remplacer — placé avant eux dans `merger_et_supprimer_route` (inutile de montrer l'avertissement « fichiers ignorés » si la fusion elle-même ne peut pas même être lancée), donc jamais les deux messages empilés pour une même branche dans une même requête. Dégradation silencieuse, même principe que le badge existant : dossier `logs/verrous/` absent/illisible, fichier malformé, ou Bridge_Agent installé ailleurs → aucun avertissement, aucune erreur affichée. Les projets distants du PC fixe (lignes `_ccw`, section 11) ne sont pas couverts par ce contrôle : aucun accès SSH ajouté. |
@@ -1391,3 +1391,164 @@ Si Alain montre une capture d'écran ou un texte copié depuis
    `relecture_web/app.py` (routes et actions) et
    `relecture_web/git_info.py` (logique git, diagnostic A-F) dans le
    dépôt `relecture_bridge`.
+
+## 13. Push en arrière-plan pour les projets équipés d'un crochet `pre-push` (issue #122)
+
+Contexte : Alain prévoit d'installer, projet par projet, un crochet git
+`pre-push` qui lance une suite de tests (environ 80 à 90 secondes) avant
+chaque push et annule le push si un test échoue. Pour un tel projet, le
+push synchrone décrit à la ligne « Push » de la section 9 (timeout de
+120s, `TIMEOUT_GIT_LONG`) deviendrait peu praticable — un push proche ou
+au-delà de 120s bloquerait la page, et le message « n'a PAS abouti »
+pourrait même être faux (même piège que l'issue #66, mais plus probable
+avec un crochet qui allonge franchement chaque push). Cette issue pose le
+moteur et l'affichage sur la page du projet ; l'affichage sur les AUTRES
+pages (pastille, panneau « Attention Refus », fenêtre de résultat) fait
+l'objet d'une issue suivante.
+
+**Détection du crochet (`git_info.chemin_hook_pre_push`/
+`projet_equipe_hook_pre_push`) :** un projet est « équipé » si un crochet
+`pre-push` EXÉCUTABLE existe à l'emplacement résolu par git lui-même
+(`git rev-parse --git-path hooks/pre-push`, exécuté dans le répertoire du
+projet) — respecte donc un `core.hooksPath` personnalisé, et fonctionne
+aussi bien pour le dossier principal d'un dépôt que pour un de ses
+worktrees (le crochet vit toujours dans le dépôt commun, jamais dupliqué
+par worktree ; git renvoie alors un chemin absolu directement). Un fichier
+présent mais non exécutable (`chmod +x` oublié) compte comme NON équipé,
+exactement comme git lui-même l'ignorerait. **Jamais pour un projet
+distant du PC fixe (`_ccw`, section 11) :** `projet_equipe_hook_pre_push`
+retourne toujours False sans la moindre tentative de connexion SSH — le
+push en arrière-plan de cette issue est strictement local, section 11
+n'est pas affectée. Pour TOUT projet NON équipé, le comportement reste
+l'exact comportement synchrone décrit à la ligne « Push » de la section 9
+— aucun changement.
+
+**Mode arrière-plan (projets équipés seulement, `push_arriere_plan.py`) :**
+après la confirmation forte habituelle (dont le texte précise, pour un
+projet équipé, qu'un crochet de tests va s'exécuter et que cela peut
+durer plusieurs minutes), la requête revient tout de suite — la fenêtre
+superposée « Push en cours... Ns » de l'issue #49 ne s'affiche plus pour
+ce bouton (elle n'aurait plus de sens, rien ne reste bloqué). Le push
+s'exécute dans un thread du serveur, avec le process git lancé dans son
+propre groupe de processus (`start_new_session=True`) — toutes les
+branches cochées sont poussées par UN SEUL `git push <remote> <branche1>
+<branche2>...` (le crochet ne tourne qu'une fois), le résultat réel étant
+de toute façon établi branche par branche après coup (voir ci-dessous),
+indépendamment du code de sortie global de la commande. Délai propre à ce
+module, `push_arriere_plan.TIMEOUT_PUSH_ARRIERE_PLAN` (10 minutes),
+distinct de `TIMEOUT_GIT_LONG` : à son dépassement, tout le groupe de
+processus est tué (`os.killpg`, pas seulement le process git — les tests
+du crochet, enfants du même groupe, continueraient sinon à tourner et
+pourraient chevaucher le push suivant), puis l'état réel est revérifié
+par branche via `git_info.verifier_push_apres_timeout` (même fonction que
+l'issue #66, ré-utilisée ici : poussé / non abouti / indéterminé).
+
+**État global du projet** (`push_arriere_plan._etat_global`), à partir du
+résultat RÉEL par branche, jamais de la seule supposition du code de
+sortie ou du dépassement de délai :
+- `en_cours` — le thread tourne encore.
+- `pousse` — code de sortie nul ET toutes les branches confirmées
+  poussées (`ls-remote` identique au commit local).
+- `refuse` — au moins une branche confirmée NON poussée, sans dépassement
+  de délai (le crochet ou git a rejeté le push).
+- `interrompu` — le groupe de processus a été tué par ce module (délai
+  dépassé) : le process n'est jamais allé jusqu'au bout de ses propres
+  termes, sa sortie est nécessairement incomplète, même si le résultat
+  réel révèle que le push a malgré tout abouti juste avant le `killpg`
+  (même piège que l'issue #66) — le détail par branche reste consultable
+  dans le panneau. Même état pour une entrée restée « en_cours » après un
+  redémarrage de relecture_web (voir ci-dessous).
+- `indetermine` — ni l'un ni l'autre n'a pu être établi (échec de la
+  vérification réseau elle-même).
+
+**Un seul push à la fois par projet, projet verrouillé pendant ce
+temps :** l'état persistant (voir ci-dessous) sert lui-même de verrou —
+un projet est considéré verrouillé tant que son entrée a `etat ==
+"en_cours"` (`push_arriere_plan.projet_verrouille_par_push`), relu depuis
+le fichier à chaque requête, jamais mémorisé en mémoire process (sauf la
+durée de vie du process lui-même, voir le redémarrage ci-dessous). Un
+second push sur le même projet est refusé par un message clair
+(`demarrer_push_arriere_plan`, vérification et écriture de l'entrée sous
+le même verrou d'écriture pour éviter toute course entre deux requêtes
+simultanées). Pendant un push, toute AUTRE action qui modifie le dépôt
+git de CE projet est refusée par le même message (« Push en cours sur ce
+projet ») via le décorateur `app.refuse_si_push_en_cours`, appliqué à
+Merger, Merger et supprimer, Finaliser le merge, Supprimer (fusionnées ou
+forcées), Rejeter (simple ou forcé), Supprimer la/les branche(s) de
+récupération, Sécuriser (un commit ou tous), Revert, fusion du changelog
+distant, les trois actions du panneau `.gitignore`, et la résolution de
+conflit (Traiter ce bloc/tous les blocs, Retraiter le fichier en
+conflit) — en clair, toute route qui écrit dans le dépôt git de ce
+projet. Les actions de lecture (Comparer, Générer rapport, Comparer la
+sélection, panneaux de lecture...) et TOUS LES AUTRES PROJETS ne sont
+jamais concernés — revérifié depuis l'état réel à chaque requête, jamais
+mémorisé par avance. Le blocage vise un état stable pendant les tests ;
+il pourra être assoupli plus tard si le crochet teste une copie du commit
+poussé plutôt que le dépôt réel.
+
+**État persistant** (`push_arriere_plan.CHEMIN_ETAT_PUSH`,
+`relecture_web/push_arriere_plan_etat.json`, fichier local ignoré par git
+comme `changelog_fusion.log`/`decisions_fichiers_ignores.log`/
+`bruit_projets.log`) : un objet JSON, une entrée par projet, avec `etat`
+(une des cinq valeurs ci-dessus), `branches` (liste), `repertoire`,
+`debut`/`fin` (horodatages ISO), `sortie` (fin de la sortie combinée du
+crochet et de git, plafonnée à `MAX_LIGNES_SORTIE_PUSH` = 60 lignes ET
+`MAX_CARACTERES_SORTIE_PUSH` = 20000 caractères), `vu` (bool, voir « Vu »
+ci-dessous), `pid` (celui du process git, donc du groupe de processus,
+tant qu'il tourne — None sinon), et `resultats` (détail par branche,
+même forme que `git_info.verifier_push_apres_timeout`). Écrit au
+lancement (`etat = "en_cours"`) et à la fin du thread ; relu à chaque
+affichage de la page projet (`push_arriere_plan.lire_entree`), jamais mis
+en cache. Écriture atomique (fichier temporaire puis `os.replace`), pour
+qu'un lecteur concurrent ne voie jamais un JSON à moitié écrit. **Fichier
+absent ou illisible (JSON corrompu, ou contenu qui n'est pas un objet) :
+traité comme vide, sans erreur affichée** — dégradation systématique,
+même principe que `bruit_projets.log`/`decisions_fichiers_ignores.log`.
+**Une écriture impossible (dossier en lecture seule, disque plein...) ne
+bloque jamais le push lui-même** (garde-fou explicite de l'issue) : le
+push démarre malgré tout, avec un message flash d'avertissement signalant
+que son résultat ne sera pas affiché.
+
+**Redémarrage de relecture_web pendant un push** (`push_arriere_plan.
+reconcilier_au_demarrage`, appelée une seule fois juste avant
+`app.run(...)`, jamais à chaque requête) : une entrée restée `en_cours`
+ne peut provenir que d'un thread du process PRÉCÉDENT, sauf si le process
+git lui-même — détaché dans son propre groupe, donc jamais tué par
+l'arrêt du serveur — tourne encore en orphelin (`pid` toujours vivant,
+`git_info._pid_vivant`) : dans ce seul cas, l'entrée est laissée telle
+quelle (toujours verrouillée), faute de pouvoir savoir quand il se
+terminera. Sinon, l'entrée est marquée `interrompu` puis revérifiée par
+branche (même fonction que pour un dépassement de délai, résultat réel
+noté dans `resultats`).
+
+**Affichage sur la page du projet (panneau « Dernier push »,
+`projet.html`) :** montre l'état avec son libellé (⏳ En cours / ✅ Poussé
+/ ❌ Refusé / ⚠️ Interrompu / ❓ Indéterminé), les branches concernées, les
+horaires de début/fin, le détail par branche quand disponible, et — pour
+tout état autre que `pousse`/`en_cours` — la fin de la sortie du crochet
+et de git. Pendant l'exécution (`etat == "en_cours"`) : un compteur de
+secondes écoulées calculé côté navigateur (`Date.now()` moins l'horodatage
+de début) et un rafraîchissement automatique léger — un simple
+rechargement de la page toutes les 4 secondes, jamais d'appel réseau
+supplémentaire ni d'API JSON, cohérent avec le reste de cette page — pour
+relire l'état réel une fois le push terminé. **Pour un refus (`etat ==
+"refuse"`), la fin de la sortie des tests reste affichée jusqu'à ce
+qu'Alain clique sur « Vu »** (`POST /projet/<nom>/push/vu`,
+`push_arriere_plan.marquer_vu` — ne change que le champ `vu`, jamais
+`etat` : un refus déjà affiché reste un refus) ; **pour un push abouti
+(`etat == "pousse"`), `vu` est mis à True automatiquement dès la fin du
+thread**, aucun clic n'est nécessaire. Les états `interrompu`/
+`indetermine` affichent eux aussi leur sortie et un bouton « Vu » tant
+qu'il n'a pas été cliqué, par cohérence.
+
+**Pas de contournement :** aucun bouton ni option `--no-verify` n'est
+exposé dans l'interface — contourner les tests reste possible dans un
+terminal, volontairement, mais jamais depuis `relecture_web`.
+
+**Garde-fous :** les projets du PC fixe (`_ccw`) et tout projet sans
+crochet `pre-push` exécutable : aucun changement de comportement.
+`relecture_web` n'installe, ne modifie ni ne supprime jamais aucun
+crochet, et ne touche à aucun fichier de Bridge_Agent ou d'un autre
+projet. Même discipline de confirmation qu'avant cette issue (confirmation
+forte avant le push, quitte la machine) — le texte de cette confirmation
+précise simplement, en plus, qu'un crochet de tests va s'exécuter.

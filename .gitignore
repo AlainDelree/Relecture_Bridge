@@ -6,4 +6,5 @@
 relecture_web/changelog_fusion.log
 relecture_web/decisions_fichiers_ignores.log
 relecture_web/bruit_projets.log
+relecture_web/push_arriere_plan_etat.json
 __pycache__/

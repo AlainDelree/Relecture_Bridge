@@ -846,6 +846,39 @@ pre.brut {
 .outils-projet { margin-top: 1.5rem; }
 .outils-projet h2 { font-size: 1rem; margin: 0 0 0.5rem 0; color: #3a4550; }
 
+/* Panneau « Dernier push » (issue #122, push en arrière-plan pour les
+   projets équipés d'un crochet pre-push) — couleur selon l'état, même
+   palette que les badges/messages existants. */
+.panneau-push {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-left: 4px solid #888;
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.9rem;
+}
+.panneau-push h2 { margin: 0 0 0.3rem 0; font-size: 1rem; }
+.panneau-push--en_cours { border-left-color: #a35a00; }
+.panneau-push--pousse { border-left-color: #1e7b34; }
+.panneau-push--refuse { border-left-color: #a33; }
+.panneau-push--interrompu { border-left-color: #a35a00; }
+.panneau-push--indetermine { border-left-color: #888; }
+.panneau-push__resume { margin: 0.2rem 0; font-weight: 600; }
+.panneau-push__horaires { margin: 0.1rem 0; }
+.panneau-push__branches { list-style: none; padding: 0; margin: 0.3rem 0; }
+.panneau-push__sortie-titre { margin: 0.5rem 0 0.2rem 0; font-weight: 600; }
+.panneau-push__sortie {
+  background: #f6f6f6;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 0.5rem;
+  max-height: 16rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-size: 0.8rem;
+}
+
 /* Panneau repliable « .gitignore » (issue #98 ; section autonome dans
    « Outils du projet » depuis l'issue #117), même principe que
    .details-options-rejet de l'issue #97 — fermé par défaut. */

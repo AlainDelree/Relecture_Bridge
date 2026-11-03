@@ -20,6 +20,73 @@
   {% endif %}
 </header>
 
+{% if projet.dernier_push %}
+{% set dp = projet.dernier_push %}
+<section class="panneau-push panneau-push--{{ dp.etat }}" id="panneau-dernier-push"
+         data-etat="{{ dp.etat }}" data-debut="{{ dp.debut or '' }}">
+  <h2>🚀 Dernier push</h2>
+  <p class="panneau-push__resume">
+    {% if dp.etat == "en_cours" %}
+    ⏳ Push en cours depuis <span id="push-compteur-secondes">0</span>s —
+    {% elif dp.etat == "pousse" %}
+    ✅ Poussé —
+    {% elif dp.etat == "refuse" %}
+    ❌ Refusé (le crochet pre-push ou git a rejeté le push) —
+    {% elif dp.etat == "interrompu" %}
+    ⚠️ Interrompu (délai dépassé ou relecture_web redémarré pendant le push) —
+    {% else %}
+    ❓ État indéterminé (impossible de confirmer le résultat réel) —
+    {% endif %}
+    {{ dp.branches|join(", ") }}
+  </p>
+  <p class="panneau-push__horaires statut">
+    Démarré {{ dp.debut }}{% if dp.fin %} — terminé {{ dp.fin }}{% endif %}
+  </p>
+  {% if dp.resultats %}
+  <ul class="panneau-push__branches">
+    {% for nom_branche, resultat in dp.resultats.items() %}
+    <li>
+      <code>{{ nom_branche }}</code> —
+      {% if resultat.ok == true %}✅ poussée (commit distant identique au local)
+      {% elif resultat.ok == false %}❌ non aboutie (commit distant différent ou absent)
+      {% else %}❓ indéterminé{% if resultat.erreur %} ({{ resultat.erreur }}){% endif %}
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if dp.sortie and dp.etat not in ("pousse", "en_cours") %}
+  <p class="panneau-push__sortie-titre">Fin de la sortie du crochet et de git :</p>
+  <pre class="panneau-push__sortie">{{ dp.sortie }}</pre>
+  {% endif %}
+  {% if dp.etat not in ("pousse", "en_cours") and not dp.vu %}
+  <form method="post" action="{{ url_for('acquitter_push_route', nom_projet=projet.nom) }}" id="form-vu-push">
+    <button type="submit" class="bouton">Vu</button>
+  </form>
+  {% endif %}
+</section>
+{% if dp.etat == "en_cours" %}
+<script>
+(function () {
+  var debutISO = {{ dp.debut|tojson }};
+  var debutMs = debutISO ? new Date(debutISO).getTime() : Date.now();
+  var span = document.getElementById("push-compteur-secondes");
+  function actualiserCompteur() {
+    if (!span) return;
+    span.textContent = Math.max(0, Math.round((Date.now() - debutMs) / 1000));
+  }
+  actualiserCompteur();
+  setInterval(actualiserCompteur, 1000);
+  // Rafraîchissement automatique léger (issue #122, point 5) : un simple
+  // rechargement de page périodique tant que le push tourne, pour relire
+  // l'état réel écrit par le thread serveur — jamais d'appel réseau
+  // supplémentaire ni d'API JSON, cohérent avec le reste de cette page.
+  setTimeout(function () { window.location.reload(); }, 4000);
+})();
+</script>
+{% endif %}
+{% endif %}
+
 {% if projet.distant %}
 <p class="statut statut--distant">
   💻 Projet du PC fixe (Windows) — chemin <code>{{ projet.repertoire }}</code>, accès par SSH
@@ -374,6 +441,15 @@
   var COULEUR_PROJET = {{ projet.couleur|tojson }};
   var COULEUR_TEXTE_PROJET = {{ projet.couleur_texte|tojson }};
   var CIBLE_MERGE_UNIQUE = {{ projet.cibles_merge[0]|tojson }};
+  // Issue #122 : un projet équipé d'un crochet pre-push pousse en
+  // arrière-plan — la confirmation le rappelle, et la requête revenant
+  // tout de suite (jamais bloquée les ~80-90s des tests), la fenêtre
+  // superposée "Push en cours... Ns" de l'issue #49 (afficherOverlaiAction
+  // ci-dessous) ne s'affiche plus pour ce bouton : le résultat réel reste
+  // à suivre dans le panneau « Dernier push » de cette même page, pas dans
+  // une fenêtre bloquante qui n'aurait plus aucun sens une fois la
+  // requête revenue.
+  var EQUIPE_HOOK_PRE_PUSH = {{ projet.equipe_hook_pre_push|tojson }};
 
   var cases = document.querySelectorAll(".checkbox-branche");
   var panneau = document.getElementById("panneau-actions-branches");
@@ -663,16 +739,28 @@
       ? libelleUnitaireOuGroupe("Pousser", " vers GitHub")
       : libelleUnitaireOuGroupe("Supprimer");
 
+    // Issue #122 : pour un projet équipé d'un crochet pre-push, la
+    // confirmation précise qu'un crochet de tests va s'exécuter et que
+    // cela peut durer plusieurs minutes — le push partira malgré tout en
+    // arrière-plan juste après (voir EQUIPE_HOOK_PRE_PUSH ci-dessus),
+    // jamais bloquant.
+    var avertissementPush = (submitter === boutonPush && EQUIPE_HOOK_PRE_PUSH)
+      ? "⏳ Un crochet pre-push va exécuter ses tests avant d'accepter le push — cela peut durer "
+        + "plusieurs minutes. Le push partira en arrière-plan ; son résultat reste consultable "
+        + "dans le panneau « Dernier push »."
+      : "";
+
     ouvrirConfirmation({
       variant: "forte",
       message: libelleBouton + " — " + NOM_PROJET,
+      avertissement: avertissementPush,
       commandes: lignes,
       libelleBouton: libelleBouton,
       nomProjet: NOM_PROJET, couleurProjet: COULEUR_PROJET, couleurTexteProjet: COULEUR_TEXTE_PROJET,
       boutonDeclencheur: submitter,
       onConfirmer: function () {
         envoiForce = true;
-        if (submitter === boutonPush) {
+        if (submitter === boutonPush && !EQUIPE_HOOK_PRE_PUSH) {
           afficherOverlaiAction("Push");
         }
         form.requestSubmit(submitter);

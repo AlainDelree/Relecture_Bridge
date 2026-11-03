@@ -75,6 +75,7 @@ from git_info import (
     lister_fichiers_ignores_worktree,
     nom_branche_recuperation,
     pousser_branche,
+    projet_equipe_hook_pre_push,
     purger_reflog_et_gc,
     resoudre_bloc_conflit,
     resoudre_tous_blocs_conflit,
@@ -93,6 +94,7 @@ from git_info import (
     verrous_sur_dossier,
     worktree_ccl_actif,
 )
+import push_arriere_plan
 from resumes_info import (
     collect_resumes_projet,
     lister_fichiers_resumes_hash,
@@ -126,6 +128,25 @@ def login_requis(f):
         if not session.get("authentifie"):
             return redirect(url_for("connexion_route", suivant=request.path))
         return f(*args, **kwargs)
+    return enveloppe
+
+
+def refuse_si_push_en_cours(f):
+    """Garde-fou de l'issue #122, point 3 : pendant qu'un push en
+    arrière-plan tourne sur un projet (voir `push_arriere_plan`), toute
+    AUTRE action qui modifie le dépôt git de CE projet est refusée par un
+    message explicite — le blocage vise un état stable pendant que le
+    crochet pre-push fait tourner ses tests, pas seulement un second push.
+    Les actions de lecture et tous les autres projets ne sont jamais
+    concernés (revérifié à chaque requête depuis le fichier d'état, jamais
+    mémorisé). `nom_projet` est toujours le premier argument positionnel
+    des routes décorées (convention Flask de ce fichier)."""
+    @wraps(f)
+    def enveloppe(nom_projet, *args, **kwargs):
+        if push_arriere_plan.projet_verrouille_par_push(nom_projet):
+            flash(f"❌ Push en cours sur « {nom_projet} » — action refusée tant qu'il n'est pas terminé.", "erreur")
+            return redirect(url_for("projet_route", nom_projet=nom_projet))
+        return f(nom_projet, *args, **kwargs)
     return enveloppe
 
 
@@ -862,6 +883,7 @@ def conflit_fichier_route(nom_projet, chemin_relatif):
 
 @app.route("/projet/<nom_projet>/conflit/<path:chemin_relatif>/traiter", methods=["POST"])
 @login_requis
+@refuse_si_push_en_cours
 def traiter_bloc_conflit_route(nom_projet, chemin_relatif):
     """Applique le texte final composé par Alain pour un bloc de conflit
     précis (issue #56) : remplace ce bloc (marqueurs compris) par le
@@ -936,6 +958,7 @@ def traiter_bloc_conflit_route(nom_projet, chemin_relatif):
 
 @app.route("/projet/<nom_projet>/conflit/<path:chemin_relatif>/traiter-tous", methods=["POST"])
 @login_requis
+@refuse_si_push_en_cours
 def traiter_tous_blocs_conflit_route(nom_projet, chemin_relatif):
     """Variante « tout ou rien » de `traiter_bloc_conflit_route` (issue #69,
     bouton « Traiter tous les blocs ») : applique en une seule opération
@@ -1001,6 +1024,7 @@ def traiter_tous_blocs_conflit_route(nom_projet, chemin_relatif):
 
 @app.route("/projet/<nom_projet>/finaliser-merge", methods=["POST"])
 @login_requis
+@refuse_si_push_en_cours
 def finaliser_merge_route(nom_projet):
     """Finalise le commit de merge une fois tous les conflits résolus (issue
     #61) — jusqu'ici une étape manuelle en terminal (`git commit` sans `-m`,
@@ -1066,6 +1090,7 @@ def finaliser_merge_route(nom_projet):
 
 @app.route("/projet/<nom_projet>/conflit/<path:chemin_relatif>/retraiter", methods=["POST"])
 @login_requis
+@refuse_si_push_en_cours
 def retraiter_fichier_conflit_route(nom_projet, chemin_relatif):
     """Remet un fichier déjà résolu pendant le merge en cours dans son état
     de conflit d'origine (issue #72) — corrige la limite documentée à tort
@@ -1116,6 +1141,7 @@ def retraiter_fichier_conflit_route(nom_projet, chemin_relatif):
 
 @app.route("/projet/<nom_projet>/orphelin/<hash_commit>/securiser", methods=["POST"])
 @login_requis
+@refuse_si_push_en_cours
 def securiser_orphelin_route(nom_projet, hash_commit):
     """Sécurise un commit orphelin (issue #23) en créant une branche
     `recuperation-<hash>` pointant dessus — action déclenchée en un clic
@@ -1142,6 +1168,7 @@ def securiser_orphelin_route(nom_projet, hash_commit):
 
 @app.route("/projet/<nom_projet>/orphelins/securiser-tous", methods=["POST"])
 @login_requis
+@refuse_si_push_en_cours
 def securiser_tous_orphelins_route(nom_projet):
     """Sécurise en un seul geste tous les commits orphelins affichés pour ce
     projet (issue #34), en appliquant `securiser_commit_orphelin` (issue #23)
@@ -1233,6 +1260,17 @@ def projet_route(nom_projet):
     if not projet:
         flash(f"❌ Projet « {nom_projet} » introuvable.", "erreur")
         return redirect(url_for("index"))
+
+    # Panneau « Dernier push » (issue #122) : relu depuis l'état persistant à
+    # chaque affichage de cette page (jamais mis en cache), fichier
+    # absent/corrompu -> None, panneau simplement absent. `equipe_hook_pre_push`
+    # conditionne à la fois ce panneau et le texte de la confirmation avant
+    # Push (voir projet.html) — jamais calculé pour un projet distant (PC fixe
+    # CCW, voir `projet_equipe_hook_pre_push`).
+    projet["dernier_push"] = push_arriere_plan.lire_entree(nom_projet)
+    projet["equipe_hook_pre_push"] = (
+        projet["statut"] == "ok" and projet_equipe_hook_pre_push(projet["repertoire"])
+    )
 
     if projet["statut"] != "ok":
         projet["branches"] = []
@@ -1514,6 +1552,7 @@ def branche_route(nom_projet, nom_branche):
 
 @app.route("/projet/<nom_projet>/branche/<path:nom_branche>/revert", methods=["POST"])
 @login_requis
+@refuse_si_push_en_cours
 def revert_commit_route(nom_projet, nom_branche):
     hash_commit = request.form.get("hash_commit", "")
     projet, message_erreur = _projet_pret(nom_projet)
@@ -1636,6 +1675,7 @@ def nettoyer_projet_route(nom_projet):
 
 @app.route("/projet/<nom_projet>/fusionner-changelog-distant", methods=["POST"])
 @login_requis
+@refuse_si_push_en_cours
 def fusionner_changelog_distant_route(nom_projet):
     """Bouton « Fusionner le changelog » (issue #114, suite du refus
     explicite de #108) — réservé aux projets distants (PC fixe CCW) : voir
@@ -1667,6 +1707,7 @@ def fusionner_changelog_distant_route(nom_projet):
 
 @app.route("/projet/<nom_projet>/gitignore/ajouter", methods=["POST"])
 @login_requis
+@refuse_si_push_en_cours
 def ajouter_motif_gitignore_route(nom_projet):
     """Ajoute un motif au .gitignore de la racine du projet (panneau
     repliable, issue #98) — champ texte libre, ou raccourci « Ignorer »
@@ -1744,6 +1785,7 @@ def ajouter_motif_gitignore_route(nom_projet):
 
 @app.route("/projet/<nom_projet>/gitignore/retirer", methods=["POST"])
 @login_requis
+@refuse_si_push_en_cours
 def retirer_motif_gitignore_route(nom_projet):
     """Retire une ligne « motif » du .gitignore (bouton « Retirer », issue #98) —
     jamais une ligne commentaire/vide (le template ne propose le bouton que
@@ -1801,6 +1843,7 @@ def retirer_motif_gitignore_route(nom_projet):
 
 @app.route("/projet/<nom_projet>/gitignore/ne-plus-suivre", methods=["POST"])
 @login_requis
+@refuse_si_push_en_cours
 def ne_plus_suivre_route(nom_projet):
     """`git rm --cached` sur un fichier déjà suivi qui correspond à un motif
     du .gitignore (piège connu, issue #98) — jamais lancé automatiquement,
@@ -1833,10 +1876,22 @@ def ne_plus_suivre_route(nom_projet):
 
 @app.route("/projet/<nom_projet>/pousser", methods=["POST"])
 @login_requis
+@refuse_si_push_en_cours
 def pousser_branches_route(nom_projet):
     """Pousse chaque branche sélectionnée (case à cocher, niveau 2) jusqu'à
     son dernier commit — un push cible toujours une branche entière, jamais
-    une sélection de commits épars (contrairement au revert)."""
+    une sélection de commits épars (contrairement au revert).
+
+    Issue #122 : un projet équipé d'un crochet `pre-push` exécutable (voir
+    `projet_equipe_hook_pre_push` — jamais un projet distant du PC fixe CCW,
+    voir son propre garde-fou) part en arrière-plan (`push_arriere_plan`,
+    UN SEUL `git push` pour toutes les branches cochées, le crochet ne tourne
+    qu'une fois) : la requête revient tout de suite, le résultat réel reste
+    consultable sur cette même page (panneau « Dernier push »). Un projet
+    NON équipé garde exactement le comportement synchrone d'avant cette
+    issue (boucle par branche, délai de 120s, revérification #66) —
+    `@refuse_si_push_en_cours` ci-dessus ne s'applique de toute façon jamais
+    à lui, puisqu'il n'écrit jamais d'entrée dans l'état persistant."""
     noms_branches = request.form.getlist("branches")
     projet, message_erreur = _projet_pret(nom_projet)
     if not projet:
@@ -1847,10 +1902,33 @@ def pousser_branches_route(nom_projet):
         return redirect(url_for("projet_route", nom_projet=nom_projet))
 
     branches = _branches_par_nom(projet)
+    noms_valides = []
     for nom in noms_branches:
         if nom not in branches:
             flash(f"❌ Branche « {nom} » introuvable.", "erreur")
             continue
+        noms_valides.append(nom)
+
+    if not noms_valides:
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    if projet_equipe_hook_pre_push(projet["repertoire"]):
+        demarre, avertissement = push_arriere_plan.demarrer_push_arriere_plan(
+            projet["repertoire"], nom_projet, noms_valides,
+        )
+        if not demarre:
+            flash(avertissement, "erreur")
+        else:
+            if avertissement:
+                flash(avertissement, "erreur")
+            flash(
+                f"🚀 Push de {len(noms_valides)} branche(s) lancé en arrière-plan (un crochet pre-push "
+                "va exécuter ses tests) — suivez le résultat dans le panneau « Dernier push » ci-dessous.",
+                "succes",
+            )
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    for nom in noms_valides:
         try:
             resultat = pousser_branche(projet["repertoire"], nom)
         except subprocess.TimeoutExpired:
@@ -1885,8 +1963,21 @@ def pousser_branches_route(nom_projet):
     return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 
+@app.route("/projet/<nom_projet>/push/vu", methods=["POST"])
+@login_requis
+def acquitter_push_route(nom_projet):
+    """Acquitte (bouton « Vu », issue #122, point 5) le résultat d'un push
+    en arrière-plan affiché sur la page projet — ne touche à rien d'autre,
+    en particulier jamais à `etat` : un refus déjà affiché reste un refus,
+    seulement marqué vu. Projet introuvable ou sans entrée : rien à faire,
+    pas d'erreur (la page a pu changer entre l'affichage et le clic)."""
+    push_arriere_plan.marquer_vu(nom_projet)
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+
 @app.route("/projet/<nom_projet>/merger", methods=["POST"])
 @login_requis
+@refuse_si_push_en_cours
 def merger_branches_route(nom_projet):
     """Fusionne chaque branche sélectionnée (case à cocher, niveau 2) dans la
     branche cible de comparaison configurée pour le projet (repli sur la
@@ -2033,6 +2124,7 @@ def merger_branches_route(nom_projet):
 
 @app.route("/projet/<nom_projet>/merger-et-supprimer", methods=["POST"])
 @login_requis
+@refuse_si_push_en_cours
 def merger_et_supprimer_route(nom_projet):
     """Bouton combiné « Merger et supprimer » (issue #88) : enchaîne dans le
     même clic la fusion d'une branche (même logique que
@@ -2273,6 +2365,7 @@ def merger_et_supprimer_route(nom_projet):
 
 @app.route("/projet/<nom_projet>/supprimer", methods=["POST"])
 @login_requis
+@refuse_si_push_en_cours
 def supprimer_worktrees_route(nom_projet):
     """Supprime chaque branche sélectionnée (case à cocher, niveau 2),
     seulement si son merge est confirmé — même garde-fou qu'avant (issue
@@ -2373,6 +2466,7 @@ def supprimer_worktrees_route(nom_projet):
 
 @app.route("/projet/<nom_projet>/supprimer/forcer", methods=["POST"])
 @login_requis
+@refuse_si_push_en_cours
 def supprimer_worktree_force_route(nom_projet):
     """Suite de « Supprimer la/les branche(s) fusionnée(s) » et de « Merger
     et supprimer » (`merger_et_supprimer_route`) quand `git worktree remove`
@@ -2487,6 +2581,7 @@ def retirer_bruit_projet_route(nom_projet):
 
 @app.route("/projet/<nom_projet>/rejeter", methods=["POST"])
 @login_requis
+@refuse_si_push_en_cours
 def rejeter_worktrees_route(nom_projet):
     """Rejette chaque branche sélectionnée confirmée NON fusionnée (issue
     #95) — garde-fou strictement inverse de `supprimer_worktrees_route` :
@@ -2630,6 +2725,7 @@ def rejeter_worktrees_route(nom_projet):
 
 @app.route("/projet/<nom_projet>/rejeter/forcer", methods=["POST"])
 @login_requis
+@refuse_si_push_en_cours
 def rejeter_worktree_force_route(nom_projet):
     """Suite de « Rejeter (sans fusionner) » quand `git worktree remove` a
     échoué parce que le worktree contenait des fichiers modifiés ou non
@@ -2800,6 +2896,7 @@ def _purger_commits_rejetes(projet, hashes_cibles):
 
 @app.route("/projet/<nom_projet>/supprimer-branche-recuperation", methods=["POST"])
 @login_requis
+@refuse_si_push_en_cours
 def supprimer_branches_recuperation_route(nom_projet):
     """Supprime définitivement (`git branch -D`) chaque branche de
     récupération sélectionnée (case à cocher, niveau 2), ainsi que les
@@ -2952,6 +3049,13 @@ if __name__ == "__main__":
     import argparse
     import threading
     import webbrowser
+
+    # Issue #122, point 4 : toute entrée « en_cours » laissée par un
+    # précédent process relecture_web (arrêté/redémarré pendant un push en
+    # arrière-plan) est reconnue comme telle une seule fois ici, avant
+    # d'accepter la première requête — jamais à chaque affichage de page
+    # (voir le docstring de `push_arriere_plan.reconcilier_au_demarrage`).
+    push_arriere_plan.reconcilier_au_demarrage()
 
     analyseur = argparse.ArgumentParser(description="Lance relecture_web.")
     groupe_mode = analyseur.add_mutually_exclusive_group()
