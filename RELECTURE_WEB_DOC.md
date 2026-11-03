@@ -1543,24 +1543,31 @@ branche (même fonction que pour un dépassement de délai, résultat réel
 noté dans `resultats`).
 
 **Affichage sur la page du projet (panneau « Dernier push »,
-`projet.html`) :** montre l'état avec son libellé (⏳ En cours / ✅ Poussé
-/ ❌ Refusé / ⚠️ Interrompu / ❓ Indéterminé), les branches concernées, les
-horaires de début/fin, le détail par branche quand disponible, et — pour
-tout état autre que `pousse`/`en_cours` — la fin de la sortie du crochet
-et de git. Pendant l'exécution (`etat == "en_cours"`) : un compteur de
-secondes écoulées calculé côté navigateur (`Date.now()` moins l'horodatage
-de début) et un rafraîchissement automatique léger — un simple
-rechargement de la page toutes les 4 secondes, jamais d'appel réseau
-supplémentaire ni d'API JSON, cohérent avec le reste de cette page — pour
-relire l'état réel une fois le push terminé. **Pour un refus (`etat ==
-"refuse"`), la fin de la sortie des tests reste affichée jusqu'à ce
-qu'Alain clique sur « Vu »** (`POST /projet/<nom>/push/vu`,
+`projet.html`) :** n'apparaît que dans deux cas (issue #125,
+`push_arriere_plan.entree_affichable`, même règle que l'affichage global
+ci-dessous) — un push en cours (`etat == "en_cours"`), ou un résultat pas
+encore acquitté (`vu` faux : refusé, interrompu, indéterminé). Un push
+abouti (`etat == "pousse"`) reçoit `vu = True` automatiquement dès l'écriture
+de son entrée (voir `_executer_push_arriere_plan`) — considéré vu dès la fin
+du thread, comme à la fermeture de sa fenêtre de résultat globale (#123) —
+et n'est donc jamais affiché ici une fois terminé. Montre l'état avec son
+libellé (⏳ En cours / ❌ Refusé / ⚠️ Interrompu / ❓ Indéterminé), les
+branches concernées, les horaires de début/fin, le détail par branche
+quand disponible, et la fin de la sortie du crochet et de git. Pendant
+l'exécution : un compteur de secondes écoulées calculé côté navigateur
+(`Date.now()` moins l'horodatage de début) et un rafraîchissement
+automatique léger — un simple rechargement de la page toutes les 4
+secondes, jamais d'appel réseau supplémentaire ni d'API JSON, cohérent
+avec le reste de cette page — pour relire l'état réel une fois le push
+terminé (panneau alors absent s'il a abouti, ou toujours présent avec un
+bouton « Vu » sinon). Le bouton « Vu » (`POST /projet/<nom>/push/vu`,
 `push_arriere_plan.marquer_vu` — ne change que le champ `vu`, jamais
-`etat` : un refus déjà affiché reste un refus) ; **pour un push abouti
-(`etat == "pousse"`), `vu` est mis à True automatiquement dès la fin du
-thread**, aucun clic n'est nécessaire. Les états `interrompu`/
-`indetermine` affichent eux aussi leur sortie et un bouton « Vu » tant
-qu'il n'a pas été cliqué, par cohérence.
+`etat` : un refus déjà affiché reste un refus) fait disparaître le panneau
+de cette page dès le prochain affichage ; l'entrée elle-même reste dans le
+fichier d'état (non purgée), mais n'est plus signalée nulle part. Un
+résultat non acquitté n'est jamais masqué par un push réussi survenu entre
+temps par un autre chemin (ligne de commande, autre worktree) : seule
+l'entrée elle-même, propre à `push_arriere_plan`, détermine l'affichage.
 
 **Pas de contournement :** aucun bouton ni option `--no-verify` n'est
 exposé dans l'interface — contourner les tests reste possible dans un

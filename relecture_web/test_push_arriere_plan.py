@@ -18,6 +18,11 @@ Couvre :
   revérification par branche), redémarrage avec une entrée « en_cours »
   devenue « interrompu », fichier d'état absent/corrompu, et acquittement
   (« Vu ») d'un refus.
+- Issue #125 : le panneau « Dernier push » de la page projet n'apparaît
+  que pour un push en cours ou un résultat pas encore acquitté — absent
+  sans état, présent en cours, présent pour un refus non acquitté, absent
+  après acquittement ou après un push abouti (vu immédiatement), et un
+  refus non vu n'est jamais effacé par un push réussi par un autre chemin.
 
 Pas de framework de test externe dans ce dépôt (voir #107) : fichier
 `unittest` autonome (stdlib uniquement), lançable par
@@ -503,6 +508,80 @@ class AcquittementVuTestCase(BasePushTestCase):
         entree_apres = push_arriere_plan.lire_entree("projet_local")
         self.assertEqual(entree_apres["etat"], "refuse")
         self.assertTrue(entree_apres["vu"])
+
+
+class PanneauPagePushTestCase(BasePushTestCase):
+    """Issue #125 : le panneau « Dernier push » de la page projet
+    (`#panneau-dernier-push`) n'apparaît que pour un push en cours ou un
+    résultat pas encore acquitté — jamais pour un résultat déjà vu, qu'il
+    s'agisse d'un acquittement explicite (« Vu ») ou d'un push abouti
+    (acquitté automatiquement dès l'écriture de son entrée, voir
+    `push_arriere_plan._executer_push_arriere_plan`)."""
+
+    def test_panneau_absent_sans_etat(self):
+        html = self.client.get("/projet/projet_local").get_data(as_text=True)
+        self.assertNotIn("panneau-dernier-push", html)
+
+    def test_panneau_present_pendant_un_push_en_cours(self):
+        _installer_hook_pre_push(self.repertoire, "#!/bin/sh\nsleep 1\nexit 0\n")
+        _creer_branche(self.repertoire, "feature-a")
+        self._poster_push(["feature-a"], follow_redirects=False)
+
+        html = self.client.get("/projet/projet_local").get_data(as_text=True)
+        self.assertIn("panneau-dernier-push", html)
+        self.assertIn('data-etat="en_cours"', html)
+
+        self._attendre_fin_push()
+
+    def test_panneau_present_pour_un_refus_non_acquitte(self):
+        _installer_hook_pre_push(self.repertoire, "#!/bin/sh\necho ÉCHEC_TEST_FACTICE 1>&2\nexit 1\n")
+        _creer_branche(self.repertoire, "feature-a")
+        self._poster_push(["feature-a"])
+        self._attendre_fin_push()
+
+        html = self.client.get("/projet/projet_local").get_data(as_text=True)
+        self.assertIn("panneau-dernier-push", html)
+        self.assertIn("ÉCHEC_TEST_FACTICE", html)
+        self.assertIn('id="form-vu-push"', html)
+
+    def test_panneau_absent_apres_acquittement(self):
+        _installer_hook_pre_push(self.repertoire, "#!/bin/sh\necho ÉCHEC_TEST_FACTICE 1>&2\nexit 1\n")
+        _creer_branche(self.repertoire, "feature-a")
+        self._poster_push(["feature-a"])
+        self._attendre_fin_push()
+
+        self.client.post("/projet/projet_local/push/vu")
+
+        html = self.client.get("/projet/projet_local").get_data(as_text=True)
+        self.assertNotIn("panneau-dernier-push", html)
+
+    def test_panneau_absent_apres_un_push_reussi(self):
+        _installer_hook_pre_push(self.repertoire, "#!/bin/sh\nexit 0\n")
+        _creer_branche(self.repertoire, "feature-a")
+        self._poster_push(["feature-a"])
+        entree = self._attendre_fin_push()
+        self.assertEqual(entree["etat"], "pousse")
+
+        html = self.client.get("/projet/projet_local").get_data(as_text=True)
+        self.assertNotIn("panneau-dernier-push", html)
+
+    def test_refus_non_vu_reste_affiche_malgre_un_push_reussi_par_un_autre_chemin(self):
+        _creer_branche(self.repertoire, "feature-a")
+        push_arriere_plan.ecrire_entree(
+            "projet_local", etat="refuse", branches=["feature-a"], repertoire=self.repertoire,
+            debut="2026-01-01T00:00:00", fin="2026-01-01T00:02:00",
+            sortie="ÉCHEC_ANCIEN", vu=False, pid=None, resultats={"feature-a": {"ok": False}},
+        )
+
+        # Push réel de la même branche, mais par un chemin qui ne passe pas
+        # par `push_arriere_plan` (ex. synchrone, ou en ligne de commande) —
+        # l'entrée refusée ci-dessus n'est touchée par rien de tout ça.
+        subprocess.run(["git", "push", "--quiet", "origin", "feature-a"], cwd=self.repertoire, check=True)
+        self.assertEqual(_hash_distant(self.remote, "feature-a"), _hash_local(self.repertoire, "feature-a"))
+
+        html = self.client.get("/projet/projet_local").get_data(as_text=True)
+        self.assertIn("panneau-dernier-push", html)
+        self.assertIn("ÉCHEC_ANCIEN", html)
 
 
 if __name__ == "__main__":

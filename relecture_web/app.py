@@ -1295,11 +1295,14 @@ def projet_route(nom_projet):
 
     # Panneau « Dernier push » (issue #122) : relu depuis l'état persistant à
     # chaque affichage de cette page (jamais mis en cache), fichier
-    # absent/corrompu -> None, panneau simplement absent. `equipe_hook_pre_push`
+    # absent/corrompu -> None, panneau simplement absent. N'apparaît plus une
+    # fois le résultat acquitté (issue #125, `entree_affichable`) : même règle
+    # que la barre latérale/fenêtre globale (#123), pour qu'un refus vu ou un
+    # push abouti ne reste pas affiché indéfiniment. `equipe_hook_pre_push`
     # conditionne à la fois ce panneau et le texte de la confirmation avant
     # Push (voir projet.html) — jamais calculé pour un projet distant (PC fixe
     # CCW, voir `projet_equipe_hook_pre_push`).
-    projet["dernier_push"] = push_arriere_plan.lire_entree(nom_projet)
+    projet["dernier_push"] = push_arriere_plan.entree_affichable(nom_projet)
     projet["equipe_hook_pre_push"] = (
         projet["statut"] == "ok" and projet_equipe_hook_pre_push(projet["repertoire"])
     )

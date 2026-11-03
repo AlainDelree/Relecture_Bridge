@@ -158,6 +158,18 @@ def marquer_vu(nom_projet, chemin_etat=None):
 _CHAMPS_ETAT_PUBLIC = ("etat", "vu", "debut", "fin", "branches", "sortie", "resultats")
 
 
+def _affichable(entree):
+    """True si `entree` doit encore être signalée quelque part (barre
+    latérale et fenêtre globale, issue #123 ; panneau de la page projet,
+    issue #125) : un push en cours, ou un résultat pas encore acquitté
+    (`vu` faux). Un push abouti (« pousse ») reçoit `vu=True` dès son
+    écriture (voir `_executer_push_arriere_plan`) — considéré vu à la
+    fermeture de sa fenêtre de résultat (#123), jamais retenu ici une fois
+    terminé. Un refus/interruption/indétermination, en revanche, reste
+    affichable tant que personne n'a cliqué « Vu »."""
+    return entree.get("etat") == "en_cours" or not entree.get("vu")
+
+
 def etats_a_signaler(chemin_etat=None):
     """Sous-ensemble de l'état persistant à afficher globalement (issue
     #123, point 1) : seuls les projets dont un push est en cours, ou dont
@@ -171,12 +183,24 @@ def etats_a_signaler(chemin_etat=None):
     etat = _lire_etat_brut(chemin_etat or CHEMIN_ETAT_PUSH)
     resultat = {}
     for nom_projet, entree in etat.items():
-        if not isinstance(entree, dict):
-            continue
-        if entree.get("etat") != "en_cours" and entree.get("vu"):
+        if not isinstance(entree, dict) or not _affichable(entree):
             continue
         resultat[nom_projet] = {champ: entree.get(champ) for champ in _CHAMPS_ETAT_PUBLIC}
     return resultat
+
+
+def entree_affichable(nom_projet, chemin_etat=None):
+    """Entrée de `nom_projet` à afficher dans le panneau « Dernier push »
+    de la page projet (issue #125), ou `None` si elle doit rester masquée
+    — même règle que `etats_a_signaler` (`_affichable`), pour que le
+    panneau et la barre latérale/fenêtre globale (#123) restent cohérents
+    entre eux. L'entrée elle-même n'est jamais modifiée ni purgée : elle
+    reste lisible par `lire_entree` (debug, autre appelant), seul son
+    affichage ici est conditionné."""
+    entree = lire_entree(nom_projet, chemin_etat)
+    if not entree or not _affichable(entree):
+        return None
+    return entree
 
 
 def projet_verrouille_par_push(nom_projet, chemin_etat=None):
