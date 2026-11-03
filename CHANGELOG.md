@@ -6,6 +6,14 @@ plus récente en premier.
 Convention d'ajout : voir §10 de `BRIDGE_AGENT_DOC.md`.
 ## 2026-09-21 — issue #60 (relecture_web)
 
+## Issue #125 — 2026-11-03
+
+- Le panneau « Dernier push » de la page projet n'apparaît plus que
+  pendant un push en cours ou pour un résultat pas encore acquitté
+  (refusé/interrompu/indéterminé) — disparaît après « Vu » ou une fois un
+  push abouti (acquitté automatiquement), sans jamais masquer un refus non
+  vu même si un push plus récent a réussi par un autre chemin.
+
 ## Issue #124 — 2026-11-03
 
 - `RELECTURE_WEB_DOC.md` : nouvelle sous-section « Adopter le crochet pour
