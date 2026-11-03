@@ -152,6 +152,33 @@ def marquer_vu(nom_projet, chemin_etat=None):
     return ecrire_entree(nom_projet, chemin_etat=chemin_etat, vu=True)
 
 
+# Champs exposés par `etats_a_signaler` (issue #123) à la route de sondage
+# HTTP et à la barre latérale — jamais `repertoire` ni `pid`, propres à
+# cette machine et sans intérêt pour l'affichage.
+_CHAMPS_ETAT_PUBLIC = ("etat", "vu", "debut", "fin", "branches", "sortie", "resultats")
+
+
+def etats_a_signaler(chemin_etat=None):
+    """Sous-ensemble de l'état persistant à afficher globalement (issue
+    #123, point 1) : seuls les projets dont un push est en cours, ou dont
+    le dernier résultat n'a pas encore été acquitté (`vu` faux) — un projet
+    jamais poussé en arrière-plan, ou dont le dernier résultat est déjà
+    acquitté, n'y figure pas du tout (c'est précisément ce qui permet à la
+    barre latérale de redevenir normale une fois un refus vu). Réutilisé à
+    la fois par la route `/push/etat` (sondage JS) et par la barre latérale
+    côté serveur (premier rendu de page, avant que le JS n'ait sondé quoi
+    que ce soit)."""
+    etat = _lire_etat_brut(chemin_etat or CHEMIN_ETAT_PUSH)
+    resultat = {}
+    for nom_projet, entree in etat.items():
+        if not isinstance(entree, dict):
+            continue
+        if entree.get("etat") != "en_cours" and entree.get("vu"):
+            continue
+        resultat[nom_projet] = {champ: entree.get(champ) for champ in _CHAMPS_ETAT_PUBLIC}
+    return resultat
+
+
 def projet_verrouille_par_push(nom_projet, chemin_etat=None):
     """True si un push en arrière-plan est actuellement en cours pour
     `nom_projet` — sert de verrou (issue #122, point 3) : un second push

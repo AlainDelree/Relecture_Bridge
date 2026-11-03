@@ -172,6 +172,27 @@ de confirmation d'action (bandeau en tête de la fenêtre, voir section 9)
 — toujours avec un texte noir ou blanc choisi pour rester lisible sur
 cette couleur, jamais codé en dur (issue #73).
 
+**Indicateurs de push en arrière-plan (issue #123) :** pour un projet dont
+une entrée existe dans `push_arriere_plan.CHEMIN_ETAT_PUSH` et qui est soit
+en cours, soit non acquittée (voir section 13), la barre latérale affiche,
+à droite de son nom, une petite pastille bleue animée (`.indicateur-push-
+en-cours`) pendant que le push tourne — volontairement distincte de la
+pastille de couleur du projet (`.pastille-couleur`, statique, toujours
+avant le nom) pour ne jamais être confondue avec elle. Une fois le push
+terminé et tant que son résultat n'est pas acquitté, cette pastille est
+remplacée par un panneau pleine largeur sous le nom : rouge « ⚠ ATTENTION
+— REFUS » pour un refus, orange « ⚠ À VÉRIFIER » pour un état interrompu ou
+indéterminé — le sens ne repose jamais sur la seule couleur, toujours sur
+le texte. L'entrée redevient strictement identique à un projet sans push
+suivi dès que `vu` passe à True (bouton « Vu » de la fenêtre de résultat
+globale ou de la page du projet) ; un push abouti ne s'y affiche jamais
+puisque `vu` y est déjà mis à True automatiquement par le moteur. Donnée
+injectée par `app.injecter_barre_laterale`
+(`push_arriere_plan.etats_a_signaler`, une seule lecture du fichier d'état
+pour tous les projets de la barre), puis tenue à jour en continu par le
+sondage JS décrit en section 13 — aucun changement pour un projet dont le
+push n'est pas suivi.
+
 ## 3. Le diagnostic automatique des commits orphelins (cas A à F)
 
 Un « commit orphelin » est un commit qui a un résumé en attente dans
@@ -1403,8 +1424,8 @@ au-delà de 120s bloquerait la page, et le message « n'a PAS abouti »
 pourrait même être faux (même piège que l'issue #66, mais plus probable
 avec un crochet qui allonge franchement chaque push). Cette issue pose le
 moteur et l'affichage sur la page du projet ; l'affichage sur les AUTRES
-pages (pastille, panneau « Attention Refus », fenêtre de résultat) fait
-l'objet d'une issue suivante.
+pages (pastille, panneau « Attention Refus », fenêtre de résultat) est
+traité par l'issue #123, voir la fin de cette section.
 
 **Détection du crochet (`git_info.chemin_hook_pre_push`/
 `projet_equipe_hook_pre_push`) :** un projet est « équipé » si un crochet
@@ -1552,3 +1573,66 @@ crochet, et ne touche à aucun fichier de Bridge_Agent ou d'un autre
 projet. Même discipline de confirmation qu'avant cette issue (confirmation
 forte avant le push, quitte la machine) — le texte de cette confirmation
 précise simplement, en plus, qu'un crochet de tests va s'exécuter.
+
+### Affichage global sur toutes les pages (issue #123)
+
+Pensé pour qu'Alain, parti travailler sur un autre projet pendant qu'un
+push tourne en arrière-plan, soit prévenu du résultat où qu'il se trouve
+dans `relecture_web`, sans dépendre d'une notification externe. Purement
+de l'affichage : aucune action git, et le moteur/l'état persistant décrits
+plus haut ne sont pas modifiés, hors l'indicateur `vu` déjà prévu.
+
+**Route de sondage (`GET /push/etat`, `app.etat_push_route`) :** réponse
+JSON `{"projets": {...}}`, un sous-ensemble de l'état persistant construit
+par `push_arriere_plan.etats_a_signaler` — un projet y figure seulement si
+son push est en cours (`etat == "en_cours"`) ou si son dernier résultat
+n'a pas encore été acquitté (`vu` faux) ; jamais `repertoire` ni `pid`
+(propres à cette machine, sans intérêt pour l'affichage). Un projet jamais
+poussé en arrière-plan, ou dont le dernier résultat est déjà acquitté,
+n'y figure pas du tout. Même filtre réutilisé côté serveur par
+`app.injecter_barre_laterale` pour le premier rendu de chaque page, avant
+même que le JS n'ait eu le temps de sonder quoi que ce soit.
+
+**Sondage côté navigateur (`base.html`) :** toutes les pages interrogent
+cette route en JS toutes les 5 secondes (20 secondes quand l'onglet est
+caché, `document.hidden` — ressondé immédiatement dès qu'il redevient
+visible), dès le chargement de la page sans attendre le premier
+intervalle. Une erreur de sondage (réseau, HTTP) est ignorée
+silencieusement ; le prochain sondage est planifié normalement, sans
+accumulation ni backoff particulier.
+
+**Barre latérale :** voir la section 2 pour le détail des deux
+indicateurs (pastille animée pendant le push, panneau rouge/orange une
+fois terminé tant que non acquitté).
+
+**Fenêtre de résultat globale (`#modal-resultat-push`, distincte de
+`#modal-confirmation` — jamais réutilisée pour autre chose) :** s'affiche
+sur la page où se trouve Alain, quel que soit le projet concerné. Verte
+« ✅ Poussé » avec un simple bouton « Fermer » dès que le sondage détecte
+qu'une entrée vue « en_cours » lors du sondage précédent a disparu de la
+réponse (seul un push abouti efface ainsi son entrée, `vu` étant mis à
+True automatiquement par le moteur — jamais pour un refus, interrompu ou
+indéterminé) — purement transitoire, jamais rejouée au rechargement.
+Rouge « ❌ Refusé » avec la fin de la sortie des tests et un bouton « Vu »
+(appel AJAX à `POST /push/<nom_projet>/vu`, `app.
+acquitter_push_global_route` — même action que le bouton « Vu » de la page
+projet, sans redirection) dès qu'un refus non acquitté est détecté ;
+réapparaît à chaque chargement de page tant qu'il n'est pas acquitté,
+disparaît de partout (y compris les autres onglets déjà ouverts) dès que
+`vu` passe à True, au plus tard à leur sondage suivant. Plusieurs
+résultats en attente s'affichent l'un après l'autre (file côté JS). Si
+`#modal-confirmation` est ouverte au moment où un résultat devrait
+s'afficher, il attend sa fermeture (Annuler ou Échap) — jamais affiché
+par-dessus elle, pour qu'Alain ne valide jamais un résultat de push par
+réflexe en croyant répondre à une confirmation d'action.
+
+**Titre de l'onglet :** tant qu'un résultat n'est pas acquitté (refus,
+interrompu, indéterminé — ou qu'une fenêtre verte de succès est en attente
+d'être fermée), le titre de l'onglet porte un préfixe `❌ ` (prioritaire)
+ou `✅ `, restauré à son texte d'origine une fois acquitté/fermé — pour
+prévenir Alain même s'il consulte un autre onglet du navigateur.
+
+**Garde-fous :** pas de son ni de notification système, tout reste dans la
+page. Les liens et boutons déjà existants de la barre latérale gardent
+leur comportement et leur ordre. Rien ne s'affiche pour un projet sans
+push suivi — la barre latérale reste identique à avant cette issue.

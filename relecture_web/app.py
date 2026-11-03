@@ -23,7 +23,7 @@ import subprocess
 from datetime import timedelta
 from functools import wraps
 
-from flask import Flask, flash, g, redirect, render_template, request, session, url_for
+from flask import Flask, flash, g, jsonify, redirect, render_template, request, session, url_for
 
 import auth
 from git_info import (
@@ -723,9 +723,16 @@ def injecter_barre_laterale():
     CCW pour cette seule barre latérale (issue #109).
 
     Projets locaux puis distants, séparateur visuel entre les deux groupes
-    (issue #109, partie B1, voir `_grouper_locaux_puis_distants`)."""
+    (issue #109, partie B1, voir `_grouper_locaux_puis_distants`).
+
+    Indicateur de push en arrière-plan (issue #123) : premier rendu de
+    chaque page avant même que le JS de sondage n'ait eu le temps de
+    tourner — réutilise `push_arriere_plan.etats_a_signaler` (une seule
+    lecture du fichier d'état pour tous les projets de la barre), même
+    filtre que la route `/push/etat`."""
     projets, _erreur = _charger_projets()
     projets = _grouper_locaux_puis_distants(projets)
+    etats_push = push_arriere_plan.etats_a_signaler()
     return {
         "projets_sidebar": [
             {
@@ -734,11 +741,36 @@ def injecter_barre_laterale():
                 "couleur_texte": projet.get("couleur_texte"),
                 "distant": projet.get("distant", False),
                 "premier_distant": projet.get("premier_distant", False),
+                "push": etats_push.get(projet["nom"]),
             }
             for projet in projets
         ],
         "nom_projet_actif": (request.view_args or {}).get("nom_projet"),
     }
+
+
+@app.route("/push/etat")
+@login_requis
+def etat_push_route():
+    """Route de sondage en lecture seule (issue #123, point 1), interrogée
+    en JS à intervalle régulier par toutes les pages : même filtre que la
+    barre latérale (voir `injecter_barre_laterale`), pour que les deux
+    restent cohérents sans jamais toucher au moteur de push ni à son état
+    persistant."""
+    return jsonify({"projets": push_arriere_plan.etats_a_signaler()})
+
+
+@app.route("/push/<nom_projet>/vu", methods=["POST"])
+@login_requis
+def acquitter_push_global_route(nom_projet):
+    """Acquittement AJAX (issue #123) du résultat d'un push en
+    arrière-plan depuis la fenêtre de résultat globale — même action que
+    `acquitter_push_route` (bouton « Vu » de la page projet, issue #122),
+    exposée ici sans redirection pour pouvoir être appelée en JS depuis
+    n'importe quelle page, pas seulement celle du projet concerné. Projet
+    introuvable ou sans entrée : rien à faire, pas d'erreur."""
+    push_arriere_plan.marquer_vu(nom_projet)
+    return jsonify({"ok": True})
 
 
 @app.route("/projet/<nom_projet>/rapport/<hash_commit>")

@@ -16,12 +16,22 @@
       {% if p.premier_distant %}
       <li class="barre-laterale__separateur">PC fixe (Windows)</li>
       {% endif %}
-      <li>
+      <li data-projet="{{ p.nom }}">
         <a href="{{ url_for('projet_route', nom_projet=p.nom) }}"
            class="barre-laterale__lien{{ ' barre-laterale__lien--actif' if p.nom == nom_projet_actif else '' }}">
           {% if p.couleur %}<span class="pastille-couleur" style="background:{{ p.couleur }};"></span>{% endif %}
           {{ p.nom }}
+          {% if p.push and p.push.etat == "en_cours" %}
+          <span class="indicateur-push-en-cours" aria-hidden="true" title="Push en cours…"></span>
+          {% endif %}
         </a>
+        {% if p.push and p.push.etat != "en_cours" and not p.push.vu %}
+        {% if p.push.etat == "refuse" %}
+        <p class="panneau-sidebar-push panneau-sidebar-push--refus">⚠ ATTENTION — REFUS</p>
+        {% else %}
+        <p class="panneau-sidebar-push panneau-sidebar-push--verifier">⚠ À VÉRIFIER</p>
+        {% endif %}
+        {% endif %}
       </li>
       {% endfor %}
     </ul>
@@ -44,6 +54,18 @@
     <div class="modal-confirmation__boutons">
       <button type="button" class="bouton bouton--annuler" id="modal-confirmation-annuler">Annuler</button>
       <button type="button" class="bouton" id="modal-confirmation-confirmer"></button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-resultat-push" class="modal-resultat-push" hidden>
+  <div class="modal-resultat-push__panneau" role="alertdialog" aria-modal="true" aria-labelledby="modal-resultat-push-titre">
+    <p class="modal-resultat-push__titre" id="modal-resultat-push-titre"></p>
+    <p class="modal-resultat-push__projet" id="modal-resultat-push-projet"></p>
+    <pre class="modal-resultat-push__sortie" id="modal-resultat-push-sortie" hidden></pre>
+    <div class="modal-resultat-push__boutons">
+      <button type="button" class="bouton" id="modal-resultat-push-vu" hidden>Vu</button>
+      <button type="button" class="bouton" id="modal-resultat-push-fermer">Fermer</button>
     </div>
   </div>
 </div>
@@ -146,6 +168,13 @@ function ouvrirConfirmation(options) {
     boutonConfirmer.removeEventListener("click", surConfirmer);
     boutonAnnuler.removeEventListener("click", surAnnuler);
     document.removeEventListener("keydown", surTouche);
+    // Issue #123, point 3 : la fenêtre de résultat de push attend la
+    // fermeture de CETTE fenêtre de confirmation avant de s'afficher (pour
+    // qu'Alain ne valide jamais un résultat de push par réflexe en croyant
+    // répondre à une confirmation d'action) — on relance donc le
+    // traitement de la file dès qu'elle se ferme, quelle qu'en soit la
+    // raison (Annuler ou Échap).
+    if (typeof traiterFilePopupsPush === "function") traiterFilePopupsPush();
   }
   function surConfirmer() {
     var valeursCasesCochees = options.cases
@@ -256,6 +285,220 @@ window.addEventListener("pageshow", function () {
       confirmerCopie();
     }
   });
+})();
+
+// Affichage global du résultat d'un push en arrière-plan (issue #123) —
+// purement de l'affichage : jamais d'action git, ne touche jamais au
+// moteur de push ni à son fichier d'état (hors l'acquittement « vu » déjà
+// prévu par l'issue #122). Trois sondes de la même route `GET /push/etat`
+// (en_cours, ou résultat non acquitté) :
+// 1. la barre latérale (pastille animée pendant le push, panneau rouge
+//    « ATTENTION — REFUS » ou orange « À VÉRIFIER » tant que non acquitté,
+//    voir `appliquerEtatSidebarPush`) ;
+// 2. la fenêtre de résultat globale `#modal-resultat-push`, distincte de
+//    `#modal-confirmation` (jamais réutilisée pour autre chose) — une
+//    fenêtre verte « Poussé » (fermeture simple, jamais rejouée) à la
+//    détection d'un push qui vient de réussir, une fenêtre rouge
+//    « Refusé » (bouton « Vu », appel AJAX à `POST /push/<projet>/vu`)
+//    qui réapparaît à chaque chargement de page tant qu'elle n'est pas
+//    acquittée ; plusieurs résultats en attente s'affichent l'un après
+//    l'autre (`filePopupsPush`), et attendent la fermeture d'une
+//    confirmation d'action en cours avant de s'afficher ;
+// 3. le préfixe ✅/❌ du titre de l'onglet (`actualiserTitreOnglet`).
+(function () {
+  var INTERVALLE_SONDAGE_VISIBLE_MS = 5000;
+  var INTERVALLE_SONDAGE_CACHE_MS = 20000;
+
+  var titreOngletOriginal = document.title;
+  var dernierEtatPushConnu = {};
+  var occurrencesPushTraitees = {}; // nom_projet -> clé de la dernière occurrence déjà mise en file sur cette page
+  var filePopupsPush = [];
+  var popupPushActif = null;
+  var minuteurSondagePush = null;
+
+  function cleOccurrencePush(entree) {
+    return (entree.fin || entree.debut || "") + "|" + entree.etat;
+  }
+
+  function appliquerEtatSidebarPush(li, entree) {
+    var lien = li.querySelector(".barre-laterale__lien");
+    if (!lien) return;
+    var indicateur = li.querySelector(".indicateur-push-en-cours");
+    var panneau = li.querySelector(".panneau-sidebar-push");
+    var enCours = !!entree && entree.etat === "en_cours";
+
+    if (enCours && !indicateur) {
+      indicateur = document.createElement("span");
+      indicateur.className = "indicateur-push-en-cours";
+      indicateur.setAttribute("aria-hidden", "true");
+      indicateur.title = "Push en cours…";
+      lien.appendChild(indicateur);
+    } else if (!enCours && indicateur) {
+      indicateur.remove();
+    }
+
+    var texte = null, classeEtat = null;
+    if (!enCours && entree && !entree.vu) {
+      if (entree.etat === "refuse") {
+        texte = "⚠ ATTENTION — REFUS";
+        classeEtat = "panneau-sidebar-push--refus";
+      } else if (entree.etat === "interrompu" || entree.etat === "indetermine") {
+        texte = "⚠ À VÉRIFIER";
+        classeEtat = "panneau-sidebar-push--verifier";
+      }
+    }
+
+    if (texte) {
+      if (!panneau) {
+        panneau = document.createElement("p");
+        li.appendChild(panneau);
+      }
+      panneau.className = "panneau-sidebar-push " + classeEtat;
+      panneau.textContent = texte;
+    } else if (panneau) {
+      panneau.remove();
+    }
+  }
+
+  function confirmationActionOuverte() {
+    var modalConfirmation = document.getElementById("modal-confirmation");
+    return !!modalConfirmation && !modalConfirmation.hidden;
+  }
+
+  function actualiserTitreOnglet() {
+    var echecEnAttente = Object.keys(dernierEtatPushConnu).some(function (nom) {
+      var entree = dernierEtatPushConnu[nom];
+      return entree && entree.etat !== "en_cours" && !entree.vu;
+    });
+    var succesEnAttente = !echecEnAttente && (
+      filePopupsPush.some(function (p) { return p.type === "pousse"; }) ||
+      (popupPushActif && popupPushActif.type === "pousse")
+    );
+    document.title = (echecEnAttente ? "❌ " : (succesEnAttente ? "✅ " : "")) + titreOngletOriginal;
+  }
+
+  function ouvrirResultatPush(item) {
+    var modal = document.getElementById("modal-resultat-push");
+    var panneau = modal.querySelector(".modal-resultat-push__panneau");
+    var titre = document.getElementById("modal-resultat-push-titre");
+    var projetEl = document.getElementById("modal-resultat-push-projet");
+    var sortie = document.getElementById("modal-resultat-push-sortie");
+    var boutonFermer = document.getElementById("modal-resultat-push-fermer");
+    var boutonVu = document.getElementById("modal-resultat-push-vu");
+    var estSucces = item.type === "pousse";
+
+    panneau.classList.toggle("modal-resultat-push__panneau--succes", estSucces);
+    panneau.classList.toggle("modal-resultat-push__panneau--echec", !estSucces);
+    projetEl.textContent = item.nom;
+    titre.textContent = estSucces ? "✅ Poussé" : "❌ Refusé";
+    sortie.textContent = item.entree.sortie || "";
+    sortie.hidden = estSucces || !item.entree.sortie;
+    boutonVu.hidden = estSucces;
+
+    function fermerCeResultat() {
+      modal.hidden = true;
+      boutonFermer.removeEventListener("click", surFermer);
+      boutonVu.removeEventListener("click", surVu);
+      popupPushActif = null;
+      actualiserTitreOnglet();
+      traiterFilePopupsPush();
+    }
+    function surFermer() { fermerCeResultat(); }
+    function surVu() {
+      fetch("/push/" + encodeURIComponent(item.nom) + "/vu", { method: "POST", credentials: "same-origin" })
+        .catch(function () { /* la prochaine page/sondage la rattrapera */ });
+      // Mise à jour optimiste, sans attendre le prochain sondage (issue
+      // #123, point 3 : effacé partout, y compris les autres onglets dès
+      // leur propre prochain sondage) : seul cet onglet-ci est mis à jour
+      // tout de suite.
+      if (dernierEtatPushConnu[item.nom]) {
+        dernierEtatPushConnu[item.nom] = Object.assign({}, dernierEtatPushConnu[item.nom], { vu: true });
+      }
+      document.querySelectorAll("[data-projet]").forEach(function (li) {
+        if (li.dataset.projet === item.nom) appliquerEtatSidebarPush(li, dernierEtatPushConnu[item.nom]);
+      });
+      fermerCeResultat();
+    }
+
+    boutonFermer.addEventListener("click", surFermer);
+    boutonVu.addEventListener("click", surVu);
+    modal.hidden = false;
+  }
+
+  function traiterFilePopupsPush() {
+    if (popupPushActif || confirmationActionOuverte()) return;
+    var prochain = filePopupsPush.shift();
+    if (!prochain) return;
+    popupPushActif = prochain;
+    ouvrirResultatPush(prochain);
+  }
+
+  function mettreEnFilePush(nom, entree, type) {
+    filePopupsPush.push({ nom: nom, entree: entree, type: type });
+    actualiserTitreOnglet();
+    traiterFilePopupsPush();
+  }
+
+  function traiterEtatPush(projets) {
+    document.querySelectorAll("[data-projet]").forEach(function (li) {
+      appliquerEtatSidebarPush(li, projets[li.dataset.projet]);
+    });
+
+    Object.keys(projets).forEach(function (nom) {
+      var entree = projets[nom];
+      if (entree.etat !== "refuse" || entree.vu) return;
+      var cle = cleOccurrencePush(entree);
+      if (occurrencesPushTraitees[nom] === cle) return;
+      occurrencesPushTraitees[nom] = cle;
+      mettreEnFilePush(nom, entree, "refuse");
+    });
+
+    // Une entrée vue « en_cours » lors du sondage précédent et absente de
+    // celui-ci ne peut être qu'un push qui vient d'aboutir (`vu` mis à
+    // True automatiquement par le moteur dès qu'il réussit, voir
+    // `push_arriere_plan` — jamais pour un refus/interrompu/indéterminé,
+    // qui restent visibles jusqu'à acquittement explicite).
+    Object.keys(dernierEtatPushConnu).forEach(function (nom) {
+      if (dernierEtatPushConnu[nom].etat === "en_cours" && !projets[nom]) {
+        mettreEnFilePush(nom, {}, "pousse");
+      }
+    });
+
+    dernierEtatPushConnu = projets;
+    actualiserTitreOnglet();
+    traiterFilePopupsPush();
+  }
+
+  function intervalleSondageActuel() {
+    return document.hidden ? INTERVALLE_SONDAGE_CACHE_MS : INTERVALLE_SONDAGE_VISIBLE_MS;
+  }
+
+  function planifierProchainSondagePush() {
+    if (minuteurSondagePush) clearTimeout(minuteurSondagePush);
+    minuteurSondagePush = setTimeout(sonderEtatPush, intervalleSondageActuel());
+  }
+
+  function sonderEtatPush() {
+    fetch("/push/etat", { credentials: "same-origin" })
+      .then(function (reponse) {
+        if (!reponse.ok) throw new Error("http " + reponse.status);
+        return reponse.json();
+      })
+      .then(function (donnees) { traiterEtatPush(donnees.projets || {}); })
+      .catch(function () { /* sondage ignoré silencieusement, réessayé au prochain tour */ })
+      .then(planifierProchainSondagePush);
+  }
+
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) sonderEtatPush();
+  });
+
+  // Exposée au script de la fenêtre de confirmation ci-dessus (même
+  // fichier, portée globale par simple déclaration de fonction) pour
+  // relancer la file dès que cette fenêtre se ferme.
+  window.traiterFilePopupsPush = traiterFilePopupsPush;
+
+  sonderEtatPush();
 })();
 </script>
 </body>
