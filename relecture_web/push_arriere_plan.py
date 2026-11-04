@@ -42,6 +42,7 @@ import threading
 from datetime import datetime
 
 import git_info
+import resumes_info
 
 # Délai propre au push en arrière-plan (issue #122) — distinct de
 # `git_info.TIMEOUT_GIT_LONG` (120s, push synchrone des projets non
@@ -382,6 +383,23 @@ def _executer_push_arriere_plan(repertoire, nom_projet, branches, chemin_etat):
         sortie=_tronquer_sortie(sortie or ""), pid=None, resultats=resultats,
         vu=(etat_global == "pousse"),
     )
+
+    # Nettoyage automatique des résumés déjà pushés (issue #128) — seulement
+    # quand l'état final est réellement « pousse » (jamais pour un refus, une
+    # interruption ou une indétermination), réutilise `nettoyer_resumes_pousses`
+    # (même garde-fou que le bouton « Nettoyer ce projet »). Ce chemin de push
+    # n'existe que pour un projet local équipé d'un crochet pre-push (voir
+    # `git_info.projet_equipe_hook_pre_push`, jamais vrai pour un projet
+    # distant) : pas de vérification `distant` nécessaire ici. Sans effet sur
+    # l'état déjà écrit ci-dessus ni sur l'acquittement, et une erreur de
+    # nettoyage est silencieusement ignorée pour ne jamais faire paraître ce
+    # push en échec.
+    if etat_global == "pousse":
+        try:
+            dossier_relecture = os.path.basename(os.path.normpath(repertoire))
+            resumes_info.nettoyer_resumes_pousses(dossier_relecture, repertoire)
+        except Exception:
+            pass
 
 
 def demarrer_push_arriere_plan(repertoire, nom_projet, branches, chemin_etat=None):

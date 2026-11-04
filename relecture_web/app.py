@@ -99,6 +99,7 @@ from resumes_info import (
     collect_resumes_projet,
     lister_fichiers_resumes_hash,
     lister_fichiers_resumes_pushes,
+    nettoyer_resumes_pousses,
     regrouper_resumes_par_branche,
 )
 
@@ -1914,6 +1915,26 @@ def ne_plus_suivre_route(nom_projet):
     return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 
+def _suffixe_nettoyage_auto_apres_push(projet):
+    """Nettoyage automatique des résumés déjà pushés après un push confirmé
+    abouti depuis cette page (issue #128) — réutilise `nettoyer_resumes_pousses`
+    (donc le même garde-fou que le bouton « Nettoyer ce projet » : commit déjà
+    ancêtre d'une branche distante), jamais pour un projet distant (PC fixe
+    CCW, pas de dossier Non_Lu local — même refus que `nettoyer_projet_route`).
+    Une erreur de nettoyage ne doit jamais faire échouer l'affichage du
+    résultat du push lui-même (garde-fou de l'issue #128) : absorbée ici,
+    simplement sans effet sur le message retourné."""
+    if projet.get("distant"):
+        return ""
+    try:
+        nb_supprimes = nettoyer_resumes_pousses(projet["dossier_relecture"], projet["repertoire"])
+    except Exception:
+        return ""
+    if not nb_supprimes:
+        return ""
+    return f" — {nb_supprimes} résumé(s) déjà pushé(s) nettoyé(s) automatiquement."
+
+
 @app.route("/projet/<nom_projet>/pousser", methods=["POST"])
 @login_requis
 @refuse_si_push_en_cours
@@ -1976,7 +1997,8 @@ def pousser_branches_route(nom_projet):
             if verification["ok"] is True:
                 flash(
                     f"✅ Le push de « {nom} » a dépassé le délai affiché, mais la vérification "
-                    "automatique confirme qu'il a bien abouti (commit distant identique au local).",
+                    "automatique confirme qu'il a bien abouti (commit distant identique au local)."
+                    + _suffixe_nettoyage_auto_apres_push(projet),
                     "succes",
                 )
             elif verification["ok"] is False:
@@ -1997,7 +2019,10 @@ def pousser_branches_route(nom_projet):
             flash(f"❌ Erreur inattendue lors du push de « {nom} » : {exc}", "erreur")
             continue
         if resultat["ok"]:
-            flash(f"✅ « {nom} » poussée — {resultat['commande']}", "succes")
+            flash(
+                f"✅ « {nom} » poussée — {resultat['commande']}" + _suffixe_nettoyage_auto_apres_push(projet),
+                "succes",
+            )
         else:
             flash(f"❌ Échec du push de « {nom} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
     return redirect(url_for("projet_route", nom_projet=nom_projet))

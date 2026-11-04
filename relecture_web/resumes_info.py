@@ -174,6 +174,25 @@ def lister_fichiers_resumes_pushes(dossier_relecture_projet, repertoire):
     return fichiers
 
 
+def nettoyer_resumes_pousses(dossier_relecture_projet, repertoire):
+    """Supprime les fichiers renvoyés par `lister_fichiers_resumes_pushes`
+    (même garde-fou : commit déjà ancêtre d'une branche distante) — réutilisée
+    telle quelle par le bouton « Nettoyer ce projet »/« Nettoyer tous les
+    projets » (issues #16/#17/#68) ET par le nettoyage automatique après un
+    push abouti depuis relecture_web (issue #128), pour ne jamais dupliquer
+    ce critère de sécurité. Retourne le nombre de fichiers effectivement
+    supprimés ; un échec de suppression individuel (permission, fichier déjà
+    disparu...) est simplement ignoré, jamais levé."""
+    nb_supprimes = 0
+    for chemin in lister_fichiers_resumes_pushes(dossier_relecture_projet, repertoire):
+        try:
+            os.remove(chemin)
+            nb_supprimes += 1
+        except OSError:
+            pass
+    return nb_supprimes
+
+
 def lister_fichiers_resumes_hash(dossier_relecture_projet, hash_commit):
     """Liste les chemins de fichiers de Non_Lu/ (diff + résumé/annote) dont le
     hash correspond à `hash_commit` — utilisé pour supprimer le résumé d'un
