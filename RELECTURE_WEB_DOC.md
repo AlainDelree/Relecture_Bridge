@@ -1602,8 +1602,12 @@ dans la barre latérale, la route de sondage ou la fenêtre globale (#123,
 tous trois basés sur `etats_a_signaler`/`vu`, voir plus bas). Mais SUR
 CETTE PAGE SEULEMENT, le panneau reste affiché malgré ce `vu=True`, avec
 la fin de la sortie (donc les lignes de comptage que le crochet imprime)
-dans un bloc repliable « Sortie du push (tests du crochet) », fermé par
-défaut (`<details>` sans attribut `open`) — absent si la sortie est vide.
+dans un bloc repliable « Sortie du push (tests du crochet) », ouvert par
+défaut depuis l'issue #131 (`<details open>`, hauteur de la zone de texte
+limitée à une vingtaine de lignes avec défilement interne fait défiler
+jusqu'en bas à l'affichage pour voir les lignes de comptage sans clic ;
+reste repliable à la main, sans mémorisation d'une page à l'autre) — absent
+si la sortie est vide.
 C'est une exception délibérée au principe « un résultat acquitté
 disparaît du panneau » : `push_arriere_plan.entree_affichable` retourne
 l'entrée telle quelle pour tout état autre que `pousse`, mais la masque

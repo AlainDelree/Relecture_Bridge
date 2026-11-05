@@ -27,12 +27,12 @@ Couvre :
   "pousse"`) — reste affiché sur la page projet malgré `vu=True` (déjà posé
   automatiquement, toujours suffisant pour que la barre latérale/la route
   de sondage/la fenêtre globale #123 ne le signalent plus), avec un bloc
-  repliable « Sortie du push (tests du crochet) » (fermé par défaut, absent
-  si la sortie est vide), jusqu'au push suivant ou jusqu'au clic sur un
-  nouveau bouton « Masquer » (champ dédié `masque`, séparé de `vu`, sans
-  effet ailleurs). Affichage d'un échec inchangé. Filtrage des secrets
-  (`push_arriere_plan._filtrer_secrets`) appliqué avant toute troncature,
-  succès comme échecs.
+  repliable « Sortie du push (tests du crochet) » (ouvert par défaut depuis
+  #131, absent si la sortie est vide), jusqu'au push suivant ou jusqu'au
+  clic sur un nouveau bouton « Masquer » (champ dédié `masque`, séparé de
+  `vu`, sans effet ailleurs). Affichage d'un échec inchangé. Filtrage des
+  secrets (`push_arriere_plan._filtrer_secrets`) appliqué avant toute
+  troncature, succès comme échecs.
 
 Pas de framework de test externe dans ce dépôt (voir #107) : fichier
 `unittest` autonome (stdlib uniquement), lançable par
@@ -622,10 +622,11 @@ class PanneauPousseTestCase(BasePushTestCase):
         self.assertIn("Sortie du push (tests du crochet)", page)
         self.assertIn("3 fichiers de tests Python réussis", page)
         self.assertIn("42 tests JavaScript réussis", page)
-        # Bloc repliable fermé par défaut : balise <details> sans attribut `open`.
+        # Bloc repliable ouvert par défaut (issue #131) : balise <details>
+        # avec attribut `open`.
         debut = page.index("<details")
         fin_balise_ouvrante = page.index(">", debut)
-        self.assertNotIn("open", page[debut:fin_balise_ouvrante])
+        self.assertIn("open", page[debut:fin_balise_ouvrante])
 
     def test_pas_de_bloc_si_sortie_vide(self):
         push_arriere_plan.ecrire_entree(

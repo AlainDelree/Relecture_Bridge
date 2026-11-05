@@ -888,11 +888,15 @@ pre.brut {
   font-size: 0.8rem;
 }
 /* Bloc repliable « Sortie du push (tests du crochet) » pour un push abouti
-   (issue #127) — fermé par défaut (pas d'attribut `open`), même .panneau-
-   push__sortie à l'intérieur une fois déplié. */
+   (issue #127) — ouvert par défaut depuis l'issue #131 (attribut `open`
+   dans le gabarit) pour que les lignes de comptage des tests, en fin de
+   sortie, soient visibles sans clic. Hauteur limitée à une vingtaine de
+   lignes avec défilement interne (la page défile ce bloc jusqu'en bas à
+   l'affichage) pour que le bouton « Masquer » reste visible sans défiler
+   la page, même bloc .panneau-push__sortie à l'intérieur une fois déplié. */
 .panneau-push__sortie-repliable { margin: 0.5rem 0 0 0; }
 .panneau-push__sortie-repliable summary { cursor: pointer; font-weight: 600; }
-.panneau-push__sortie-repliable .panneau-push__sortie { margin-top: 0.4rem; }
+.panneau-push__sortie-repliable .panneau-push__sortie { margin-top: 0.4rem; max-height: 20rem; }
 
 /* Panneau repliable « .gitignore » (issue #98 ; section autonome dans
    « Outils du projet » depuis l'issue #117), même principe que

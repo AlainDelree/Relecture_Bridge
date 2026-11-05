@@ -62,9 +62,9 @@
   <p class="panneau-push__sortie-titre">Fin de la sortie du crochet et de git :</p>
   <pre class="panneau-push__sortie">{{ dp.sortie }}</pre>
   {% elif dp.sortie and dp.etat == "pousse" %}
-  <details class="panneau-push__sortie-repliable">
+  <details class="panneau-push__sortie-repliable" open>
     <summary>Sortie du push (tests du crochet)</summary>
-    <pre class="panneau-push__sortie">{{ dp.sortie }}</pre>
+    <pre class="panneau-push__sortie" id="panneau-push-sortie-pre">{{ dp.sortie }}</pre>
   </details>
   {% endif %}
   {% if dp.etat not in ("pousse", "en_cours") and not dp.vu %}
@@ -94,6 +94,16 @@
   // l'état réel écrit par le thread serveur — jamais d'appel réseau
   // supplémentaire ni d'API JSON, cohérent avec le reste de cette page.
   setTimeout(function () { window.location.reload(); }, 4000);
+})();
+</script>
+{% elif dp.sortie and dp.etat == "pousse" %}
+<script>
+(function () {
+  // Issue #131 : le bloc est ouvert d'emblée (voir `open` ci-dessus) ; on
+  // défile la zone jusqu'en bas pour que les lignes de comptage des tests,
+  // en fin de sortie, soient visibles sans action de l'utilisateur.
+  var pre = document.getElementById("panneau-push-sortie-pre");
+  if (pre) { pre.scrollTop = pre.scrollHeight; }
 })();
 </script>
 {% endif %}
