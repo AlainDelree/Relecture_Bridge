@@ -284,6 +284,72 @@ def entree_affichable(nom_projet, chemin_etat=None):
     return entree if _affichable(entree) else None
 
 
+# Champs exposés par `entree_pour_copie` (issue #132, point 5) à la route
+# dédiée de lecture seule `GET /push/<nom_projet>/sortie_pousse` — jamais
+# `repertoire` ni `pid`, même restriction que `_CHAMPS_ETAT_PUBLIC`.
+_CHAMPS_COPIE_PUBLIC = ("etat", "sortie", "fin", "branches")
+
+
+def entree_pour_copie(nom_projet, chemin_etat=None):
+    """Lecture seule, en plus de `etats_a_signaler` (issue #132, point 5) :
+    sortie d'un push ABOUTI pour `nom_projet`, destinée uniquement à la
+    fenêtre de résultat globale quand elle doit copier le résultat d'un
+    succès qu'elle n'a pas reçu par le sondage habituel — un push abouti
+    reçoit `vu=True` dès la fin du thread (voir `_executer_push_arriere_
+    plan`), donc `etats_a_signaler` l'exclut déjà ; la fenêtre détecte un
+    succès par la seule disparition d'une entrée `en_cours` (voir
+    `base.html`), sans jamais recevoir sa sortie par ce chemin. Jamais
+    ajoutée au sondage global lui-même (`etats_a_signaler`, inchangée).
+
+    Champs vides si l'entrée actuelle n'est pas un push abouti (projet
+    inconnu, push en cours, refus...) — jamais le détail d'un autre état,
+    jamais `repertoire` ni `pid`. Ne modifie jamais l'entrée ni aucun de
+    ses champs (`vu` compris) : purement une lecture."""
+    entree = lire_entree(nom_projet, chemin_etat) or {}
+    if entree.get("etat") != "pousse":
+        entree = {}
+    return {champ: entree.get(champ) for champ in _CHAMPS_COPIE_PUBLIC}
+
+
+# Libellés courts pour l'en-tête copiée (issue #132, point 3) — mêmes
+# préfixes que ceux déjà affichés par le panneau « Dernier push » et la
+# fenêtre de résultat globale (voir `projet.html`/`base.html`), jamais une
+# nouvelle terminologie.
+_LIBELLES_ETAT_COPIE = {
+    "pousse": "✅ Poussé",
+    "refuse": "❌ Refusé",
+    "interrompu": "⚠️ Interrompu",
+    "indetermine": "❓ Indéterminé",
+}
+
+
+def entete_copie(nom_projet, entree):
+    """Ligne d'en-tête préfixée au texte copié par le bouton « Copier »
+    (issue #132, point 3) — pour que le contenu du presse-papiers reste
+    lisible sans contexte une fois collé ailleurs (ex. dans une
+    conversation avec un agent) : projet, résultat, branches concernées,
+    heure de fin. Jamais le détail par branche ni aucun champ interne
+    (`repertoire`, `pid`) — seulement ce qu'affiche déjà le panneau/la
+    fenêtre."""
+    libelle = _LIBELLES_ETAT_COPIE.get(entree.get("etat"), entree.get("etat") or "?")
+    ligne = f"Projet : {nom_projet} — {libelle}"
+    branches = entree.get("branches") or []
+    if branches:
+        ligne += " — branche(s) : " + ", ".join(branches)
+    fin = entree.get("fin")
+    if fin:
+        ligne += f" — terminé {fin}"
+    return ligne
+
+
+def contenu_copie(nom_projet, entree):
+    """Texte complet copié par le bouton « Copier » (issue #132, point 3) :
+    l'en-tête ci-dessus suivi de la sortie déjà filtrée des secrets et
+    tronquée telle qu'affichée (`entree["sortie"]`) — jamais rien
+    d'autre."""
+    return entete_copie(nom_projet, entree) + "\n\n" + (entree.get("sortie") or "")
+
+
 def projet_verrouille_par_push(nom_projet, chemin_etat=None):
     """True si un push en arrière-plan est actuellement en cours pour
     `nom_projet` — sert de verrou (issue #122, point 3) : un second push

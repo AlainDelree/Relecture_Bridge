@@ -61,10 +61,16 @@
   {% if dp.sortie and dp.etat not in ("pousse", "en_cours") %}
   <p class="panneau-push__sortie-titre">Fin de la sortie du crochet et de git :</p>
   <pre class="panneau-push__sortie">{{ dp.sortie }}</pre>
+  <button type="button" class="bouton-copier bouton-copier--action panneau-push__bouton-copier"
+          data-copier="{{ dp.contenu_copie }}" data-copier-libelle-copie="Copié ✓"
+          title="Copier la sortie du push">Copier</button>
   {% elif dp.sortie and dp.etat == "pousse" %}
   <details class="panneau-push__sortie-repliable" open>
     <summary>Sortie du push (tests du crochet)</summary>
     <pre class="panneau-push__sortie" id="panneau-push-sortie-pre">{{ dp.sortie }}</pre>
+    <button type="button" class="bouton-copier bouton-copier--action panneau-push__bouton-copier"
+            data-copier="{{ dp.contenu_copie }}" data-copier-libelle-copie="Copié ✓"
+            title="Copier la sortie du push">Copier</button>
   </details>
   {% endif %}
   {% if dp.etat not in ("pousse", "en_cours") and not dp.vu %}

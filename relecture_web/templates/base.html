@@ -64,6 +64,8 @@
     <p class="modal-resultat-push__projet" id="modal-resultat-push-projet"></p>
     <pre class="modal-resultat-push__sortie" id="modal-resultat-push-sortie" hidden></pre>
     <div class="modal-resultat-push__boutons">
+      <button type="button" class="bouton-copier bouton-copier--action" id="modal-resultat-push-copier"
+              data-copier-libelle-copie="Copié ✓" title="Copier la sortie du push" hidden>Copier</button>
       <button type="button" class="bouton" id="modal-resultat-push-vu" hidden>Vu</button>
       <button type="button" class="bouton" id="modal-resultat-push-fermer">Fermer</button>
     </div>
@@ -245,6 +247,11 @@ window.addEventListener("pageshow", function () {
 });
 
 (function () {
+  // Repli pour l'API moderne du presse-papiers (`navigator.clipboard`),
+  // absente hors contexte sécurisé — page servie en HTTP hors adresse
+  // locale (issue #132, point 4) : `document.execCommand("copy")` sur une
+  // zone de texte temporaire, invisible et retirée tout de suite après.
+  // Retourne le succès réel de la copie (jamais supposé).
   function copierAncienneMethode(texte) {
     var zone = document.createElement("textarea");
     zone.value = texte;
@@ -253,8 +260,14 @@ window.addEventListener("pageshow", function () {
     document.body.appendChild(zone);
     zone.focus();
     zone.select();
-    document.execCommand("copy");
+    var reussi = false;
+    try {
+      reussi = document.execCommand("copy");
+    } catch (erreur) {
+      reussi = false;
+    }
     document.body.removeChild(zone);
+    return reussi;
   }
 
   document.addEventListener("click", function (evenement) {
@@ -266,23 +279,34 @@ window.addEventListener("pageshow", function () {
     var texte = bouton.dataset.copier || "";
     var original = bouton.textContent;
 
-    function confirmerCopie() {
-      bouton.textContent = "✓";
-      bouton.classList.add("bouton-copier--copie");
+    // Retour visuel bref et non bloquant (issue #132, point 4) : le
+    // libellé de succès est configurable par bouton (`data-copier-libelle-
+    // copie`, ex. « Copié ✓ » pour le bouton texte de la sortie d'un push)
+    // — les petits boutons icône existants (hash, chemin, branche) gardent
+    // leur « ✓ » compact par défaut, inchangé. Un échec de copie (repli
+    // `execCommand` lui-même en échec) affiche un message discret sans
+    // rien casser d'autre dans la fenêtre.
+    function restaurer(libelle, classe) {
+      bouton.textContent = libelle;
+      bouton.classList.add(classe);
       setTimeout(function () {
         bouton.textContent = original;
-        bouton.classList.remove("bouton-copier--copie");
+        bouton.classList.remove(classe);
       }, 1200);
+    }
+    function confirmerCopie() {
+      restaurer(bouton.dataset.copierLibelleCopie || "✓", "bouton-copier--copie");
+    }
+    function confirmerEchec() {
+      restaurer(bouton.dataset.copierLibelleEchec || "✗", "bouton-copier--echec");
     }
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(texte).then(confirmerCopie, function () {
-        copierAncienneMethode(texte);
-        confirmerCopie();
+        if (copierAncienneMethode(texte)) confirmerCopie(); else confirmerEchec();
       });
     } else {
-      copierAncienneMethode(texte);
-      confirmerCopie();
+      if (copierAncienneMethode(texte)) confirmerCopie(); else confirmerEchec();
     }
   });
 })();
@@ -377,6 +401,22 @@ window.addEventListener("pageshow", function () {
     document.title = (echecEnAttente ? "❌ " : (succesEnAttente ? "✅ " : "")) + titreOngletOriginal;
   }
 
+  // Libellés courts pour l'en-tête copiée (issue #132, point 3) — mêmes
+  // préfixes que ceux déjà affichés par cette fenêtre et par le panneau
+  // « Dernier push » (`push_arriere_plan._LIBELLES_ETAT_COPIE`, même
+  // wording, jamais une nouvelle terminologie côté JS).
+  var LIBELLES_ETAT_COPIE_PUSH = {
+    pousse: "✅ Poussé", refuse: "❌ Refusé", interrompu: "⚠️ Interrompu", indetermine: "❓ Indéterminé",
+  };
+
+  function construireContenuCopiePush(nom, entree) {
+    var libelle = LIBELLES_ETAT_COPIE_PUSH[entree.etat] || entree.etat || "?";
+    var ligne = "Projet : " + nom + " — " + libelle;
+    if (entree.branches && entree.branches.length) ligne += " — branche(s) : " + entree.branches.join(", ");
+    if (entree.fin) ligne += " — terminé " + entree.fin;
+    return ligne + "\n\n" + (entree.sortie || "");
+  }
+
   function ouvrirResultatPush(item) {
     var modal = document.getElementById("modal-resultat-push");
     var panneau = modal.querySelector(".modal-resultat-push__panneau");
@@ -385,15 +425,51 @@ window.addEventListener("pageshow", function () {
     var sortie = document.getElementById("modal-resultat-push-sortie");
     var boutonFermer = document.getElementById("modal-resultat-push-fermer");
     var boutonVu = document.getElementById("modal-resultat-push-vu");
+    var boutonCopier = document.getElementById("modal-resultat-push-copier");
     var estSucces = item.type === "pousse";
 
     panneau.classList.toggle("modal-resultat-push__panneau--succes", estSucces);
     panneau.classList.toggle("modal-resultat-push__panneau--echec", !estSucces);
     projetEl.textContent = item.nom;
     titre.textContent = estSucces ? "✅ Poussé" : "❌ Refusé";
-    sortie.textContent = item.entree.sortie || "";
-    sortie.hidden = estSucces || !item.entree.sortie;
     boutonVu.hidden = estSucces;
+
+    // Bouton « Copier » (issue #132, points 1 et 3) : jamais affiché si la
+    // sortie est vide ; ne change ni l'affichage de `sortie` (toujours
+    // masquée pour un succès, inchangé) ni l'acquittement — copier ne
+    // vaut jamais « vu ».
+    function appliquerSortie(entree) {
+      var texte = (entree && entree.sortie) || "";
+      sortie.textContent = texte;
+      sortie.hidden = estSucces || !texte;
+      if (texte) {
+        boutonCopier.hidden = false;
+        boutonCopier.dataset.copier = construireContenuCopiePush(item.nom, entree);
+      } else {
+        boutonCopier.hidden = true;
+        delete boutonCopier.dataset.copier;
+      }
+    }
+
+    if (estSucces) {
+      // Issue #132, point 5 : un succès détecté par la disparition d'une
+      // entrée « en_cours » n'a jamais de sortie dans `item.entree`
+      // (toujours `{}`, voir `mettreEnFilePush` plus bas) — relue ici en
+      // lecture seule, pour CE seul projet, à l'ouverture de cette seule
+      // fenêtre ; jamais ajoutée au sondage global (`sonderEtatPush`).
+      appliquerSortie(null);
+      fetch("/push/" + encodeURIComponent(item.nom) + "/sortie_pousse", { credentials: "same-origin" })
+        .then(function (reponse) { if (!reponse.ok) throw new Error("http " + reponse.status); return reponse.json(); })
+        .then(function (donnees) {
+          // La fenêtre peut avoir déjà été fermée/remplacée par une autre
+          // avant la réponse (file de popups) — n'applique alors plus rien
+          // à ce bouton, pour ne jamais écraser l'état d'un AUTRE résultat.
+          if (popupPushActif === item) appliquerSortie(donnees);
+        })
+        .catch(function () { /* reste sans sortie ni bouton Copier, rien d'autre ne change */ });
+    } else {
+      appliquerSortie(item.entree);
+    }
 
     function fermerCeResultat() {
       modal.hidden = true;

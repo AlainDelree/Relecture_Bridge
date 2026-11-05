@@ -1779,6 +1779,85 @@ page. Les liens et boutons déjà existants de la barre latérale gardent
 leur comportement et leur ordre. Rien ne s'affiche pour un projet sans
 push suivi — la barre latérale reste identique à avant cette issue.
 
+### Bouton « Copier » sur la sortie d'un push, succès comme échec (issue #132)
+
+Jusqu'ici, Alain devait sélectionner la sortie à la main (fenêtre de
+résultat ou panneau « Dernier push ») pour la coller dans une conversation
+avec un agent — par exemple pour faire analyser un test qui échoue ou
+vérifier des comptages. Un bouton « Copier » dédié couvre désormais les
+deux emplacements, pour les deux issues (succès et échec), purement de
+l'affichage : aucun changement au moteur de push, à l'état persistant, au
+verrou, à l'acquittement ni au filtrage des secrets — le texte copié est
+celui déjà filtré/tronqué (voir « Filtrage des secrets » plus haut).
+**Copier ne vaut jamais acquittement** : la fenêtre reste ouverte et `vu`
+ne change pas, qu'on clique « Copier » ou non.
+
+**Mécanisme réutilisé, pas réinventé (point 4) :** même classe
+`.bouton-copier` et même gestionnaire de clic délégué (`base.html`) que
+les boutons 📋 déjà existants (hash de commit, nom de branche, chemin de
+fichier) — `navigator.clipboard.writeText`, avec repli sur
+`document.execCommand("copy")` via une zone de texte temporaire quand
+l'API moderne du presse-papiers est absente (page servie hors adresse
+locale en HTTP, contexte non sécurisé). Deux ajouts rétrocompatibles au
+gestionnaire partagé, sans effet sur les boutons 📋 déjà existants :
+- le libellé affiché 1,2s après une copie réussie est désormais
+  configurable par bouton (`data-copier-libelle-copie`, ex. « Copié ✓ »
+  pour ces nouveaux boutons texte) — les boutons icône compacts gardent
+  leur « ✓ » par défaut, inchangé ;
+- un échec RÉEL de copie (le repli `execCommand` renvoie lui-même un
+  échec) affiche désormais un bref « ✗ » (`data-copier-libelle-echec`,
+  classe `.bouton-copier--echec`) au lieu de supposer la réussite —
+  discret, ne casse rien d'autre dans la fenêtre/le panneau.
+
+**Contenu copié (point 3), identique dans les deux emplacements :** une
+ligne d'en-tête suivie d'une ligne vide puis de la sortie telle
+qu'affichée (`push_arriere_plan.entete_copie`/`contenu_copie` côté
+panneau, équivalent en JS côté fenêtre, `construireContenuCopiePush`) —
+projet, résultat (même libellé/préfixe que celui déjà affiché : ✅ Poussé
+/ ❌ Refusé / ⚠️ Interrompu / ❓ Indéterminé), branche(s) concernée(s) si
+connues, heure de fin si connue. Lisible sans aucune explication
+supplémentaire une fois collé ailleurs. **Jamais de bouton si la sortie
+est vide** — dans les deux emplacements, le bouton partage la même
+condition d'affichage que le bloc de sortie lui-même.
+
+**Panneau « Dernier push » (point 2, `projet.html`) :** le bouton apparaît
+à côté du bloc `<pre>` existant, pour un refus/interrompu/indéterminé
+comme pour un push abouti (dans le bloc repliable, même condition que
+celui-ci). `app.projet_route` calcule `dernier_push["contenu_copie"]` une
+seule fois par affichage (jamais écrit dans l'état persistant) et le
+gabarit le pose tel quel en attribut `data-copier`.
+
+**Fenêtre de résultat globale (point 1, `#modal-resultat-push`) :** le
+bouton apparaît à côté de « Vu » et « Fermer », masqué par défaut
+(`hidden`), affiché dès qu'une sortie non vide est disponible pour l'un
+ou l'autre résultat. Pour un refus, la sortie est déjà dans `item.entree`
+(reçue par le sondage habituel, `etats_a_signaler`) — rien de nouveau à
+lire. **Pour un succès (point 5), un problème structurel existait** : la
+fenêtre verte est déclenchée par la seule disparition d'une entrée
+« en_cours » (voir plus haut) — `item.entree` vaut alors toujours `{}`,
+sans la moindre sortie, puisque `etats_a_signaler` exclut déjà tout push
+abouti (`vu=True` posé automatiquement). Une nouvelle route dédiée, **`GET
+/push/<nom_projet>/sortie_pousse`** (`app.sortie_pousse_push_route`,
+lecture seule), est interrogée en JS une seule fois, à l'ouverture de
+cette seule fenêtre, pour ce seul projet — **jamais ajoutée au sondage
+global** (`/push/etat`, `sonderEtatPush`, tous deux inchangés). Elle
+réutilise `push_arriere_plan.entree_pour_copie`, qui ne renvoie que
+`etat`/`sortie`/`fin`/`branches` (jamais `repertoire` ni `pid`), et
+seulement si l'entrée actuelle est bien un push abouti — champs vides
+sinon (projet inconnu, push entre-temps relancé...). Si la fenêtre a déjà
+été remplacée par un autre résultat de la file au moment où la réponse
+arrive, elle est ignorée (comparaison à `popupPushActif`) pour ne jamais
+écraser l'affichage d'un AUTRE résultat.
+
+**Lisibilité (point 6, ajout mineur) :** la zone de sortie de la fenêtre
+de résultat (`.modal-resultat-push__sortie`) gagne `word-break:
+break-word`, en plus du `white-space: pre-wrap` déjà en place — une ligne
+trop longue SANS espace (chemin, nom de test complet) passait auparavant
+la largeur du panneau au lieu de revenir à la ligne ; le défilement
+vertical (`overflow-y`, inchangé) reste la seule façon de voir le reste
+d'une sortie longue. Le panneau « Dernier push » de la page projet n'est
+pas concerné (déjà correct avant cette issue).
+
 ### Adopter le crochet pour un projet (guide pratique)
 
 Ce qui précède décrit ce que fait `relecture_web` une fois un projet

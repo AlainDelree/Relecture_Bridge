@@ -713,6 +713,100 @@ class PanneauPousseTestCase(BasePushTestCase):
         self.assertNotIn("masque", donnees["projets"]["projet_local"])
 
 
+class BoutonCopierPanneauPushTestCase(BasePushTestCase):
+    """Issue #132, points 1 à 3 : bouton « Copier » du panneau « Dernier
+    push », présent pour un refus comme pour un succès avec sortie non
+    vide, absent si elle est vide, contenu copié = en-tête (projet,
+    résultat, branches, heure de fin) puis la sortie telle qu'affichée."""
+
+    def _panneau(self):
+        """Isole le `<section id="panneau-dernier-push">` de la page : le
+        reste du gabarit (branches, commits) a ses propres boutons
+        `.bouton-copier` pour les hash/noms de branche, toujours présents
+        qu'un push soit suivi ou non — un `assertIn`/`assertNotIn` sur la
+        page entière serait donc toujours vrai."""
+        page = self.client.get("/projet/projet_local").get_data(as_text=True)
+        debut = page.index('id="panneau-dernier-push"')
+        debut_section = page.rindex("<section", 0, debut)
+        fin = page.index("</section>", debut)
+        return page[debut_section:fin]
+
+    def test_bouton_present_pour_un_refus_avec_sortie(self):
+        push_arriere_plan.ecrire_entree(
+            "projet_local", etat="refuse", branches=["feature-a"], repertoire=self.repertoire,
+            debut="2026-11-05T10:00:00", fin="2026-11-05T10:01:00", sortie="ÉCHEC_TEST_FACTICE", vu=False,
+            pid=None, resultats={"feature-a": {"ok": False}},
+        )
+        panneau = self._panneau()
+        self.assertIn("bouton-copier", panneau)
+        debut = panneau.index('data-copier="')
+        fin = panneau.index('"', debut + len('data-copier="'))
+        contenu = panneau[debut + len('data-copier="'):fin]
+        self.assertIn("Projet : projet_local", contenu)
+        self.assertIn("❌ Refusé", contenu)
+        self.assertIn("feature-a", contenu)
+        self.assertIn("2026-11-05T10:01:00", contenu)
+        self.assertIn("ÉCHEC_TEST_FACTICE", contenu)
+
+    def test_bouton_present_pour_un_succes_avec_sortie(self):
+        push_arriere_plan.ecrire_entree(
+            "projet_local", etat="pousse", branches=["feature-a"], repertoire=self.repertoire,
+            debut="2026-11-05T10:00:00", fin="2026-11-05T10:01:00", sortie="3 tests réussis", vu=True,
+            pid=None, resultats={"feature-a": {"ok": True}},
+        )
+        panneau = self._panneau()
+        self.assertIn("bouton-copier", panneau)
+        debut = panneau.index('data-copier="')
+        fin = panneau.index('"', debut + len('data-copier="'))
+        contenu = panneau[debut + len('data-copier="'):fin]
+        self.assertIn("✅ Poussé", contenu)
+        self.assertIn("3 tests réussis", contenu)
+
+    def test_bouton_absent_si_sortie_vide(self):
+        push_arriere_plan.ecrire_entree(
+            "projet_local", etat="refuse", branches=["feature-a"], repertoire=self.repertoire,
+            debut="2026-11-05T10:00:00", fin="2026-11-05T10:01:00", sortie="", vu=False,
+            pid=None, resultats={"feature-a": {"ok": False}},
+        )
+        self.assertNotIn("bouton-copier", self._panneau())
+
+    def test_copier_ne_modifie_pas_letat(self):
+        """Il n'existe aucune route associée au bouton « Copier » (copie
+        purement côté navigateur) — simplement afficher la page ne doit
+        jamais changer `vu` ni `etat` (copier n'acquitte pas)."""
+        push_arriere_plan.ecrire_entree(
+            "projet_local", etat="refuse", branches=["feature-a"], repertoire=self.repertoire,
+            debut="2026-11-05T10:00:00", fin="2026-11-05T10:01:00", sortie="ÉCHEC", vu=False,
+            pid=None, resultats={"feature-a": {"ok": False}},
+        )
+        self.client.get("/projet/projet_local")
+        entree = push_arriere_plan.lire_entree("projet_local")
+        self.assertEqual(entree["etat"], "refuse")
+        self.assertFalse(entree["vu"])
+
+
+class ContenuCopieTestCase(unittest.TestCase):
+    """Issue #132, point 3 : `push_arriere_plan.entete_copie`/`contenu_copie`
+    isolément, sans passer par Flask."""
+
+    def test_entete_avec_branches_et_fin(self):
+        entete = push_arriere_plan.entete_copie(
+            "mon_projet", {"etat": "refuse", "branches": ["a", "b"], "fin": "2026-11-05T10:01:00"},
+        )
+        self.assertEqual(entete, "Projet : mon_projet — ❌ Refusé — branche(s) : a, b — terminé 2026-11-05T10:01:00")
+
+    def test_entete_sans_branches_ni_fin(self):
+        entete = push_arriere_plan.entete_copie("mon_projet", {"etat": "indetermine"})
+        self.assertEqual(entete, "Projet : mon_projet — ❓ Indéterminé")
+
+    def test_contenu_copie_concatene_entete_et_sortie(self):
+        contenu = push_arriere_plan.contenu_copie(
+            "mon_projet", {"etat": "pousse", "branches": ["a"], "fin": "2026-11-05T10:01:00", "sortie": "OK"},
+        )
+        self.assertTrue(contenu.startswith("Projet : mon_projet — ✅ Poussé"))
+        self.assertTrue(contenu.endswith("\n\nOK"))
+
+
 class FiltrageSecretsTestCase(unittest.TestCase):
     """Issue #127, point 4 : filtrage au mieux des cas courants
     (`push_arriere_plan._filtrer_secrets`), appliqué par `_tronquer_sortie`

@@ -675,6 +675,14 @@ pre.brut.contexte-conflit {
 }
 .bouton-copier:hover { background: #e2e7ee; }
 .bouton-copier--copie { background: #e6f4ea; color: #1e7b34; border-color: #b7ddc3; }
+.bouton-copier--echec { background: #fdecea; color: #a33; border-color: #f5c2c0; }
+
+/* Variante pleine taille (issue #132) : le bouton « Copier » de la
+   fenêtre de résultat de push et du panneau « Dernier push », à côté de
+   boutons `.bouton` classiques (Vu/Fermer/Masquer) plutôt qu'en icône
+   compacte accolée à un hash/chemin. */
+.bouton-copier--action { font-size: 0.8rem; padding: 0.3rem 0.7rem; }
+.panneau-push__bouton-copier { display: inline-block; margin-top: 0.4rem; }
 
 pre.brut {
   background: #f4f4f4;
@@ -1188,6 +1196,10 @@ pre.brut {
   max-height: 16rem;
   overflow-y: auto;
   white-space: pre-wrap;
+  /* Issue #132, point 6 : une ligne trop longue sans espace (chemin, nom de
+     test) passe à la ligne plutôt que de dépasser le panneau — le
+     défilement vertical ci-dessus (`overflow-y`) reste inchangé. */
+  word-break: break-word;
   font-size: 0.8rem;
   margin: 0 0 1rem 0;
 }

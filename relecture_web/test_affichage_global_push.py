@@ -223,5 +223,65 @@ class AcquittementGlobalTestCase(BaseAffichageGlobalTestCase):
         self.assertEqual(reponse.status_code, 200)
 
 
+class RouteSortiePousseTestCase(BaseAffichageGlobalTestCase):
+    """`GET /push/<nom_projet>/sortie_pousse` (issue #132, point 5) :
+    lecture seule, interrogée par la fenêtre de résultat globale quand elle
+    détecte un succès sans sortie reçue par le sondage habituel. Ne
+    renvoie que `etat`/`sortie`/`fin`/`branches`, jamais `repertoire` ni
+    `pid`, et ne modifie jamais l'entrée."""
+
+    def test_sortie_renvoyee_pour_un_push_abouti(self):
+        self._ecrire_entree(
+            "projet_a", etat="pousse", branches=["main", "dev"],
+            fin="2026-11-05T10:05:00", sortie="3 tests réussis", vu=True,
+        )
+        donnees = self.client.get("/push/projet_a/sortie_pousse").get_json()
+        self.assertEqual(donnees, {
+            "etat": "pousse", "sortie": "3 tests réussis", "fin": "2026-11-05T10:05:00", "branches": ["main", "dev"],
+        })
+
+    def test_champs_vides_si_etat_autre_que_pousse(self):
+        self._ecrire_entree("projet_a", etat="refuse", fin="2026-11-03T10:05:00", sortie="ÉCHEC", vu=False)
+        donnees = self.client.get("/push/projet_a/sortie_pousse").get_json()
+        self.assertEqual(donnees, {"etat": None, "sortie": None, "fin": None, "branches": None})
+
+    def test_champs_vides_si_push_en_cours(self):
+        self._ecrire_entree("projet_a", etat="en_cours", vu=False)
+        donnees = self.client.get("/push/projet_a/sortie_pousse").get_json()
+        self.assertEqual(donnees["etat"], None)
+
+    def test_champs_vides_si_projet_inconnu(self):
+        donnees = self.client.get("/push/projet_inconnu/sortie_pousse").get_json()
+        self.assertEqual(donnees, {"etat": None, "sortie": None, "fin": None, "branches": None})
+
+    def test_pid_et_repertoire_jamais_exposes(self):
+        self._ecrire_entree(
+            "projet_a", etat="pousse", fin="2026-11-05T10:05:00", sortie="OK", vu=True, pid=12345,
+        )
+        donnees = self.client.get("/push/projet_a/sortie_pousse").get_json()
+        self.assertNotIn("pid", donnees)
+        self.assertNotIn("repertoire", donnees)
+
+    def test_lecture_ne_modifie_aucun_etat(self):
+        self._ecrire_entree(
+            "projet_a", etat="pousse", branches=["main"], fin="2026-11-05T10:05:00", sortie="OK", vu=True,
+        )
+        self.client.get("/push/projet_a/sortie_pousse")
+        entree = push_arriere_plan.lire_entree("projet_a")
+        self.assertEqual(entree["etat"], "pousse")
+        self.assertTrue(entree["vu"])
+        self.assertEqual(entree["sortie"], "OK")
+
+    def test_jamais_ajoutee_au_sondage_global(self):
+        """Garde-fou explicite de l'issue (point 5) : cette route dédiée ne
+        doit avoir aucun effet sur `/push/etat`, qui continue d'exclure un
+        push abouti déjà acquitté (inchangé depuis l'issue #123)."""
+        self._ecrire_entree(
+            "projet_a", etat="pousse", branches=["main"], fin="2026-11-05T10:05:00", sortie="OK", vu=True,
+        )
+        self.client.get("/push/projet_a/sortie_pousse")
+        self.assertEqual(self.client.get("/push/etat").get_json(), {"projets": {}})
+
+
 if __name__ == "__main__":
     unittest.main()

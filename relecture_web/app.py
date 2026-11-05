@@ -775,6 +775,20 @@ def acquitter_push_global_route(nom_projet):
     return jsonify({"ok": True})
 
 
+@app.route("/push/<nom_projet>/sortie_pousse")
+@login_requis
+def sortie_pousse_push_route(nom_projet):
+    """Lecture seule (issue #132, point 5) : sortie d'un push ABOUTI pour
+    `nom_projet`, interrogée en JS uniquement par la fenêtre de résultat
+    globale, à son ouverture, quand elle détecte un succès dont elle n'a
+    pas reçu la sortie par le sondage habituel (`etats_a_signaler` exclut
+    déjà tout push abouti, `vu` étant posé automatiquement — voir
+    `push_arriere_plan.entree_pour_copie`). Jamais ajoutée au sondage
+    global lui-même (`/push/etat`), jamais `repertoire` ni `pid`, et ne
+    modifie aucun état (`vu` compris)."""
+    return jsonify(push_arriere_plan.entree_pour_copie(nom_projet))
+
+
 @app.route("/projet/<nom_projet>/rapport/<hash_commit>")
 @login_requis
 def rapport_commit_route(nom_projet, hash_commit):
@@ -1310,6 +1324,14 @@ def projet_route(nom_projet):
     # calculé pour un projet distant (PC fixe CCW, voir
     # `projet_equipe_hook_pre_push`).
     projet["dernier_push"] = push_arriere_plan.entree_affichable(nom_projet)
+    # Contenu du bouton « Copier » du bloc de sortie (issue #132, point 3) :
+    # calculé ici plutôt que dans le gabarit, réutilisé tel quel comme
+    # attribut `data-copier` — affichage seulement, n'est jamais écrit dans
+    # l'état persistant.
+    if projet["dernier_push"] and projet["dernier_push"].get("sortie"):
+        projet["dernier_push"]["contenu_copie"] = push_arriere_plan.contenu_copie(
+            nom_projet, projet["dernier_push"]
+        )
     # Symbole « crochet pre-push » à côté du nom du projet (issue #129) :
     # `equipe_hook_pre_push` réutilisée telle quelle pour le cas actif (même
     # détection que celle qui fait basculer le push en arrière-plan, jamais
