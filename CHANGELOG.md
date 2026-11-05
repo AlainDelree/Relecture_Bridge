@@ -6,6 +6,13 @@ plus récente en premier.
 Convention d'ajout : voir §10 de `BRIDGE_AGENT_DOC.md`.
 ## 2026-09-21 — issue #60 (relecture_web)
 
+## Issue #131 — 2026-11-05
+
+- `relecture_web/templates/projet.html` : pour un push abouti avec sortie
+  non vide, le bloc repliable « Sortie du push (tests du crochet) » du
+  panneau « Dernier push » s'affiche désormais ouvert (`<details open>`),
+  défilé jusqu'en bas pour voir d'emblée les lignes de comptage des tests.
+
 ## Issue #130 — 2026-11-05
 
 - `relecture_web/test_nettoyage_auto_apres_push.py` : `_attendre_fin_push`
