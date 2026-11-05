@@ -83,6 +83,15 @@ body {
   font-weight: 700;
 }
 
+/* Symbole « crochet pre-push » devant le nom du projet (issue #129) — forme
+   seule porte le sens (actif/avertissement), jamais la couleur seule. */
+.symbole-hook-pre-push {
+  display: inline-block;
+  font-size: 1rem;
+  margin-right: 0.3rem;
+  cursor: help;
+}
+
 .contenu-principal {
   flex: 1;
   min-width: 0;

@@ -2819,6 +2819,21 @@ def projet_equipe_hook_pre_push(repertoire):
     return os.path.isfile(chemin) and os.access(chemin, os.X_OK)
 
 
+def projet_a_hook_pre_push_non_executable(repertoire):
+    """True si `repertoire` a un fichier de crochet `pre-push` présent à son
+    emplacement réel (voir `chemin_hook_pre_push`, même résolution que
+    `projet_equipe_hook_pre_push`) mais SANS le droit d'exécution — oubli
+    classique du `chmod +x`, qui fait que git l'ignore silencieusement, sans
+    qu'aucun test ne se lance au push (issue #129). Mutuellement exclusif
+    avec `projet_equipe_hook_pre_push` par construction : jamais vrai pour un
+    crochet exécutable, jamais vrai pour un projet distant (PC fixe CCW) ni
+    pour un projet sans crochet du tout."""
+    chemin = chemin_hook_pre_push(repertoire)
+    if not chemin:
+        return False
+    return os.path.isfile(chemin) and not os.access(chemin, os.X_OK)
+
+
 def get_commits_en_attente(chemin_worktree):
     """Commits locaux non poussés vers la branche amont configurée."""
     amont = _lancer_git(

@@ -172,6 +172,25 @@ de confirmation d'action (bandeau en tête de la fenêtre, voir section 9)
 — toujours avec un texte noir ou blanc choisi pour rester lisible sur
 cette couleur, jamais codé en dur (issue #73).
 
+**Symbole « crochet pre-push » (issue #129) :** sur la page « branches
+d'un projet », un petit symbole apparaît juste devant le chip coloré du
+nom du projet quand ce projet est équipé d'un crochet `pre-push` (voir
+section 13) — 🪝 avec l'info-bulle « Crochet pre-push actif : les tests se
+lancent avant chaque push » pour un crochet présent et exécutable, ⚠️ avec
+l'info-bulle « Crochet pre-push présent mais non exécutable : ignoré par
+git, aucun test ne se lance » pour un fichier de crochet présent mais sans
+le droit d'exécution (`chmod +x` oublié). Réutilise exactement
+`git_info.projet_equipe_hook_pre_push` — la même fonction que celle qui
+fait basculer le push en arrière-plan côté section 13, jamais une seconde
+logique de détection, pour que ce symbole reflète toujours fidèlement ce
+que fera un push réel. Rien n'est affiché pour un projet sans crochet, pour
+un projet distant du PC fixe CCW, ni si la détection échoue : la page se
+charge alors normalement, simplement sans ce symbole. Volontairement
+absent de la barre latérale et de la page d'accueil, qui resteraient
+minimales (issue #44) : une détection par projet y lancerait une commande
+git par projet sur chaque page, contrairement à cette page qui n'en fait
+qu'une seule, pour le seul projet affiché.
+
 **Indicateurs de push en arrière-plan (issue #123) :** pour un projet dont
 une entrée existe dans `push_arriere_plan.CHEMIN_ETAT_PUSH` et qui est soit
 en cours, soit non acquittée (voir section 13), la barre latérale affiche,
@@ -1770,6 +1789,14 @@ dépôt (voir la détection décrite plus haut). Sans un tel crochet, le
 comportement reste exactement celui d'avant l'issue #122. Et jamais pour
 un projet distant du PC fixe (`_ccw`, section 11), quel que soit l'état de
 son crochet.
+
+**Vérifier l'activation sans lancer de push (issue #129).** La page
+« branches d'un projet » (section 2) affiche désormais 🪝 devant le nom du
+projet dès qu'il est équipé d'un crochet exécutable, et ⚠️ si le fichier de
+crochet existe mais que le `chmod +x` a été oublié — exactement le piège
+décrit ci-dessous (droit d'exécution manquant, crochet silencieusement
+ignoré par git). Plus besoin de lancer un push pour le savoir : ce symbole
+réutilise la même détection que le push lui-même.
 
 **Où vit le crochet.** Dans le dossier de crochets du dépôt — commun à
 toutes ses worktrees, jamais dupliqué par worktree — qui n'est pas

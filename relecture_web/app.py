@@ -75,6 +75,7 @@ from git_info import (
     lister_fichiers_ignores_worktree,
     nom_branche_recuperation,
     pousser_branche,
+    projet_a_hook_pre_push_non_executable,
     projet_equipe_hook_pre_push,
     purger_reflog_et_gc,
     resoudre_bloc_conflit,
@@ -1309,9 +1310,23 @@ def projet_route(nom_projet):
     # calculé pour un projet distant (PC fixe CCW, voir
     # `projet_equipe_hook_pre_push`).
     projet["dernier_push"] = push_arriere_plan.entree_affichable(nom_projet)
-    projet["equipe_hook_pre_push"] = (
-        projet["statut"] == "ok" and projet_equipe_hook_pre_push(projet["repertoire"])
-    )
+    # Symbole « crochet pre-push » à côté du nom du projet (issue #129) :
+    # `equipe_hook_pre_push` réutilisée telle quelle pour le cas actif (même
+    # détection que celle qui fait basculer le push en arrière-plan, jamais
+    # une seconde logique) ; `hook_pre_push_non_executable` couvre le cas
+    # avertissement (fichier présent, droit d'exécution manquant) via la
+    # même résolution de chemin. Absorbe toute exception de détection : la
+    # page doit se charger normalement sans aucun symbole plutôt que planter.
+    try:
+        projet["equipe_hook_pre_push"] = (
+            projet["statut"] == "ok" and projet_equipe_hook_pre_push(projet["repertoire"])
+        )
+        projet["hook_pre_push_non_executable"] = (
+            projet["statut"] == "ok" and projet_a_hook_pre_push_non_executable(projet["repertoire"])
+        )
+    except Exception:
+        projet["equipe_hook_pre_push"] = False
+        projet["hook_pre_push_non_executable"] = False
 
     if projet["statut"] != "ok":
         projet["branches"] = []

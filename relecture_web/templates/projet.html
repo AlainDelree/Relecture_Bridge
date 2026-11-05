@@ -5,6 +5,9 @@
 <header>
   <p class="fil-ariane"><a href="{{ url_for('index') }}">Projets</a> / {{ projet.nom }}</p>
   <h1>
+    {% if projet.equipe_hook_pre_push %}<span class="symbole-hook-pre-push" title="Crochet pre-push actif : les tests se lancent avant chaque push">🪝</span>
+    {% elif projet.hook_pre_push_non_executable %}<span class="symbole-hook-pre-push symbole-hook-pre-push--avertissement" title="Crochet pre-push présent mais non exécutable : ignoré par git, aucun test ne se lance">⚠️</span>
+    {% endif %}
     {% if projet.couleur %}<span class="chip-projet" style="background:{{ projet.couleur }}; color:{{ projet.couleur_texte }};">{{ projet.nom }}</span>{% else %}{{ projet.nom }}{% endif %}
     <span class="depot">{{ projet.depot }}</span>
   </h1>
