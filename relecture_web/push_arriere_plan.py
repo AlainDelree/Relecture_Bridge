@@ -430,6 +430,12 @@ def demarrer_push_arriere_plan(repertoire, nom_projet, branches, chemin_etat=Non
         target=_executer_push_arriere_plan,
         args=(repertoire, nom_projet, list(branches), chemin),
         daemon=True,
+        # Nom stable (issue #130) : permet aux tests de retrouver ce thread
+        # précis via `threading.enumerate()` et d'attendre sa fin RÉELLE
+        # (y compris le nettoyage automatique qui la suit, issue #128),
+        # plutôt que la seule apparition d'un état final dans le fichier.
+        # Purement cosmétique : aucun effet sur l'ordre ni le comportement.
+        name=f"push_arriere_plan-{nom_projet}",
     )
     thread.start()
 

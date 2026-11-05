@@ -38,6 +38,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 
@@ -186,13 +187,31 @@ class BaseNettoyageAutoTestCase(unittest.TestCase):
         return appels
 
     def _attendre_fin_push(self, nom_projet="projet_local", timeout=10.0):
-        fin = time.time() + timeout
-        while time.time() < fin:
-            entree = push_arriere_plan.lire_entree(nom_projet)
-            if entree and entree.get("etat") != "en_cours":
-                return entree
-            time.sleep(0.03)
-        raise AssertionError("le push en arrière-plan ne s'est pas terminé à temps")
+        """Attend la fin RÉELLE du fil d'exécution du push en arrière-plan
+        (celui nommé `push_arriere_plan-<nom_projet>` par
+        `demarrer_push_arriere_plan`), pas la seule apparition d'un état
+        final dans le fichier : cet état est écrit AVANT le nettoyage
+        automatique des résumés (issue #128), qui tourne à la fin de ce
+        même thread (`_executer_push_arriere_plan`) — une attente sur le
+        seul fichier d'état pouvait donc vérifier le nettoyage (ou son
+        absence) avant qu'il ait eu lieu, rendant ce test intermittent
+        (issue #130).
+
+        `thread.start()` (appelé par `demarrer_push_arriere_plan`, donc déjà
+        fait avant cet appel) ne rend la main qu'une fois le thread inscrit
+        dans `threading.enumerate()` — ce thread y est donc forcément déjà
+        si le push tourne encore. S'il est absent dès ce premier coup d'œil,
+        c'est qu'il a déjà fini (nettoyage inclus) avant même ce contrôle."""
+        nom_thread = f"push_arriere_plan-{nom_projet}"
+        thread_push = next((t for t in threading.enumerate() if t.name == nom_thread), None)
+        if thread_push is not None:
+            thread_push.join(timeout=timeout)
+            if thread_push.is_alive():
+                raise AssertionError("le fil d'exécution du push en arrière-plan n'a pas terminé à temps")
+        entree = push_arriere_plan.lire_entree(nom_projet)
+        if not entree or entree.get("etat") == "en_cours":
+            raise AssertionError("le push en arrière-plan ne s'est pas terminé à temps")
+        return entree
 
 
 class PushSynchroneNettoyageTestCase(BaseNettoyageAutoTestCase):
