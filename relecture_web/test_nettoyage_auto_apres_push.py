@@ -72,6 +72,12 @@ def _creer_branche(chemin_local, nom):
     subprocess.run(["git", "add", f"{nom}.txt"], cwd=chemin_local, check=True)
     subprocess.run(["git", "commit", "--quiet", "-m", f"commit {nom}"], cwd=chemin_local, check=True)
     subprocess.run(["git", "checkout", "main"], cwd=chemin_local, check=True, capture_output=True)
+    # Issue #134 : toute branche est verrouillée par défaut — ce module
+    # teste le nettoyage automatique après un push, pas le verrou lui-même
+    # (voir test_verrou_push_branches.py), donc chaque branche créée ici est
+    # déverrouillée tout de suite pour « projet_local » (seul projet de ce
+    # module).
+    git_info.autoriser_push_branche("projet_local", nom)
 
 
 def _installer_hook_pre_push(chemin_local, script_texte, executable=True):
@@ -105,6 +111,10 @@ class BaseNettoyageAutoTestCase(unittest.TestCase):
         resumes_info.DOSSIER_RELECTURE = self.scratch
         self.addCleanup(self._restaurer_dossier_relecture)
 
+        self._autorisations_original = git_info.CHEMIN_AUTORISATIONS_PUSH
+        git_info.CHEMIN_AUTORISATIONS_PUSH = os.path.join(self.scratch, "autorisations_push.log")
+        self.addCleanup(self._restaurer_autorisations)
+
         self._chemin_etat_original = push_arriere_plan.CHEMIN_ETAT_PUSH
         push_arriere_plan.CHEMIN_ETAT_PUSH = os.path.join(self.scratch, "push_etat.json")
         self.addCleanup(self._restaurer_chemin_etat)
@@ -132,6 +142,9 @@ class BaseNettoyageAutoTestCase(unittest.TestCase):
 
     def _restaurer_dossier_relecture(self):
         resumes_info.DOSSIER_RELECTURE = self._dossier_relecture_original
+
+    def _restaurer_autorisations(self):
+        git_info.CHEMIN_AUTORISATIONS_PUSH = self._autorisations_original
 
     def _restaurer_chemin_etat(self):
         push_arriere_plan.CHEMIN_ETAT_PUSH = self._chemin_etat_original

@@ -2560,6 +2560,148 @@ def retirer_bruit_projet(nom_projet, chemin):
         return False
 
 
+# Verrou de push par branche (issue #134) : par défaut, TOUTE branche de
+# TOUT projet est verrouillée — seul un déverrouillage explicite et durable
+# (cadenas de la page projet) l'autorise au push depuis relecture_web. Même
+# emplacement et même principe que CHEMIN_LISTE_BRUIT_PROJETS ci-dessus :
+# hors de tout worktree, jamais suivi par git (voir .gitignore), chemin en
+# constante modifiable pour les tests, relu à chaque appel (jamais mis en
+# cache), créé au premier déverrouillage. Ne contient QUE les branches
+# AUTORISÉES — une branche absente du fichier (ou un fichier absent/
+# illisible/une ligne mal formée, ignorée seule) est donc toujours
+# verrouillée, jamais l'inverse (dégradation vers la prudence, jamais vers
+# un déverrouillage supplémentaire non voulu). Ce verrou ne concerne QUE les
+# pushs déclenchés depuis relecture_web (voir `pousser_branches_route`
+# dans app.py) : aucun crochet git n'est installé ni modifié par cette
+# issue, un `git push` tapé directement en terminal n'est pas concerné.
+CHEMIN_AUTORISATIONS_PUSH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "autorisations_push.log"
+)
+
+MOTIF_LIGNE_AUTORISATION_PUSH = re.compile(r"^projet=(?P<projet>[^|]+?) \| branche=(?P<branche>.+)$")
+
+
+def lire_autorisations_push():
+    """Contenu de CHEMIN_AUTORISATIONS_PUSH sous la forme {nom_projet:
+    {branche, branche, ...}} (issue #134) — mêmes règles de dégradation que
+    `lire_bruit_projets` : fichier absent ou illisible -> dict vide (donc
+    toutes les branches verrouillées), une ligne individuellement mal
+    formée est ignorée SEULE, sans faire échouer la lecture des lignes
+    valides voisines. Une branche absente du résultat pour son projet est
+    verrouillée ; une branche présente est autorisée au push."""
+    try:
+        with open(CHEMIN_AUTORISATIONS_PUSH, encoding="utf-8") as fichier:
+            lignes = fichier.read().splitlines()
+    except OSError:
+        return {}
+    resultat = {}
+    for ligne in lignes:
+        correspondance = MOTIF_LIGNE_AUTORISATION_PUSH.match(ligne.strip())
+        if not correspondance:
+            continue
+        nom_projet = correspondance.group("projet").strip()
+        nom_branche = correspondance.group("branche").strip()
+        if not nom_projet or not nom_branche:
+            continue
+        resultat.setdefault(nom_projet, set()).add(nom_branche)
+    return resultat
+
+
+def branche_push_autorisee(nom_projet, nom_branche):
+    """True si `nom_branche` de `nom_projet` est explicitement déverrouillée
+    pour le push depuis relecture_web (issue #134) — False pour toute
+    branche absente du fichier, y compris la branche principale : le
+    verrou est posé par défaut pour TOUTES les branches, sans exception.
+    Relit CHEMIN_AUTORISATIONS_PUSH à chaque appel (voir `lire_
+    autorisations_push`), jamais mis en cache."""
+    return nom_branche in lire_autorisations_push().get(nom_projet, ())
+
+
+def autoriser_push_branche(nom_projet, nom_branche):
+    """Déverrouille `nom_branche` de `nom_projet` pour le push (cadenas de
+    la page projet, issue #134) — geste volontaire et durable, jamais
+    reverrouillée automatiquement après un push. Crée
+    CHEMIN_AUTORISATIONS_PUSH au premier déverrouillage. Retourne True si
+    l'entrée est désormais dans le fichier (déjà présente ou ajoutée à
+    l'instant), False si l'écriture a échoué — ne doit JAMAIS faire croire
+    que la branche est déverrouillée dans ce cas : à charge de l'appelant
+    d'afficher un message flash et de laisser l'état affiché inchangé."""
+    if nom_branche in lire_autorisations_push().get(nom_projet, ()):
+        return True
+    try:
+        with open(CHEMIN_AUTORISATIONS_PUSH, "a", encoding="utf-8") as fichier:
+            fichier.write(f"projet={nom_projet} | branche={nom_branche}\n")
+        return True
+    except OSError:
+        return False
+
+
+def verrouiller_push_branche(nom_projet, nom_branche):
+    """Reverrouille `nom_branche` de `nom_projet` — rebasculement explicite
+    du cadenas par Alain, OU nettoyage automatique à la disparition d'une
+    branche par une action de relecture_web (suppression des fusionnées,
+    « Merger et supprimer », « Rejeter » et leurs variantes forcées,
+    suppression des branches de récupération, issue #134) : même fonction
+    pour les deux cas, pour qu'une future branche recréée sous le même nom
+    ne naisse pas déverrouillée. Réécrit le fichier entier sans la ligne
+    correspondante (même principe que `retirer_bruit_projet`). Retourne
+    True si le fichier ne contient plus cette entrée après l'appel (y
+    compris si elle était déjà absente, ou si CHEMIN_AUTORISATIONS_PUSH
+    n'existe pas), False si la réécriture a échoué."""
+    try:
+        with open(CHEMIN_AUTORISATIONS_PUSH, encoding="utf-8") as fichier:
+            lignes = fichier.read().splitlines()
+    except OSError:
+        return True
+
+    cible = f"projet={nom_projet} | branche={nom_branche}"
+    lignes_conservees = [ligne for ligne in lignes if ligne.strip() != cible]
+    if len(lignes_conservees) == len(lignes):
+        return True
+    try:
+        with open(CHEMIN_AUTORISATIONS_PUSH, "w", encoding="utf-8") as fichier:
+            fichier.write("".join(ligne + "\n" for ligne in lignes_conservees))
+        return True
+    except OSError:
+        return False
+
+
+def nettoyer_autorisations_push_disparues(nom_projet, noms_branches_existantes):
+    """Retire de CHEMIN_AUTORISATIONS_PUSH toute entrée de `nom_projet` dont
+    la branche n'est plus dans `noms_branches_existantes` (issue #134,
+    point 5) — appelé à chaque affichage de la page projet (`projet_route`),
+    en complément du nettoyage explicite fait par chaque action de
+    suppression (voir `verrouiller_push_branche` ci-dessus) : couvre le cas
+    d'une branche disparue par un autre moyen entre deux affichages (pas
+    seulement les actions de relecture_web). Limite connue, non corrigée :
+    une branche supprimée en terminal puis recréée sous le même nom avant
+    le prochain affichage de cette page garderait son autorisation. Ne
+    touche jamais les entrées des AUTRES projets. Retourne True si
+    l'opération a réussi (y compris sans rien à retirer), False si la
+    réécriture a échoué."""
+    try:
+        with open(CHEMIN_AUTORISATIONS_PUSH, encoding="utf-8") as fichier:
+            lignes = fichier.read().splitlines()
+    except OSError:
+        return True
+
+    lignes_conservees = []
+    for ligne in lignes:
+        correspondance = MOTIF_LIGNE_AUTORISATION_PUSH.match(ligne.strip())
+        if (correspondance and correspondance.group("projet").strip() == nom_projet
+                and correspondance.group("branche").strip() not in noms_branches_existantes):
+            continue
+        lignes_conservees.append(ligne)
+    if len(lignes_conservees) == len(lignes):
+        return True
+    try:
+        with open(CHEMIN_AUTORISATIONS_PUSH, "w", encoding="utf-8") as fichier:
+            fichier.write("".join(ligne + "\n" for ligne in lignes_conservees))
+        return True
+    except OSError:
+        return False
+
+
 def diagnostiquer_echec_suppression_worktree(chemin_worktree):
     """Diagnostique un échec de `supprimer_worktree` SANS dépendre du texte
     (traduit selon la langue de git) du message d'erreur renvoyé par `git

@@ -231,6 +231,16 @@ class BasePushTestCase(unittest.TestCase):
         self.scratch = tempfile.mkdtemp(prefix="relecture_bridge_test_push_")
         self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
 
+        # Cadenas de push par branche (issue #134) : redirigé vers un fichier
+        # temporaire, jamais le vrai fichier d'Alain — voir
+        # test_verrou_push_branches.py pour les tests dédiés au verrou
+        # lui-même. Ce module teste le MOTEUR du push, pas le verrou : voir
+        # `_poster_push` ci-dessous, qui déverrouille chaque branche avant de
+        # la poster.
+        self._autorisations_original = git_info.CHEMIN_AUTORISATIONS_PUSH
+        git_info.CHEMIN_AUTORISATIONS_PUSH = os.path.join(self.scratch, "autorisations_push.log")
+        self.addCleanup(self._restaurer_autorisations)
+
         self._chemin_etat_original = push_arriere_plan.CHEMIN_ETAT_PUSH
         push_arriere_plan.CHEMIN_ETAT_PUSH = os.path.join(self.scratch, "push_etat.json")
         self.addCleanup(self._restaurer_chemin_etat)
@@ -256,6 +266,9 @@ class BasePushTestCase(unittest.TestCase):
         app_module.app.config["MDP_EXIGE"] = False
         self.client = app_module.app.test_client()
 
+    def _restaurer_autorisations(self):
+        git_info.CHEMIN_AUTORISATIONS_PUSH = self._autorisations_original
+
     def _restaurer_chemin_etat(self):
         push_arriere_plan.CHEMIN_ETAT_PUSH = self._chemin_etat_original
 
@@ -266,6 +279,11 @@ class BasePushTestCase(unittest.TestCase):
         git_info.fetch_projets = self._fetch_original
 
     def _poster_push(self, branches, nom_projet="projet_local", follow_redirects=True):
+        # Issue #134 : toute branche est verrouillée par défaut — ce module
+        # teste le moteur du push (synchrone/arrière-plan), pas le verrou
+        # lui-même, donc chaque branche postée est déverrouillée au préalable.
+        for branche in branches:
+            git_info.autoriser_push_branche(nom_projet, branche)
         return self.client.post(
             f"/projet/{nom_projet}/pousser", data={"branches": branches}, follow_redirects=follow_redirects,
         )

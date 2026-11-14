@@ -295,6 +295,25 @@ header h1 { margin-bottom: 0.2rem; }
   align-items: center;
 }
 
+/* Cadenas de push par branche (issue #134) : volontairement distinct de la
+   case à cocher ci-dessus (forme, couleur et texte différents) — jamais
+   confondu avec la sélection utilisée par les autres actions du panneau. */
+.form-verrou-push { margin-left: auto; }
+.bouton-verrou-push {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.bouton-verrou-push--verrouillee { background: #fdecea; color: #a33; border-color: #f5c2c0; }
+.bouton-verrou-push--verrouillee:hover { background: #fbdbd7; }
+.bouton-verrou-push--autorisee { background: #e6f4ea; color: #1e7b34; border-color: #b7ddc3; }
+.bouton-verrou-push--autorisee:hover { background: #d9f3e4; }
+
+.message-push-verrou { font-size: 0.8rem; color: #a33; }
+
 .panneau-actions {
   position: sticky;
   bottom: 0;

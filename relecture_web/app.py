@@ -30,6 +30,8 @@ from git_info import (
     ErreurRecuperationProjets,
     ajouter_bruit_projet,
     ajouter_motif_gitignore,
+    autoriser_push_branche,
+    branche_push_autorisee,
     charger_etat_projet,
     classifier_ligne_gitignore,
     collect_etat_projets_legers,
@@ -68,11 +70,13 @@ from git_info import (
     gitignore_a_des_modifications_non_committees,
     hash_depuis_branche_recuperation,
     journaliser_decision_fichier_ignore,
+    lire_autorisations_push,
     lire_bruit_projets,
     lire_conflits_fichier,
     lire_lignes_gitignore,
     lire_verrous_actifs,
     lister_fichiers_ignores_worktree,
+    nettoyer_autorisations_push_disparues,
     nom_branche_recuperation,
     pousser_branche,
     projet_a_hook_pre_push_non_executable,
@@ -92,6 +96,7 @@ from git_info import (
     verifier_finalisation_merge_apres_timeout,
     verifier_merge_apres_timeout,
     verifier_push_apres_timeout,
+    verrouiller_push_branche,
     verrous_sur_dossier,
     worktree_ccl_actif,
 )
@@ -1406,6 +1411,16 @@ def projet_route(nom_projet):
     cible_merge_configuree = projet["branche_cible_comparaison"]
     branches = get_branches_locales(projet["repertoire"], cible_merge_configuree)
 
+    # Cadenas de push par branche (issue #134) : nettoie d'abord les
+    # entrées devenues obsolètes (branche disparue par un autre moyen que
+    # les actions de ce programme, voir `nettoyer_autorisations_push_
+    # disparues`) — échec silencieux, un ratage de ce nettoyage automatique
+    # n'empêche jamais l'affichage normal de la page — puis relit l'état
+    # pour calculer `push_autorise` par branche ci-dessous (verrouillée par
+    # défaut : toute branche absente du fichier est verrouillée).
+    nettoyer_autorisations_push_disparues(nom_projet, {branche["nom"] for branche in branches})
+    autorisations_push_projet = lire_autorisations_push().get(nom_projet, set())
+
     # Badge « ⚠ CCL travaille ici » (issue #88) : un verrou Bridge_Agent actif
     # dont le `rep=` correspond au worktree d'une branche signale qu'une
     # tâche mode_write y travaille peut-être encore (reprise après
@@ -1444,6 +1459,7 @@ def projet_route(nom_projet):
         branche["commande_push"] = commande_affichee(
             projet["repertoire"], f"git -C {projet['repertoire']} push {remote} {branche['nom']}"
         )
+        branche["push_autorise"] = branche["nom"] in autorisations_push_projet
         branche["verrou_ccl_actif"] = worktree_ccl_actif(branche["chemin_worktree"], verrous_actifs)
 
         branche["peut_merger"] = branche["nom"] not in cibles_merge
@@ -1989,7 +2005,14 @@ def pousser_branches_route(nom_projet):
     NON équipé garde exactement le comportement synchrone d'avant cette
     issue (boucle par branche, délai de 120s, revérification #66) —
     `@refuse_si_push_en_cours` ci-dessus ne s'applique de toute façon jamais
-    à lui, puisqu'il n'écrit jamais d'entrée dans l'état persistant."""
+    à lui, puisqu'il n'écrit jamais d'entrée dans l'état persistant.
+
+    Issue #134 : refus serveur AVANT la séparation ci-dessous entre push
+    synchrone et push en arrière-plan, pour couvrir les deux chemins d'un
+    seul garde-fou — si UNE SEULE branche de la sélection est verrouillée
+    (voir `branche_push_autorisee`/le cadenas de la page projet), RIEN
+    n'est poussé (tout ou rien), indépendamment de l'affichage côté
+    template (requête forgée, page périmée, second onglet)."""
     noms_branches = request.form.getlist("branches")
     projet, message_erreur = _projet_pret(nom_projet)
     if not projet:
@@ -2008,6 +2031,17 @@ def pousser_branches_route(nom_projet):
         noms_valides.append(nom)
 
     if not noms_valides:
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    branches_verrouillees = [nom for nom in noms_valides if not branche_push_autorisee(nom_projet, nom)]
+    if branches_verrouillees:
+        noms_affiches = ", ".join(f"« {nom} »" for nom in branches_verrouillees)
+        verbe = "est verrouillée" if len(branches_verrouillees) == 1 else "sont verrouillées"
+        flash(
+            f"🔒 Push refusé (aucune branche poussée) : {noms_affiches} {verbe} — déverrouillez-la(les) "
+            "avec le cadenas de cette page avant de pousser.",
+            "erreur",
+        )
         return redirect(url_for("projet_route", nom_projet=nom_projet))
 
     if projet_equipe_hook_pre_push(projet["repertoire"]):
@@ -2062,6 +2096,58 @@ def pousser_branches_route(nom_projet):
             )
         else:
             flash(f"❌ Échec du push de « {nom} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
+    return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+
+@app.route("/projet/<nom_projet>/branche/<path:nom_branche>/verrou-push", methods=["POST"])
+@login_requis
+def basculer_verrou_push_route(nom_projet, nom_branche):
+    """Cadenas par branche de la page projet (issue #134) : bascule entre
+    « verrouillée » (état par défaut pour TOUTE branche, y compris la
+    branche principale) et « push autorisé » (voir `branche_push_
+    autorisee`/`pousser_branches_route`, qui refuse tout push tant qu'une
+    branche sélectionnée reste verrouillée). Un simple clic suffit, sans
+    fenêtre de confirmation : déverrouiller n'exécute rien en soi, seul un
+    push ultérieur agit réellement (bouton dédié, confirmation forte déjà
+    en place). Geste volontaire et durable — jamais reverrouillée
+    automatiquement après un push : seule la disparition de la branche
+    (voir `verrouiller_push_branche`, appelé par chaque action de
+    suppression, et `nettoyer_autorisations_push_disparues` à l'affichage
+    de la page) la reverrouille.
+
+    Écrit dans CHEMIN_AUTORISATIONS_PUSH (`git_info.py`) — fichier texte
+    local, ignoré par git, qui ne contient que les branches AUTORISÉES :
+    toute branche absente (fichier absent, illisible, ou ligne mal
+    formée, ignorée seule) est verrouillée, jamais l'inverse. Une écriture
+    impossible (dossier en lecture seule, disque plein) ne bascule jamais
+    l'état affiché : message flash clair à la place, état inchangé."""
+    projet, message_erreur = _projet_pret(nom_projet)
+    if not projet:
+        flash(message_erreur, "erreur")
+        return redirect(url_for("index"))
+
+    if nom_branche not in _branches_par_nom(projet):
+        flash(f"❌ Branche « {nom_branche} » introuvable.", "erreur")
+        return redirect(url_for("projet_route", nom_projet=nom_projet))
+
+    if branche_push_autorisee(nom_projet, nom_branche):
+        if verrouiller_push_branche(nom_projet, nom_branche):
+            flash(f"🔒 « {nom_branche} » verrouillée — push refusé depuis cette page.", "succes")
+        else:
+            flash(
+                f"❌ Impossible d'écrire le verrou de « {nom_branche} » (écriture du fichier impossible) "
+                "— reste déverrouillée, push toujours autorisé.",
+                "erreur",
+            )
+    else:
+        if autoriser_push_branche(nom_projet, nom_branche):
+            flash(f"🔓 « {nom_branche} » déverrouillée — push autorisé depuis cette page.", "succes")
+        else:
+            flash(
+                f"❌ Impossible d'écrire le déverrouillage de « {nom_branche} » (écriture du fichier "
+                "impossible) — reste verrouillée, push toujours refusé.",
+                "erreur",
+            )
     return redirect(url_for("projet_route", nom_projet=nom_projet))
 
 
@@ -2449,6 +2535,9 @@ def merger_et_supprimer_route(nom_projet):
                 continue
             resultat_branche = supprimer_branche(projet["repertoire"], nom)
             if resultat_branche["ok"]:
+                # Issue #134 : la branche disparaît, reverrouille son éventuelle
+                # autorisation de push (sinon une future branche du même nom naîtrait déverrouillée).
+                verrouiller_push_branche(nom_projet, nom)
                 flash(
                     f"✅ Worktree et branche « {nom} » supprimés — {resultat_worktree['commande']} "
                     f"+ {resultat_branche['commande']}",
@@ -2464,6 +2553,7 @@ def merger_et_supprimer_route(nom_projet):
         else:
             resultat_branche = supprimer_branche(projet["repertoire"], nom)
             if resultat_branche["ok"]:
+                verrouiller_push_branche(nom_projet, nom)  # issue #134 : branche disparue, reverrouille son push
                 flash(f"✅ Branche « {nom} » supprimée — {resultat_branche['commande']}", "succes")
             else:
                 flash(
@@ -2554,6 +2644,7 @@ def supprimer_worktrees_route(nom_projet):
                 continue
             resultat_branche = supprimer_branche(projet["repertoire"], nom)
             if resultat_branche["ok"]:
+                verrouiller_push_branche(nom_projet, nom)  # issue #134 : branche disparue, reverrouille son push
                 flash(
                     f"✅ Worktree et branche « {nom} » supprimés — {resultat_worktree['commande']} "
                     f"+ {resultat_branche['commande']}",
@@ -2569,6 +2660,7 @@ def supprimer_worktrees_route(nom_projet):
             continue
         resultat = supprimer_branche(projet["repertoire"], nom)
         if resultat["ok"]:
+            verrouiller_push_branche(nom_projet, nom)  # issue #134 : branche disparue, reverrouille son push
             flash(f"✅ Branche « {nom} » supprimée — {resultat['commande']}", "succes")
         else:
             flash(f"❌ Échec de la suppression de « {nom} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
@@ -2650,6 +2742,7 @@ def supprimer_worktree_force_route(nom_projet):
 
     resultat_branche = supprimer_branche(projet["repertoire"], nom_branche)
     if resultat_branche["ok"]:
+        verrouiller_push_branche(nom_projet, nom_branche)  # issue #134 : branche disparue, reverrouille son push
         flash(
             f"✅ Worktree et branche « {nom_branche} » supprimés de force — "
             f"{resultat_worktree['commande']} + {resultat_branche['commande']}",
@@ -2797,6 +2890,7 @@ def rejeter_worktrees_route(nom_projet):
             resultat_branche = supprimer_branche(projet["repertoire"], nom)
             if resultat_branche["ok"]:
                 rejet_reussi = True
+                verrouiller_push_branche(nom_projet, nom)  # issue #134 : branche disparue, reverrouille son push
                 flash(
                     f"✅ Worktree et branche « {nom} » rejetés (jamais fusionnés) — "
                     f"{resultat_worktree['commande']} + {resultat_branche['commande']}",
@@ -2812,6 +2906,7 @@ def rejeter_worktrees_route(nom_projet):
             resultat_branche = supprimer_branche(projet["repertoire"], nom)
             if resultat_branche["ok"]:
                 rejet_reussi = True
+                verrouiller_push_branche(nom_projet, nom)  # issue #134 : branche disparue, reverrouille son push
                 flash(f"✅ Branche « {nom} » rejetée (jamais fusionnée) — {resultat_branche['commande']}", "succes")
             else:
                 flash(
@@ -2920,6 +3015,7 @@ def rejeter_worktree_force_route(nom_projet):
         )
         return redirect(url_for("projet_route", nom_projet=nom_projet))
 
+    verrouiller_push_branche(nom_projet, nom_branche)  # issue #134 : branche disparue, reverrouille son push
     flash(
         f"✅ Worktree et branche « {nom_branche} » rejetés de force (jamais fusionnés) — "
         f"{resultat_worktree['commande']} + {resultat_branche['commande']}",
@@ -3070,6 +3166,7 @@ def supprimer_branches_recuperation_route(nom_projet):
         if not resultat["ok"]:
             flash(f"❌ Échec de la suppression de « {nom} » ({resultat['commande']}) : {resultat['erreur']}", "erreur")
             continue
+        verrouiller_push_branche(nom_projet, nom)  # issue #134 : branche disparue, reverrouille son push
 
         fichiers = set()
         for h in hashes_a_nettoyer:

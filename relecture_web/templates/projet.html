@@ -348,6 +348,7 @@
                class="checkbox-branche"
                data-nom="{{ b.nom }}"
                data-commande-push="{{ b.commande_push }}"
+               data-push-autorisee="{{ '1' if b.push_autorise else '0' }}"
                data-peut-merger="{{ '1' if b.peut_merger else '0' }}"
                data-commande-merge="{{ b.commande_merge or '' }}"
                data-commandes-merge='{{ (b.commandes_merge or {})|tojson }}'
@@ -384,6 +385,14 @@
           {% else %}<span class="badge badge--ok">à jour ({{ w.amont }})</span>{% endif %}
         {% endif %}
       </a>
+      <form method="post" action="{{ url_for('basculer_verrou_push_route', nom_projet=projet.nom, nom_branche=b.nom) }}"
+            class="form-verrou-push">
+        <button type="submit"
+                class="bouton-verrou-push {{ 'bouton-verrou-push--autorisee' if b.push_autorise else 'bouton-verrou-push--verrouillee' }}"
+                title="{{ 'Push autorisé depuis cette page — cliquez pour reverrouiller « ' ~ b.nom ~ ' ».' if b.push_autorise else 'Verrouillée : le bouton Push refuse cette branche tant qu\'elle n\'est pas déverrouillée ici.' }}">
+          {% if b.push_autorise %}🔓 push autorisé{% else %}🔒 verrouillée{% endif %}
+        </button>
+      </form>
     </div>
     <p class="dernier-commit"><code class="hash">{{ b.dernier_commit.hash }}</code><button type="button" class="bouton-copier" data-copier="{{ b.dernier_commit.hash }}" title="Copier le hash">📋</button> {{ b.dernier_commit.sujet }}</p>
   </li>
@@ -396,6 +405,7 @@
   <div class="panneau-actions__boutons">
     <button type="submit" form="form-actions-branches" formaction="{{ url_for('pousser_branches_route', nom_projet=projet.nom) }}"
             class="bouton bouton--push" id="bouton-push">Push</button>
+    <span id="message-push-verrou" class="message-push-verrou" hidden></span>
     {% if projet.cibles_merge|length > 1 %}
     <label class="select-cible-merge">
       Cible du merge :
@@ -483,6 +493,7 @@
   var panneau = document.getElementById("panneau-actions-branches");
   var compteur = document.getElementById("compteur-selection");
   var boutonPush = document.getElementById("bouton-push");
+  var messagePushVerrou = document.getElementById("message-push-verrou");
   var boutonMerger = document.getElementById("bouton-merger");
   var boutonSupprimer = document.getElementById("bouton-supprimer");
   var boutonMergerSupprimer = document.getElementById("bouton-merger-supprimer");
@@ -573,6 +584,28 @@
     boutonRejeter.disabled = !selection.some(function (c) { return c.dataset.peutRejeter === "1"; });
     boutonComparerSelection.disabled = !selection.some(function (c) { return c.dataset.peutSupprimerBranche === "1"; });
     boutonSupprimerBranche.disabled = !selection.some(function (c) { return c.dataset.peutSupprimerBranche === "1"; });
+
+    // Cadenas de push par branche (issue #134) : le bouton Push se grise
+    // dès qu'au moins une branche verrouillée fait partie de la sélection
+    // courante, recalculé à chaque changement de sélection — sans
+    // rechargement de page — exactement comme les autres boutons
+    // ci-dessus. Aucune sélection : pas de branche verrouillée dans un
+    // tableau vide, donc jamais désactivé ici (comportement d'avant cette
+    // issue inchangé ; le panneau entier reste de toute façon masqué).
+    var branchesVerrouillees = selection.filter(function (c) { return c.dataset.pushAutorisee !== "1"; });
+    boutonPush.disabled = branchesVerrouillees.length > 0;
+    if (messagePushVerrou) {
+      if (branchesVerrouillees.length > 0) {
+        var nomsVerrouilles = branchesVerrouillees.map(function (c) { return c.dataset.nom; });
+        messagePushVerrou.hidden = false;
+        messagePushVerrou.textContent = "🔒 Push impossible : " + nomsVerrouilles.join(", ") + (
+          nomsVerrouilles.length === 1 ? " est verrouillée." : " sont verrouillées."
+        );
+      } else {
+        messagePushVerrou.hidden = true;
+        messagePushVerrou.textContent = "";
+      }
+    }
   }
 
   cases.forEach(function (c) {
